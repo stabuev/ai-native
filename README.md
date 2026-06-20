@@ -15,7 +15,7 @@
 ```
 phases/<NN>-<phase>/<NN>-<lesson>/
 ├── code/      исполняемый код (Build It + Use It) + тесты
-├── docs/en.md разбор урока по 6 шагам
+├── docs/ru.md разбор урока по 6 шагам
 └── outputs/   артефакт урока (prompt · skill · agent · MCP)
 .claude/skills/lesson-author/   скилл для написания уроков в Claude Code
 CLAUDE.md                       инструкции проекта для Claude Code
