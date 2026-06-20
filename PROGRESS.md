@@ -57,7 +57,7 @@
 
 ## Фаза 7. Agent Engineering
 
-- [ ] 7.1 Цикл reason → act → observe
+- [x] 7.1 Цикл reason → act → observe
 - [ ] 7.2 Память и планирование агента
 - [ ] 7.3 Human-in-the-loop и guardrails
 - [ ] 7.4 Где агенты ломаются
