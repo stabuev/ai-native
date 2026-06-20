@@ -70,5 +70,11 @@ def llm_policy(goal, history):
 
 Переиспользуемый каркас цикла с guardrails: подставляешь свои инструменты и policy. Дальше в фазе наращивается память и планирование (7.2), human-in-the-loop (7.3), разбор поломок (7.4).
 
+## Материалы
+
+- [ReAct: Reasoning + Acting (arXiv 2210.03629)](https://arxiv.org/abs/2210.03629) — первоисточник цикла reason→act→observe.
+- [Anthropic — Building Effective Agents](https://www.anthropic.com/research/building-effective-agents) — агент как LLM с инструментами в цикле; когда он вообще нужен.
+- [Anthropic — Writing effective tools for agents](https://www.anthropic.com/engineering/writing-tools-for-agents) — как проектировать инструменты и интерфейс агент↔среда.
+
 ---
 **Часы:** ~5 · **DoD:** `pytest code -q` зелёный (5 тестов), демо запускается, ru.md заполнен. ✅ **Урок готов** (эталон уровня «агенты»).

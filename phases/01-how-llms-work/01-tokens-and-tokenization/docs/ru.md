@@ -62,5 +62,11 @@ print(len(enc.encode(text)), "токенов")     # реальный счётч
 
 Переиспользуемый «бюджетер»: оценивает число токенов и стоимость запроса по карте цен 2026 (вход/выход) до отправки в API. Используется во всех последующих фазах, особенно в Фазе 9 (FinOps).
 
+## Материалы
+
+- [openai/tiktoken](https://github.com/openai/tiktoken) — продакшн-BPE-токенайзер (есть учебный submodule с визуализацией).
+- [karpathy/minbpe](https://github.com/karpathy/minbpe) — минимальная чистая реализация BPE для понимания механизма.
+- [Sennrich et al., 2016 — Subword Units (BPE)](https://arxiv.org/abs/1508.07909) — первоисточник BPE в NLP.
+
 ---
 **Часы:** ~3 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен.
