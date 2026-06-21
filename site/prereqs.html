@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Требования и формат — AI Native</title>
+  <meta name="description" content="Входные требования, формат Build It / Use It / Ship It и оценивание курса AI Native.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body data-page="prereqs">
+  <section class="container" style="padding-top:34px">
+    <h1 style="font-size:30px;margin:0 0 6px">Требования и формат</h1>
+    <p class="muted" style="margin:0 0 22px">Курс технический и self-paced (без видео): материалы текстовые и кодовые, акцент на самостоятельную сборку и автопроверку.</p>
+
+    <h2 class="section">Входные требования</h2>
+    <ul>
+      <li>Python на уровне написания скриптов (функции, файлы, пакеты, venv).</li>
+      <li>Базовая работа в терминале и Linux (команды, переменные окружения).</li>
+      <li>git: клонирование, коммиты, ветки.</li>
+      <li>Школьная математика; векторы и вероятности — плюс, но не обязательно.</li>
+      <li>Аккаунты и API-ключи провайдеров (заводятся в Фазе 0).</li>
+      <li><b>Не требуется:</b> GPU, опыт ML, продвинутая линейная алгебра.</li>
+    </ul>
+
+    <h2 class="section">Как устроен урок: Build It · Use It · Ship It</h2>
+    <div class="cycle">
+      <div class="card"><h3>Build It</h3><p class="muted">Механизм с нуля на stdlib, запускается офлайн на CPU без платных ключей. Есть юнит-тест.</p></div>
+      <div class="card"><h3>Use It</h3><p class="muted">То же через реальный инструмент/API — мульти-провайдер. Платный ключ помечается <code>Requires</code>.</p></div>
+      <div class="card"><h3>Ship It</h3><p class="muted">Артефакт урока в <code>outputs/</code>: prompt · skill · agent · MCP.</p></div>
+    </div>
+    <p class="muted" style="margin-top:14px">Каждый урок проходит 6 шагов: <b>MOTTO → PROBLEM → CONCEPT → BUILD IT → USE IT → SHIP IT</b> и заканчивается блоком «Материалы» с проверенными ссылками.</p>
+
+    <h2 class="section">Карта моделей</h2>
+    <table>
+      <thead><tr><th>Модель</th><th>Вход / 1M</th><th>Выход / 1M</th><th>Когда брать</th></tr></thead>
+      <tbody>
+        <tr><td>DeepSeek V4-Flash</td><td>~$0.14</td><td>~$0.28</td><td>дёшево, reasoning, open-weight (self-host)</td></tr>
+        <tr><td>Gemini Flash</td><td>~$0.30</td><td>низкая</td><td>массовые простые задачи</td></tr>
+        <tr><td>Claude Haiku 4.5</td><td>$1</td><td>$5</td><td>рутина, черновики, извлечение</td></tr>
+        <tr><td>GPT-5.x</td><td>~$2.5</td><td>~$15</td><td>универсальные задачи</td></tr>
+        <tr><td>Claude Sonnet 4.6</td><td>$3</td><td>$15</td><td>рабочая лошадка</td></tr>
+        <tr><td>Claude Opus 4.8</td><td>$5</td><td>$25</td><td>сложное рассуждение, код, анализ</td></tr>
+      </tbody>
+    </table>
+    <p class="muted">Курс провайдер-агностичен: в Use It показываем «большую тройку» (Claude / GPT / Gemini) и open-weight (DeepSeek). Цены — ориентир 2026, сверяйся с тарифами.</p>
+
+    <h2 class="section">Оценивание (без преподавателя)</h2>
+    <ul>
+      <li>Код-артефакты — самопроверка юнит-тестами (<code>pytest</code>).</li>
+      <li>Теория — квиз <code>/check-understanding</code> после ключевых фаз (1, 4, 8).</li>
+      <li>Каждая фаза закрывается рефлексией: сверка с результатом фазы.</li>
+      <li>Финал — защита Capstone: метрики «до/после» (время, качество, стоимость) и ROI.</li>
+    </ul>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="index.html">главная</a> · <a href="catalog.html">каталог</a> · <a href="glossary.html">глоссарий</a></div></footer>
+
+  <script src="header.js"></script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Каталог уроков — AI Native</title>
+  <meta name="description" content="Все 59 уроков курса AI Native по 13 фазам: статус, прогресс, поиск.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body data-page="catalog">
+  <section class="container" style="padding-top:34px">
+    <h1 style="font-size:30px;margin:0 0 6px">Каталог уроков</h1>
+    <p class="muted" style="margin:0 0 20px">13 фаз · 59 уроков. Зелёная точка — урок готов в репозитории; галочка — отметка «пройдено мной» (хранится в браузере).</p>
+    <input class="search" id="search" type="search" placeholder="Поиск по уроку, теме или MOTTO…" autocomplete="off">
+    <div id="catalog"></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="index.html">главная</a> · <a href="prereqs.html">требования</a> · <a href="glossary.html">глоссарий</a></div></footer>
+
+  <script src="data.js"></script>
+  <script src="progress.js"></script>
+  <script src="header.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
