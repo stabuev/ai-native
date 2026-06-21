@@ -69,4 +69,4 @@ print(len(enc.encode(text)), "токенов")     # реальный счётч
 - [Sennrich et al., 2016 — Subword Units (BPE)](https://arxiv.org/abs/1508.07909) — первоисточник BPE в NLP.
 
 ---
-**Часы:** ~3 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен.
+**Часы:** ~3 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов** (эталон уровня «теория»).

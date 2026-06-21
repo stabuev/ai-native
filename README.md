@@ -1,5 +1,7 @@
 # AI Native: From Scratch to Agentic Systems
 
+[![tests](https://github.com/stabuev/ai-native/actions/workflows/tests.yml/badge.svg)](https://github.com/stabuev/ai-native/actions/workflows/tests.yml)
+
 Технический курс по применению ИИ в работе — от понимания LLM до сборки агентов, MCP-серверов и экономной оркестрации моделей. Структурный каркас по образцу [ai-engineering-from-scratch](https://github.com/stabuev/ai-engineering-from-scratch): фазы → уроки → артефакты, цикл **Build It / Use It / Ship It**.
 
 - **Формат:** self-paced, без видео. Материалы текстовые и кодовые.
