@@ -21,6 +21,7 @@ class Model:
 
 # Реестр отсортирован по тиру (от дешёвого к топовому).
 REGISTRY = (
+    Model("DeepSeek V4-Flash","DeepSeek",  0.14,  0.28, 1, ("дёшево", "reasoning", "open-weight/self-host")),
     Model("Gemini Flash",     "Google",    0.30,  2.50, 1, ("массовые задачи", "классификация")),
     Model("Claude Haiku 4.5", "Anthropic", 1.00,  5.00, 2, ("рутина", "черновики", "извлечение")),
     Model("GPT-5.x",          "OpenAI",    2.50, 15.00, 3, ("универсальные задачи",)),

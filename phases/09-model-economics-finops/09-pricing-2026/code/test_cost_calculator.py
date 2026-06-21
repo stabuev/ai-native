@@ -28,5 +28,5 @@ def test_unknown_model_raises():
 
 def test_compare_sorted_cheapest_first():
     ranking = compare(PRICES, 1000, 500)
-    assert ranking[0][0] == "gemini-flash"
+    assert ranking[0][0] == "deepseek-v4-flash"   # open-weight, самый дешёвый frontier-class
     assert ranking[-1][0] == "opus-4.8"

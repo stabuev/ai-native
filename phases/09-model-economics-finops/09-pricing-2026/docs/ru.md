@@ -43,7 +43,7 @@ pytest code -q
 - **Anthropic** — pricing + prompt caching (cache read 0.1×, write 1.25×/2×) + batch −50%.
 - **OpenAI / Google** — свои тарифы и кэширование/батчи; цены меняются — держи карту цен в одном месте.
 
-⚠️ На июнь 2026: Opus 4.8 — $5/$25, Sonnet 4.6 — $3/$15, Haiku 4.5 — $1/$5 за 1M (вход/выход); сверяйся с актуальными страницами тарифов.
+⚠️ На июнь 2026: Opus 4.8 — $5/$25, Sonnet 4.6 — $3/$15, Haiku 4.5 — $1/$5 за 1M (вход/выход); **DeepSeek V4-Flash — ~$0.14/$0.28** (самый дешёвый frontier-class, open-weight). Сверяйся с актуальными страницами тарифов.
 
 ## SHIP IT
 
@@ -56,6 +56,7 @@ pytest code -q
 - [Anthropic — Pricing](https://platform.claude.com/docs/en/about-claude/pricing) — тарифы и компоненты стоимости.
 - [OpenAI — API pricing](https://openai.com/api/pricing/) — цены моделей OpenAI.
 - [Anthropic — Prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching) — как кэш режет стоимость входа.
+- [DeepSeek — Models & Pricing](https://api-docs.deepseek.com/quick_start/pricing) — open-weight модель с ценой в разы ниже закрытых.
 
 ---
 **Часы:** ~4 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

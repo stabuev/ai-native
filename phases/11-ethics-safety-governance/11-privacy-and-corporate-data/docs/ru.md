@@ -41,7 +41,9 @@ pytest code -q
 
 - **Anthropic** — commercial-данные (Claude for Work/Enterprise/API) **не идут на обучение**; consumer — по выбору; есть ZDR для enterprise, retention 30 дней для API.
 - **OpenAI / Google** — enterprise-режимы с изоляцией данных и отключением обучения.
-- Для своего пайплайна: классификация + redaction **до** отправки (как в Build It); чувствительное — только в одобренные каналы.
+- **Data residency / суверенитет** — важно, *где* физически лежат данные. Пример: hosted DeepSeek API хранит данные в Китае (отсюда госбаны и GDPR-вопросы в ряде юрисдикций) — для регулируемых данных это стоп-фактор.
+- **Open-weight как митигация** — DeepSeek/Llama/Qwen под открытой лицензией можно **запустить у себя** (self-host), и данные не покидают периметр. Решает приватность ценой инфраструктуры, не цены.
+- Для своего пайплайна: классификация + redaction **до** отправки (как в Build It); чувствительное — только в одобренные каналы или в self-host.
 
 ## SHIP IT
 
@@ -54,6 +56,7 @@ pytest code -q
 - [Anthropic — How long do you store my data](https://privacy.claude.com/en/articles/10023548-how-long-do-you-store-my-data) — retention и приватность.
 - [Anthropic — Commercial Customers (privacy)](https://privacy.claude.com/en/collections/10663361-commercial-customers) — данные бизнеса не идут на обучение.
 - [Anthropic — Updates to Consumer Terms](https://www.anthropic.com/news/updates-to-our-consumer-terms) — выбор по использованию данных.
+- [DeepSeek — Privacy Policy](https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html) — кейс data residency (хранение в КНР) и зачем open-weight self-host.
 
 ---
 **Часы:** ~3 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

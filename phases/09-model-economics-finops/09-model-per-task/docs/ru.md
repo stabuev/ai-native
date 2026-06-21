@@ -40,6 +40,7 @@ pytest code -q
 
 - **Anthropic** — Haiku для классификации/роутинга/извлечения, Sonnet как дефолт, Opus только на сложное (см. «Choosing the right model»).
 - **Кросс-провайдер** — Gemini Flash на массовое, GPT/Sonnet на универсальное, Opus на топ.
+- **Open-weight тир** — DeepSeek V4 (дёшево + reasoning через thinking-mode); подходит, когда нужен self-host ради приватности/суверенитета данных (Фаза 11).
 - Роутер можно делать дешёвой моделью или эвристикой (как наш `classify`) — главное, чтобы он сам был дешёвым.
 
 ## SHIP IT

@@ -7,6 +7,7 @@ prompt caching (кэшированный вход дешевле) и batch API (
 
 # Цены 2026, $ за 1M токенов (вход, выход). См. README, «Карта моделей и цен».
 PRICES = {
+    "deepseek-v4-flash": (0.14, 0.28),   # open-weight (MIT), reasoning через thinking-mode
     "gemini-flash": (0.30, 2.50),
     "haiku-4.5": (1.00, 5.00),
     "gpt-5.x": (2.50, 15.00),

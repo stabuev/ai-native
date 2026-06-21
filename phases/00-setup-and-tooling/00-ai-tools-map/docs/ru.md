@@ -25,10 +25,13 @@
    GPT-5.x  │ универсальные задачи
   Haiku 4.5 │ рутина, черновики, извлечение
 Gemini Flash│ массовое, классификация
+DeepSeek V4 │ дёшево + reasoning + open-weight (self-host)
             └──────────────► дёшево/быстро/массово
 ```
 
 Правило: бери **самую дешёвую модель, которая справляется**, и эскалируй вверх только когда качество не дотягивает (мост к Фазе 9 — маршрутизация и FinOps).
+
+Отдельная ось — **открытость весов**: закрытые API (Claude/GPT/Gemini) vs **open-weight** (DeepSeek под MIT, Llama, Qwen, Mistral), которые можно запустить у себя. Open-weight решает приватность/суверенитет данных (мост к Фазе 11), но self-host выгоден не по цене, а ради контроля.
 
 ## BUILD IT
 
@@ -84,6 +87,7 @@ genai.Client().models.generate_content(model="gemini-2.x-flash",
 - [Claude models overview](https://platform.claude.com/docs/en/about-claude/models/overview) — официальная карта моделей Anthropic и их сильные стороны.
 - [OpenAI API pricing](https://openai.com/api/pricing/) — актуальные цены моделей OpenAI за токены.
 - [Gemini API — models](https://ai.google.dev/gemini-api/docs) — модели Google и когда брать Flash.
+- [DeepSeek — Models & Pricing](https://api-docs.deepseek.com/quick_start/pricing) — дешёвый open-weight вариант (V4-Flash/Pro).
 
 ---
 **Часы:** ~2 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**
