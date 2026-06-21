@@ -2,24 +2,58 @@
 
 **Фаза 11 — Этика, безопасность, governance** · **Результат фазы:** Оценить риски, настроить приватность и написать политику использования ИИ.
 
-> **MOTTO.** _<допиши: идея урока в одну строку>_
+> **MOTTO.** Прежде чем отдать текст модели — пойми, что в нём: PII, секреты, тайну отдавать нельзя.
 
 ## PROBLEM
-_<конкретная боль, которую решает урок>_
+
+Самый частый инцидент с ИИ в компании — утечка данных: сотрудник вставил в чат клиентские PII, ключи или коммерческую тайну. Раз отправил во внешнюю модель — контроль потерян. Нужен автоматический привратник: классифицировать чувствительность, найти и замаскировать PII, решить, можно ли отправлять.
 
 ## CONCEPT
-_<интуиция и диаграмма>_
+
+```
+текст → detect_pii (email/phone/card/secret)
+            │
+   classify_sensitivity: public < internal < confidential < restricted
+            │
+   redact (маскировка)  +  can_send(level, порог) → да/нет
+```
+
+Правило: чем чувствительнее данные, тем строже канал. Секреты/карты — `restricted`, во внешнюю модель не уходят; PII — маскируем; публичное — можно.
 
 ## BUILD IT
-Классификация данных: что можно отдавать модели
 
-_Реализуй с нуля в `code/` (+ тест `test_*.py`)._
+Классификатор чувствительности + детектор/маскировка PII: [`code/data_classifier.py`](../code/data_classifier.py).
+
+- `detect_pii(text)` — email/phone/card/secret по regex;
+- `classify_sensitivity(text)` — уровень public…restricted;
+- `redact(text)` — маскировка; `can_send(level, max_allowed)` — решение об отправке.
+
+```bash
+python code/data_classifier.py
+pytest code -q
+```
+
+Демо: текст с почтой, телефоном и ключом → `restricted`, маскируется, во внешнюю модель не отправляется.
 
 ## USE IT
-Настройки приватности в инструментах
+
+Настройки приватности в инструментах (мульти-провайдер):
+
+- **Anthropic** — commercial-данные (Claude for Work/Enterprise/API) **не идут на обучение**; consumer — по выбору; есть ZDR для enterprise, retention 30 дней для API.
+- **OpenAI / Google** — enterprise-режимы с изоляцией данных и отключением обучения.
+- Для своего пайплайна: классификация + redaction **до** отправки (как в Build It); чувствительное — только в одобренные каналы.
 
 ## SHIP IT
-**Артефакт:** Политика обработки данных → `outputs/`
+
+**Артефакт:** Политика обработки данных → [`outputs/data-policy.md`](../outputs/data-policy.md)
+
+Политика: уровни данных, что в какие модели можно, обязательная redaction, retention. Дальше: фактчекинг (11.2), реестр рисков (11.3), общая политика ИИ (11.4).
+
+## Материалы
+
+- [Anthropic — How long do you store my data](https://privacy.claude.com/en/articles/10023548-how-long-do-you-store-my-data) — retention и приватность.
+- [Anthropic — Commercial Customers (privacy)](https://privacy.claude.com/en/collections/10663361-commercial-customers) — данные бизнеса не идут на обучение.
+- [Anthropic — Updates to Consumer Terms](https://www.anthropic.com/news/updates-to-our-consumer-terms) — выбор по использованию данных.
 
 ---
-**Часы:** ~3 · **DoD:** код запускается, тест зелёный, ru.md заполнен. _(стаб — заполнить через /lesson-author 11.1)_
+**Часы:** ~3 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**
