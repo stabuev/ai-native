@@ -49,6 +49,8 @@ pytest code -q
 
 Скиллы кросс-платформенны: тот же `SKILL.md` понимают Claude Code, Cursor и Codex.
 
+> **Врезка (2026): категории кодовых агентов.** Claude Code — терминал и глубокий контекст; Cursor — IDE и инлайн-редактирование; Codex — облачный фоновый воркер; OpenClaw / Hermes — локальные персональные платформы (подробно в уроке 4.5). У каждого свой файл-инструкция проекта: `CLAUDE.md` (Claude Code), `AGENTS.md` (Codex), `.cursorrules` (Cursor) — но формат скиллов `SKILL.md` у них общий.
+
 ## SHIP IT
 
 **Артефакт:** Персональный маршрут с оценкой часов → [`outputs/personal-route.md`](../outputs/personal-route.md)
