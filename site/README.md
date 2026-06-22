@@ -35,6 +35,8 @@ python3 -m http.server -d site 8000   # затем http://localhost:8000
 | `glossary.html` | ключевые термины со ссылками на уроки |
 | `style.css` | оформление (тёмная тема) |
 | `header.js` / `app.js` / `progress.js` | навигация, рендеринг, прогресс (localStorage) |
+| `og-image.png` | превью для соцсетей (1200×630), подключён через `og:image` на всех страницах |
+| `make_og.py` | генератор `og-image.png` (Pillow): `python site/make_og.py` |
 
 ## Деплой
 
