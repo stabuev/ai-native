@@ -88,6 +88,7 @@ genai.Client().models.generate_content(model="gemini-2.x-flash",
 - [OpenAI API pricing](https://openai.com/api/pricing/) — актуальные цены моделей OpenAI за токены.
 - [Gemini API — models](https://ai.google.dev/gemini-api/docs) — модели Google и когда брать Flash.
 - [DeepSeek — Models & Pricing](https://api-docs.deepseek.com/quick_start/pricing) — дешёвый open-weight вариант (V4-Flash/Pro).
+- [Anthropic Academy — AI Fluency (4D)](https://anthropic.skilljar.com/ai-fluency-framework-foundations) — рамка Delegation/Description/Discernment/Diligence: как осознанно работать с ИИ.
 
 ---
 **Часы:** ~2 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**
