@@ -41,3 +41,12 @@ def test_check_understanding_flags_review_lessons():
     res = run_quiz(1, answers)
     assert res["verdict"] == "повторить"
     assert "1.1" in res["review_lessons"]
+
+
+def test_check_understanding_has_key_phase_banks():
+    # квизы готовы для контрольных точек курса: фазы 1, 4, 8
+    for phase in (1, 4, 8):
+        assert phase in BANKS and len(BANKS[phase]) >= 5
+        bank = BANKS[phase]
+        res = run_quiz(phase, [q["correct"] for q in bank])
+        assert res["verdict"] == "сдано" and res["review_lessons"] == []

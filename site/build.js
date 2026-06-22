@@ -2,8 +2,9 @@
 /* build.js — генератор статичного сайта курса AI Native.
  *
  * Источник правды: PROGRESS.md (фазы, уроки, статус), phases/<...>/docs/ru.md
- * (контент уроков), README.md (часы и результат фазы). Рендерит каждый урок из
- * Markdown в HTML и пишет site/data.js (PHASES, GLOSSARY, META). Без зависимостей.
+ * (контент уроков), README.md (часы и результат фазы), glossary/terms.md (глоссарий).
+ * Рендерит каждый урок из Markdown в HTML и пишет site/data.js (PHASES, GLOSSARY, META).
+ * Без зависимостей.
  *
  * Запуск:  node site/build.js
  */
@@ -116,6 +117,23 @@ function lessonMeta(md) {
   return { motto: motto.replace(/_/g, "").trim(), hours: hours ? +hours : null };
 }
 
+// ---------- глоссарий из glossary/terms.md ----------
+function readGlossary() {
+  const p = path.join(ROOT, "glossary", "terms.md");
+  if (!fs.existsSync(p)) return [];
+  const blocks = fs.readFileSync(p, "utf8").split(/^##\s+/m).slice(1);
+  return blocks.map((b) => {
+    const lines = b.split("\n");
+    const term = lines[0].trim();
+    let says = ""; const means = [];
+    for (const l of lines.slice(1)) {
+      if (/^>\s+/.test(l)) says = l.replace(/^>\s+/, "").trim();
+      else if (l.trim() !== "") means.push(l.trim());
+    }
+    return { term, says, means: means.join(" ") };
+  }).filter((t) => t.term);
+}
+
 // ---------- сборка PHASES из PROGRESS.md ----------
 function build() {
   const lessons = findLessons();
@@ -156,36 +174,14 @@ function build() {
   return { phases, meta };
 }
 
-const GLOSSARY = [
-  ["Токен", "Кусок текста, которым оперирует модель", "Не слово и не символ: текст бьётся на токены по статистике (BPE). Платишь и считаешь бюджет в токенах (урок 1.1)."],
-  ["Контекстное окно", "Сколько токенов модель видит за раз", "Конечный бюджет: system + история + RAG + ответ. Вышло за окно — модель не видит (уроки 1.2, 4.4)."],
-  ["Inference", "Генерация ответа по одному токену", "Авторегрессивный цикл: предсказать токен → дописать → повторить. Отсюда стриминг (урок 1.2)."],
-  ["Температура", "Степень случайности генерации", "T=0 — детерминированный argmax; выше — разнообразнее. На новых Claude не настраивается (урок 1.3)."],
-  ["Галлюцинация", "Уверенно неверный ответ", "Модель предсказывает правдоподобное, а не истину. Лечится заземлением, цитатами, правом «не знаю» (уроки 1.4, 11.2)."],
-  ["Промпт", "Интерфейс к модели", "Анатомия: роль, контекст, задача, формат, примеры. Воспроизводимость измеряется eval-harness (Фаза 2)."],
-  ["Few-shot", "Примеры в промпте", "Показать 2–5 примеров вход→выход, чтобы задать формат/класс без дообучения (урок 2.2)."],
-  ["Chain-of-Thought", "Пошаговое рассуждение", "«Думай по шагам» поднимает качество на многошаговых задачах (урок 2.2)."],
-  ["RAG", "Найди нужное, потом ответь", "Retrieval + augmentation: подкладываем релевантные куски в промпт. Прод-версия — гибрид+rerank (уроки 3.3, 3.5)."],
-  ["Эмбеддинг", "Представление текста числами", "Близкое по смыслу близко в пространстве; поиск по косинусу. Учебно — TF-IDF (урок 3.3)."],
-  ["Векторное хранилище", "База для поиска по смыслу", "add/query/persist по эмбеддингам (Chroma/FAISS). Память RAG (урок 3.4)."],
-  ["MCP", "Разъём ИИ ↔ инструменты", "Model Context Protocol: host ↔ client ↔ server, tools/resources/prompts, discovery (Фаза 6)."],
-  ["Tool use", "Вызов инструментов моделью", "Function calling: модель просит инструмент по схеме, получает результат в цикле (уроки 6.1, 7.1)."],
-  ["Агент", "Цикл reason → act → observe", "Не модель, а петля: policy выбирает действие, инструмент исполняет, результат в историю (урок 7.1)."],
-  ["Guardrail", "Заслон перед действием", "Валидация + подтверждение опасного (human-in-the-loop) до исполнения (урок 7.3)."],
-  ["Оркестратор", "Раздаёт роли субагентам", "Lead декомпозирует задачу, субагенты выполняют, lead сводит (Фаза 8)."],
-  ["A2A", "Протокол агент ↔ агент", "Карточки возможностей (discovery) + конверт задачи. Дополняет MCP (урок 8.2)."],
-  ["FinOps", "Экономика моделей", "Маршрутизация по сложности, каскад+кэш+batch, учёт и ROI «до/после» (Фаза 9)."],
-  ["Observability", "Видимость работы агента", "Вложенные spans на шаги (как OpenTelemetry): где узкое место и где упало (урок 10.4)."],
-  ["Prompt injection", "Перехват через данные", "Скрытая инструкция в данных/RAG (OWASP LLM01). Защита: allowlist, sanitize, человек (урок 11.5)."],
-];
-
 function main() {
   const { phases, meta } = build();
+  const glossary = readGlossary();
   const out = "/* СГЕНЕРИРОВАНО build.js — не редактировать вручную. */\n"
     + "const META = " + JSON.stringify(meta, null, 2) + ";\n"
     + "const PHASES = " + JSON.stringify(phases) + ";\n"
-    + "const GLOSSARY = " + JSON.stringify(GLOSSARY.map(([term, says, means]) => ({ term, says, means }))) + ";\n";
+    + "const GLOSSARY = " + JSON.stringify(glossary) + ";\n";
   fs.writeFileSync(path.join(__dirname, "data.js"), out);
-  console.log(`data.js: фаз ${meta.phases}, уроков ${meta.lessons} (готово ${meta.done}), ~${meta.hours} ч`);
+  console.log(`data.js: фаз ${meta.phases}, уроков ${meta.lessons} (готово ${meta.done}), ~${meta.hours} ч, глоссарий ${glossary.length}`);
 }
 main();

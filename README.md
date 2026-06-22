@@ -377,3 +377,14 @@ CLAUDE.md                       инструкции проекта для Claud
 - Google AI (Grow with Google) — https://grow.google/ai
 - Microsoft Learn (AI) — https://learn.microsoft.com/training/ai
 - Model Context Protocol — https://modelcontextprotocol.io
+
+---
+
+## Документы проекта
+
+- [ROADMAP.md](ROADMAP.md) — дорожная карта (13 фаз · 59 уроков).
+- [CONTRIBUTING.md](CONTRIBUTING.md) — как добавлять уроки + Definition of Done.
+- [LESSON_TEMPLATE.md](LESSON_TEMPLATE.md) — шаблон урока (6 шагов).
+- [glossary/terms.md](glossary/terms.md) — глоссарий терминов.
+- [site/](site/) — статичный сайт курса (`node site/build.js`).
+- [LICENSE](LICENSE) — MIT.
