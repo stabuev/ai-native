@@ -33,6 +33,8 @@ DeepSeek V4 │ дёшево + reasoning + open-weight (self-host)
 
 Отдельная ось — **открытость весов**: закрытые API (Claude/GPT/Gemini) vs **open-weight** (DeepSeek под MIT, Llama, Qwen, Mistral), которые можно запустить у себя. Open-weight решает приватность/суверенитет данных (мост к Фазе 11), но self-host выгоден не по цене, а ради контроля.
 
+> **Врезка: AI Fluency (4D).** Чтобы работать с ИИ осознанно, держи в голове четыре компетенции (Anthropic Academy): **Delegation** — что отдать ИИ, а что оставить человеку; **Description** — как описать задачу и поведение модели; **Discernment** — как критически оценить результат; **Diligence** — ответственность, прозрачность, проверка. Эти 4D проходят сквозь весь курс: Description ≈ Фаза 2, Discernment ≈ eval (2.5) и фактчекинг (11.2), Diligence ≈ guardrails (7.3) и этика (Фаза 11). См. [глоссарий](../../../glossary/terms.md) и курс AI Fluency.
+
 ## BUILD IT
 
 Реестр моделей и рекомендатор «задача → модель» с нуля, без зависимостей: [`code/model_map.py`](../code/model_map.py).
