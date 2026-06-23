@@ -72,6 +72,9 @@ function renderLesson() {
   document.title = `${l.id} ${l.title} — AI Native`;
   art.innerHTML = l.html;
 
+  const mount = art.querySelector(".quiz-section[data-lesson]");
+  if (mount && l.quiz && l.quiz.questions) renderQuiz(mount, l.quiz);
+
   const done = Progress.isDone(l.id);
   $("#lessonbar").innerHTML =
     `<span class="badge">Урок <b>${idx + 1}</b> из ${list.length}</span>
@@ -88,6 +91,48 @@ function renderLesson() {
   $("#prevnext").innerHTML =
     (prev ? `<a href="lesson.html?id=${prev.id}"><small>← ${prev.id}</small>${prev.title}</a>` : "<span></span>")
     + (next ? `<a href="lesson.html?id=${next.id}" style="text-align:right"><small>${next.id} →</small>${next.title}</a>` : "<span></span>");
+}
+
+/* ---------- КВИЗ УРОКА (монтируется в тег {{quiz}}) ---------- */
+function renderQuiz(mount, quiz) {
+  const qs = quiz.questions || [];
+  mount.innerHTML =
+    `<div class="quiz-head">🧠 Мини-квиз · ${qs.length} вопрос(ов)</div>` +
+    qs.map((q, qi) =>
+      `<div class="quiz-q" data-correct="${q.correct}">
+         <div class="quiz-qt">${qi + 1}. ${q.question}</div>
+         <div class="quiz-opts">` +
+        q.options.map((o, oi) => `<button class="quiz-opt" data-oi="${oi}">${o}</button>`).join("") +
+        `</div>
+         <div class="quiz-exp" hidden>${q.explanation || ""}</div>
+       </div>`).join("") +
+    `<div class="quiz-score" hidden></div>`;
+
+  let answered = 0, correct = 0;
+  const scoreEl = mount.querySelector(".quiz-score");
+  mount.querySelectorAll(".quiz-q").forEach((qel) => {
+    const corr = +qel.dataset.correct;
+    qel.querySelectorAll(".quiz-opt").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (qel.classList.contains("done")) return;        // отвечаем один раз
+        qel.classList.add("done");
+        const oi = +btn.dataset.oi;
+        qel.querySelectorAll(".quiz-opt").forEach((b, i) => {
+          b.disabled = true;
+          if (i === corr) b.classList.add("ok");
+        });
+        if (oi !== corr) btn.classList.add("bad"); else correct++;
+        qel.querySelector(".quiz-exp").hidden = false;
+        answered++;
+        if (answered === qs.length) {
+          const pct = Math.round(correct / qs.length * 100);
+          scoreEl.hidden = false;
+          scoreEl.textContent =
+            `Результат: ${correct} из ${qs.length} (${pct}%) — ${pct >= 80 ? "сдано ✓" : "стоит повторить урок"}`;
+        }
+      });
+    });
+  });
 }
 
 /* ---------- ГЛОССАРИЙ ---------- */

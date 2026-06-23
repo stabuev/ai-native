@@ -95,7 +95,14 @@ function findLessons() {
       if (!fs.existsSync(doc)) continue;
       const md = fs.readFileSync(doc, "utf8");
       const m = md.match(/^#\s+Урок\s+([\d.]+)\s*·\s*(.+)$/m);
-      if (m) map[m[1]] = { dir: `phases/${phase}/${lesson}`, md, title: m[2].trim() };
+      if (m) {
+        let quiz = null;
+        const qp = path.join(pdir, lesson, "quiz.json");
+        if (fs.existsSync(qp)) {
+          try { quiz = JSON.parse(fs.readFileSync(qp, "utf8")); } catch (e) { /* invalid quiz.json */ }
+        }
+        map[m[1]] = { dir: `phases/${phase}/${lesson}`, md, title: m[2].trim(), quiz };
+      }
     }
   }
   return map;
@@ -155,10 +162,13 @@ function build() {
       const done = ls[1] === "x";
       const L = lessons[id];
       const lm = L ? lessonMeta(L.md) : { motto: "", hours: null };
+      const quiz = L ? L.quiz : null;
+      let html = L ? mdToHtml(L.md) : "";
+      // тег-якорь {{quiz}} → монтажный блок (заполняется на клиенте из quiz)
+      html = html.replace("<p>{{quiz}}</p>", quiz ? `<div class="quiz-section" data-lesson="${id}"></div>` : "");
       cur.lessons.push({
         id, title: ls[3].trim(), status: done ? "done" : "planned",
-        motto: lm.motto, hours: lm.hours, dir: L ? L.dir : null,
-        html: L ? mdToHtml(L.md) : "",
+        motto: lm.motto, hours: lm.hours, dir: L ? L.dir : null, quiz, html,
       });
     }
   }

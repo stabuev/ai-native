@@ -112,6 +112,23 @@ article.lesson hr { border: 0; border-top: 1px solid var(--line); margin: 22px 0
 .term h3 { margin: 0 0 2px; font-size: 17px; }
 .term .says { color: var(--accent); font-size: 14px; margin-bottom: 6px; }
 
+/* квиз урока (монтируется в тег {{quiz}}) */
+.quiz-section { background: var(--bg3); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; margin: 14px 0; }
+.quiz-head { font-weight: 700; color: var(--accent); margin-bottom: 14px; }
+.quiz-q { margin-bottom: 18px; }
+.quiz-q:last-of-type { margin-bottom: 8px; }
+.quiz-qt { font-weight: 600; margin-bottom: 10px; }
+.quiz-opts { display: flex; flex-direction: column; gap: 8px; }
+.quiz-opt { text-align: left; background: var(--bg2); color: var(--fg); border: 1px solid var(--line);
+  border-radius: 8px; padding: 10px 14px; font-size: 15px; cursor: pointer; font-family: inherit; }
+.quiz-opt:hover:not(:disabled) { border-color: var(--accent); }
+.quiz-opt:disabled { cursor: default; opacity: .9; }
+.quiz-opt.ok { border-color: var(--done); background: rgba(63, 185, 80, .15); color: #b7f0bf; }
+.quiz-opt.bad { border-color: #f06f6f; background: rgba(240, 111, 111, .14); color: #ffc4c4; }
+.quiz-exp { margin-top: 9px; padding: 9px 12px; font-size: 14px; color: var(--muted);
+  border-left: 3px solid var(--accent); background: var(--bg2); border-radius: 0 8px 8px 0; }
+.quiz-score { margin-top: 12px; font-weight: 700; color: var(--fg); }
+
 footer.site { border-top: 1px solid var(--line); color: var(--muted); font-size: 14px;
   padding: 26px 0; margin-top: 30px; }
 
