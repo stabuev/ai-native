@@ -1,8 +1,9 @@
-"""Карта моделей ИИ 2026 + рекомендатор «задача → модель» — Build It для урока 0.1.
+"""Карта моделей ИИ 2026 + калькулятор стоимости запроса — Build It для урока 0.1.
 
 Без внешних зависимостей. Хранит реестр моделей (провайдер, цена входа/выхода,
-тир, сильные стороны) и подбирает модель под профиль задачи. Идея урока: не
-«одна модель на всё», а осознанный выбор по сложности, объёму, цене и задержке.
+тир, сильные стороны) и считает, во что обойдётся вызов, ДО отправки в API.
+Идея урока: цена запроса предсказуема — её можно прикинуть заранее и не платить
+за топ-модель там, где справится дешёвая. (Автоматический выбор модели — тема Фазы 9.)
 
 Цены — ориентировочные, $ за 1M токенов (см. README, «Карта моделей и цен 2026»).
 """
@@ -14,7 +15,7 @@ class Model:
     name: str
     provider: str
     price_in: float      # $ за 1M входных токенов
-    price_out: float     # $ за 1M выходных токенов (для Flash ≈, выход дешёвый)
+    price_out: float     # $ за 1M выходных токенов
     tier: int            # 1 — дешёвый/быстрый ... 4 — топ
     good_for: tuple      # короткие подсказки «когда брать»
 
@@ -30,16 +31,8 @@ REGISTRY = (
 )
 
 
-@dataclass
-class Task:
-    """Профиль задачи, по которому подбираем модель."""
-    complexity: str = "medium"   # "low" | "medium" | "high"
-    high_volume: bool = False    # массовая обработка (тысячи вызовов)
-    needs_code: bool = False     # генерация/разбор кода
-    budget_sensitive: bool = False
-
-
 def by_name(name):
+    """Найти модель в реестре по имени."""
     for m in REGISTRY:
         if m.name == name:
             return m
@@ -51,24 +44,11 @@ def estimate_cost(model, n_in, n_out):
     return n_in / 1e6 * model.price_in + n_out / 1e6 * model.price_out
 
 
-def recommend(task):
-    """Подобрать модель под профиль задачи. Возвращает (Model, обоснование)."""
-    if task.complexity == "high" or task.needs_code:
-        return by_name("Claude Opus 4.8"), "высокая сложность/код → топ-модель"
-    if task.high_volume or task.budget_sensitive:
-        if task.complexity == "low":
-            return by_name("Gemini Flash"), "массовость + простота → самый дешёвый тир"
-        return by_name("Claude Haiku 4.5"), "массовость/экономия → дешёвый тир"
-    return by_name("Claude Sonnet 4.6"), "обычная задача → рабочая лошадка"
-
-
 if __name__ == "__main__":
-    samples = [
-        Task(complexity="low", high_volume=True),
-        Task(complexity="medium"),
-        Task(complexity="high", needs_code=True),
-    ]
-    for t in samples:
-        m, why = recommend(t)
-        cost = estimate_cost(m, 1000, 500)
-        print(f"{t}\n  → {m.name} ({m.provider}) | {why} | ~${cost:.4f} за вызов 1k/500\n")
+    # «Будет ли дорого?» — прикидка ДО отправки запроса.
+    # Пример из урока: классификация одного тикета ~200 токенов вход / ~20 выход.
+    n_in, n_out, batch = 200, 20, 10_000
+    print(f"Один тикет: {n_in} ток. вход / {n_out} ток. выход · партия {batch:,}\n")
+    for m in REGISTRY:
+        per_call = estimate_cost(m, n_in, n_out)
+        print(f"  {m.name:18} ${per_call:.5f}/вызов   ${per_call * batch:7.2f} на {batch:,}")

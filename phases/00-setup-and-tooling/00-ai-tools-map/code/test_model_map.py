@@ -1,39 +1,21 @@
-from model_map import REGISTRY, Task, recommend, estimate_cost, by_name
+from model_map import by_name, estimate_cost
 
 
-def test_registry_sorted_and_priced():
-    tiers = [m.tier for m in REGISTRY]
-    assert tiers == sorted(tiers)                       # от дешёвого к топовому
-    assert all(m.price_in > 0 and m.price_out > 0 for m in REGISTRY)
+def test_estimate_cost_math():
+    flash = by_name("Gemini Flash")
+    # 200 вход × 0.30 + 20 выход × 2.50, цены за 1M токенов
+    assert abs(estimate_cost(flash, 200, 20) - 0.00011) < 1e-9
 
 
-def test_high_complexity_goes_top():
-    m, _ = recommend(Task(complexity="high"))
-    assert m.tier == 4
-    m2, _ = recommend(Task(needs_code=True))
-    assert m2.name == "Claude Opus 4.8"
+def test_batch_10k_tickets():
+    # разметка 10 000 тикетов (200/20 токенов на вызов): Flash ≈ $1.10, Opus = $15
+    flash = estimate_cost(by_name("Gemini Flash"), 200, 20) * 10_000
+    opus = estimate_cost(by_name("Claude Opus 4.8"), 200, 20) * 10_000
+    assert abs(flash - 1.10) < 1e-6
+    assert abs(opus - 15.00) < 1e-6
 
 
-def test_cheap_for_simple_mass():
-    m, _ = recommend(Task(complexity="low", high_volume=True))
-    assert m.name == "Gemini Flash"
-    assert m.tier == 1
-
-
-def test_default_is_workhorse():
-    m, _ = recommend(Task())
-    assert m.name == "Claude Sonnet 4.6"
-
-
-def test_cost_monotonic_by_tier():
+def test_pricier_tier_costs_more():
     cheap = estimate_cost(by_name("Claude Haiku 4.5"), 1000, 500)
     pricey = estimate_cost(by_name("Claude Opus 4.8"), 1000, 500)
     assert pricey > cheap
-
-
-def test_deepseek_is_open_weight_cheap_option():
-    ds = by_name("DeepSeek V4-Flash")
-    assert ds.tier == 1
-    assert "open-weight/self-host" in ds.good_for
-    # дешевле дефолтной рабочей лошадки
-    assert estimate_cost(ds, 1000, 500) < estimate_cost(by_name("Claude Sonnet 4.6"), 1000, 500)

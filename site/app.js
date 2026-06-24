@@ -1,6 +1,44 @@
 /* app.js — рендеринг страниц из data.js (PHASES, META, GLOSSARY) + личный прогресс. */
-const REPO = "https://github.com/stabuev/ai-native";
 const $ = (sel, root = document) => root.querySelector(sel);
+
+/* кнопка «Копировать» на встроенных блоках кода (делегирование, переживает ре-рендер) */
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest(".copy-btn");
+  if (!btn) return;
+  e.preventDefault();                      // не сворачивать <details> при клике в summary
+  const code = btn.closest(".filebox")?.querySelector("pre code");
+  if (!code || !navigator.clipboard) return;
+  flashCopy(btn, code.textContent, "Скопировано ✓");
+});
+
+/* кнопка «Скопировать промпт для ИИ» — собирает промпт из задания (BUILD IT) + тестов */
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest(".ai-prompt-btn");
+  if (!btn || !navigator.clipboard) return;
+  e.preventDefault();
+  const bi = [...document.querySelectorAll("#lesson h2")].find((h) => h.textContent.trim() === "BUILD IT");
+  let task = "";
+  if (bi) {
+    const buf = [];
+    for (let n = bi.nextElementSibling; n && n.tagName !== "H2"; n = n.nextElementSibling) buf.push(n.innerText);
+    task = buf.join("\n").trim();
+  }
+  const tests = [...document.querySelectorAll('.lesson-files .filebox[data-test="1"] pre code')]
+    .map((c) => c.textContent).join("\n\n");
+  const prompt =
+    "Реши учебное упражнение. Напиши код на Python (только стандартная библиотека), который проходит "
+    + "приведённые тесты pytest. Тесты не меняй. Верни только код файла, без пояснений.\n\n"
+    + "# Задание\n" + task + "\n\n# Тесты (pytest)\n" + tests;
+  flashCopy(btn, prompt, "Промпт скопирован ✓");
+});
+
+function flashCopy(btn, text, okLabel) {
+  navigator.clipboard.writeText(text).then(() => {
+    const old = btn.textContent;
+    btn.textContent = okLabel; btn.classList.add("copied");
+    setTimeout(() => { btn.textContent = old; btn.classList.remove("copied"); }, 1600);
+  });
+}
 const flat = () => PHASES.flatMap((p) => p.lessons.map((l) => ({ ...l, phase: p })));
 
 function statusDot(s) { return `<span class="dot ${s}" title="${s === "done" ? "урок готов" : "запланирован"}"></span>`; }
@@ -81,7 +119,7 @@ function renderLesson() {
      <span class="badge">Фаза <b>${l.phase.id}</b> · ${l.phase.name}</span>
      ${l.hours ? `<span class="badge">~${l.hours} ч</span>` : ""}
      <button class="btn ${done ? "ghost" : ""}" id="markBtn">${done ? "✓ Пройдено" : "Отметить пройденным"}</button>
-     ${l.dir ? `<a class="badge" href="${REPO}/tree/main/${l.dir}" target="_blank" rel="noopener">Исходник на GitHub ↗</a>` : ""}`;
+     ${l.html && l.html.includes('id="lesson-files"') ? `<a class="badge" href="#lesson-files">Код и артефакт ↓</a>` : ""}`;
   $("#markBtn").addEventListener("click", () => {
     Progress.toggle(l.id);
     renderLesson();

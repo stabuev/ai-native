@@ -18,15 +18,50 @@ const PHASES_DIR = path.join(ROOT, "phases");
 function esc(s) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
+
+// текстовые файлы, которые встраиваем в страницу урока (Build It / Ship It)
+const TEXT_EXT = new Set(["py", "md", "txt", "json", "toml", "yaml", "yml", "cfg", "ini", "sh", "js", "ts", "csv", "mk"]);
+function isTextFile(p) {
+  const b = path.basename(p).toLowerCase();
+  if (TEXT_EXT.has(path.extname(p).slice(1).toLowerCase())) return true;
+  if (b.startsWith(".env")) return true;
+  return ["dockerfile", "makefile", "requirements.txt", ".gitignore"].includes(b);
+}
+function slugify(s) {
+  return "f-" + s.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase();
+}
+function walkText(absDir, acc) {
+  for (const e of fs.readdirSync(absDir, { withFileTypes: true })) {
+    if (["__pycache__", ".git", "node_modules"].includes(e.name)) continue;
+    const p = path.join(absDir, e.name);
+    if (e.isDirectory()) walkText(p, acc);
+    else if (isTextFile(p)) acc.push(p);
+  }
+  return acc;
+}
+
+// контекст текущего урока для inline(): переписывание относительных ссылок + сбор файлов
+let CTX = null;
+
 function inline(text) {
-  return text.split("`").map((part, i) => {
-    if (i % 2 === 1) return "<code>" + esc(part) + "</code>";
-    let s = esc(part);
-    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g,
-      (m, t, u) => `<a href="${u}" target="_blank" rel="noopener">${t}</a>`);
-    s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-    return s;
-  }).join("");
+  // 1. защищаем код-спаны плейсхолдерами, чтобы ссылки [`code`](url) не ломались по backtick
+  const codes = [];
+  let s = text.replace(/`([^`]+)`/g, (m, c) => {
+    codes.push("<code>" + esc(c) + "</code>");
+    return "" + (codes.length - 1) + "";
+  });
+  s = esc(s);
+  // 2. ссылки; относительные пути переписываем через CTX (на якоря встроенных файлов / site-страницы)
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (m, t, u) => {
+    let href = u, blank = /^https?:/i.test(u);
+    if (CTX) { const r = CTX.rewrite(u); href = r.href; blank = r.blank; }
+    const attr = blank ? ' target="_blank" rel="noopener"' : "";
+    return `<a href="${href}"${attr}>${t}</a>`;
+  });
+  // 3. жирный
+  s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  // 4. восстанавливаем код-спаны
+  return s.replace(/(\d+)/g, (m, i) => codes[+i]);
 }
 function splitRow(line) {
   const cells = line.split("|").map((s) => s.trim());
@@ -141,6 +176,107 @@ function readGlossary() {
   }).filter((t) => t.term);
 }
 
+// ---------- встраивание кода и артефакта урока на страницу ----------
+// Контекст урока: переписывает относительные ссылки (Build It/Ship It/глоссарий)
+// и собирает текстовые файлы урока, чтобы подшить их прямо в HTML страницы.
+function makeLessonCtx(lessonAbsDir) {
+  const docsAbsDir = path.join(lessonAbsDir, "docs");
+  const collected = new Map(); // abs -> { slug, label, content, kind }
+  const labelFor = (abs) => {
+    const rel = path.relative(lessonAbsDir, abs);
+    return rel.startsWith("..") ? path.relative(ROOT, abs) : rel;
+  };
+  const kindFor = (abs) => {
+    const rel = path.relative(lessonAbsDir, abs);
+    if (rel === "code" || rel.startsWith("code" + path.sep)) return "code";
+    if (rel === "outputs" || rel.startsWith("outputs" + path.sep)) return "output";
+    return "other";
+  };
+  const addFile = (abs) => {
+    if (collected.has(abs)) return collected.get(abs).slug;
+    let content;
+    try { content = fs.readFileSync(abs, "utf8"); } catch (e) { return null; }
+    const slug = slugify(path.relative(ROOT, abs));
+    collected.set(abs, { slug, label: labelFor(abs), content, kind: kindFor(abs) });
+    return slug;
+  };
+  const addDir = (abs) => {
+    let first = null;
+    for (const f of walkText(abs, []).sort()) { const s = addFile(f); if (!first) first = s; }
+    return first;
+  };
+  // предварительно встраиваем весь код и артефакты урока (даже если на них нет ссылки)
+  for (const sub of ["code", "outputs"]) {
+    const d = path.join(lessonAbsDir, sub);
+    if (fs.existsSync(d) && fs.statSync(d).isDirectory()) addDir(d);
+  }
+  const rewrite = (href) => {
+    const h = href.trim();
+    if (/^(https?:|mailto:|#)/i.test(h)) return { href: h, blank: /^https?:/i.test(h) };
+    // tail без ведущих ../ ./ — в docs относительная глубина местами off-by-one,
+    // поэтому переанкориваем хвост, а не доверяем числу «../».
+    const tail = h.replace(/[#?].*$/, "").replace(/^(\.\.?\/)+/, "");
+    if (/(^|\/)glossary\/terms\.md$/.test(tail)) return { href: "glossary.html", blank: false };
+    for (const abs of [path.join(lessonAbsDir, tail), path.join(ROOT, tail)]) {   // урок, затем корень репо
+      if (!abs.startsWith(ROOT) || !fs.existsSync(abs)) continue;
+      const st = fs.statSync(abs);
+      if (st.isDirectory()) return { href: "#" + (addDir(abs) || "lesson-files"), blank: false };
+      if (isTextFile(abs)) { const s = addFile(abs); return { href: s ? "#" + s : h, blank: false }; }
+    }
+    return { href: h, blank: true };                                              // site-страницы (prereqs.html и т.п.), прочее — как есть
+  };
+  return { rewrite, collected };
+}
+
+// Подшивает собранные файлы как сворачиваемые блоки перед футером урока (последний <hr>).
+function injectFiles(html, collected, exercise) {
+  if (!collected || !collected.size) return html;
+  const items = [...collected.values()];
+  const isTest = (it) => it.kind === "code" && /(^|\/)test_|_test\.py$/.test(it.label);
+  // В режиме упражнения: тесты — это ТЗ (раскрыты), эталонное решение — под катом.
+  const groups = exercise
+    ? [
+        { pick: (it) => isTest(it),                       title: "Тесты — это твоё ТЗ", collapsed: false, note: "" },
+        { pick: (it) => it.kind === "code" && !isTest(it), title: "Эталонное решение (Build It)", collapsed: true,
+          note: "Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься." },
+        { pick: (it) => it.kind === "output",             title: "Артефакт (Ship It)", collapsed: false, note: "" },
+        { pick: (it) => it.kind === "other",              title: "Связанные файлы", collapsed: false, note: "" },
+      ]
+    : [
+        { pick: (it) => it.kind === "code",   title: "Код урока (Build It)", collapsed: false, note: "" },
+        { pick: (it) => it.kind === "output", title: "Артефакт (Ship It)",   collapsed: false, note: "" },
+        { pick: (it) => it.kind === "other",  title: "Связанные файлы",       collapsed: false, note: "" },
+      ];
+  let sec = `<section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2>`
+    + `<p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p>`;
+  if (exercise) {
+    sec += `<div class="three-ways"><h3>Три пути пройти упражнение</h3><ol>`
+      + `<li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li>`
+      + `<li><strong>Подсмотри эталон</strong> ниже, если застрял.</li>`
+      + `<li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. `
+      + `<button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li>`
+      + `</ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: `
+      + `Delegation · Description · Discernment · Diligence.</p></div>`;
+  }
+  for (const g of groups) {
+    const part = items.filter(g.pick);
+    if (!part.length) continue;
+    sec += `<h3>${g.title}</h3>`;
+    if (g.note) sec += `<p class="muted files-note">${g.note}</p>`;
+    for (const it of part) {
+      const hint = g.collapsed ? `<span class="reveal">Показать решение</span>` : "";
+      const testAttr = isTest(it) ? ` data-test="1"` : "";
+      sec += `<details class="filebox" id="${it.slug}"${g.collapsed ? "" : " open"}${testAttr}>`
+        + `<summary><span class="fname">${esc(it.label)}</span>${hint}`
+        + `<button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary>`
+        + `<pre><code>${esc(it.content)}</code></pre></details>`;
+    }
+  }
+  sec += `</section>`;
+  const at = html.lastIndexOf("<hr>");
+  return at >= 0 ? html.slice(0, at) + sec + html.slice(at) : html + sec;
+}
+
 // ---------- сборка PHASES из PROGRESS.md ----------
 function build() {
   const lessons = findLessons();
@@ -163,7 +299,14 @@ function build() {
       const L = lessons[id];
       const lm = L ? lessonMeta(L.md) : { motto: "", hours: null };
       const quiz = L ? L.quiz : null;
-      let html = L ? mdToHtml(L.md) : "";
+      let html = "";
+      if (L) {
+        CTX = makeLessonCtx(path.join(ROOT, L.dir));
+        html = mdToHtml(L.md);
+        const exercise = /<!--\s*exercise\s*-->/.test(L.md);   // урок-упражнение: эталон под катом
+        html = injectFiles(html, CTX.collected, exercise);
+        CTX = null;
+      }
       // тег-якорь {{quiz}} → монтажный блок (заполняется на клиенте из quiz)
       html = html.replace("<p>{{quiz}}</p>", quiz ? `<div class="quiz-section" data-lesson="${id}"></div>` : "");
       cur.lessons.push({
