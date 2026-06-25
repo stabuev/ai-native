@@ -2,8 +2,9 @@
 
 Без зависимостей. `scaffold_lesson()` создаёт дерево урока
 phases/<NN>/<lesson>/{code,docs,outputs} и стаб docs/ru.md по 6 шагам.
-`validate_lesson()` проверяет, что урок отвечает Definition of Done (структура,
-все секции в ru.md, тест test_*.py, непустой артефакт в outputs/).
+`validate_lesson()` проверяет Definition of Done: docs/ru.md со всеми секциями и
+непустой артефакт в outputs/. Код и тест — по необходимости урока (концептуальные
+уроки бывают без code/), поэтому их отсутствие нарушением не считается.
 """
 from __future__ import annotations
 from pathlib import Path
@@ -13,25 +14,25 @@ SECTIONS = ("PROBLEM", "CONCEPT", "BUILD IT", "USE IT", "SHIP IT")
 
 STUB_TEMPLATE = """# Урок {id} · {title}
 
-> **MOTTO.** _<идея урока в одну строку>_
+> **MOTTO.** <идея урока в одну строку>
 
 ## PROBLEM
-_<конкретная боль>_
+<конкретная боль>
 
 ## CONCEPT
-_<интуиция, диаграмма>_
+<интуиция, диаграмма>
 
 ## BUILD IT
-_<механизм с нуля в `code/` + тест>_
+<механизм с нуля в `code/`, если урок его требует; иначе обзорно>
 
 ## USE IT
-_<то же через реальный инструмент/API>_
+<то же через реальный инструмент/API>
 
 ## SHIP IT
-**Артефакт:** _<из колонки Ship It>_ → `outputs/`
+**Артефакт:** <из колонки Ship It> → `outputs/`
 
 ---
-**DoD:** код запускается, тест зелёный, ru.md заполнен. _(стаб — заполнить через /lesson-author {id})_
+**DoD:** ru.md заполнен, артефакт на месте (код запускается и тест зелёный — если урок их предполагает). (стаб — заполнить через /lesson-author {id})
 """
 
 
@@ -60,12 +61,8 @@ def validate_lesson(lesson_path) -> list[str]:
             if sec not in text:
                 problems.append(f"в docs/ru.md нет секции {sec}")
 
-    code = base / "code"
-    py = list(code.glob("*.py")) if code.exists() else []
-    if not py:
-        problems.append("нет кода в code/")
-    elif not any(p.name.startswith("test_") for p in py):
-        problems.append("нет теста test_*.py в code/")
+    # Код и тест не обязательны: концептуальные уроки бывают без code/,
+    # а тест добавляем там, где он осмыслен (см. CLAUDE.md, Definition of Done).
 
     out = base / "outputs"
     artifacts = [p for p in out.glob("*") if p.name != ".gitkeep"] if out.exists() else []
