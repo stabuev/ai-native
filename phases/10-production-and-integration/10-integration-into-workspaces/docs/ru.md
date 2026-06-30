@@ -83,7 +83,7 @@ python code/integration.py # демо: ИИ работает / упал → fall
 
 Встраивание через рабочие пакеты (мульти-провайдер):
 
-- **Microsoft 365 Copilot** — ИИ в Word / Excel / Outlook / Teams поверх Microsoft Graph: модель видит только то, к чему у пользователя есть доступ (наследует права, не обходит их).
+- **Microsoft 365 Copilot** — ИИ в Word / Excel / Outlook / Teams поверх Microsoft Graph внутри Microsoft 365 service boundary: по доке Microsoft, «Copilot can't access data that the user doesn't have permission to access» — доступ всегда ограничен правами вошедшего пользователя, плюс соблюдаются Conditional Access и MFA, а данные не покидают периметр тенанта.
 - **Gemini for Google Workspace** — ИИ в Gmail / Docs / Sheets; данные организации не уходят на обучение и не покидают периметр.
 - **Свой инструмент через API** — AI-шаг за фича-флагом и fallback (как в Build It), с мониторингом (10.2) и телеметрией (10.3).
 
