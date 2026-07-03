@@ -121,6 +121,7 @@ col.query(query_texts=["вопрос"], n_results=5)
 - [pgvector](https://github.com/pgvector/pgvector) — векторный поиск прямо в Postgres (часто «отдельная vector-БД не нужна»); индексы HNSW/IVFFlat.
 - [ANN-Benchmarks](https://ann-benchmarks.com/) — сравнение ANN-библиотек: recall vs скорость, как выбирать параметры индекса.
 - [TDS — «What's The Story With HNSW?» (2025)](https://towardsdatascience.com/whats-the-story-with-hnsw-d1402c37a44e/) — визуальный разбор слоёв HNSW (Medium/TDS).
+- [qdrant/qdrant](https://github.com/qdrant/qdrant) — открытое векторное хранилище на Rust: фильтрованный HNSW, квантизация (сжатие векторов до 32×) — в проде рядом с Chroma/FAISS/pgvector.
 
 ---
 **Часы:** ~4 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

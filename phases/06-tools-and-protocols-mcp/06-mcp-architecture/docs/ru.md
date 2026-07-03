@@ -105,7 +105,7 @@ python code/mcp_architecture.py # демо: discovery + вызов tool/resource
 
 ## USE IT
 
-Готовых MCP-серверов уже десятки — подключаешь без единой строчки кода (мульти-платформа):
+Готовых MCP-серверов уже тысячи (официальный реестр — в Материалах) — подключаешь без единой строчки кода (мульти-платформа):
 
 - **Claude Desktop / Claude Code** — добавить сервер в конфиг MCP; клиент сам сделает discovery и покажет инструменты.
 - **Cursor и другие host'ы** — тот же протокол, свои настройки подключения.
@@ -142,6 +142,7 @@ python code/mcp_architecture.py # демо: discovery + вызов tool/resource
 - [DeepLearning.AI — MCP: Build Rich-Context AI Apps with Anthropic](https://learn.deeplearning.ai/courses/mcp-build-rich-context-ai-apps-with-anthropic) — бесплатный курс от Anthropic (Elie Schoppik): архитектура → свой сервер → подключение.
 - [MCP Blog — One Year of MCP (релиз спеки 2025-11-25)](https://blog.modelcontextprotocol.io/posts/2025-11-25-first-mcp-anniversary/) — что нового и куда развивается протокол (Tasks и др.).
 - [Rick Hightower — Claude and MCP: Content-Based Tool Integration (Medium)](https://medium.com/@richardhightower/anthropics-claude-and-mcp-a-deep-dive-into-content-based-tool-integration-dcf18cba82f0) — техническое сравнение подходов (Claude как content items vs OpenAI function calls).
+- [Официальный MCP Registry](https://registry.modelcontextprotocol.io/) — каноничный каталог MCP-серверов (тысячи записей: метаданные, неймспейсы, provenance) — discovery-инфраструктура всей экосистемы.
 
 ---
 **Часы:** ~4 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

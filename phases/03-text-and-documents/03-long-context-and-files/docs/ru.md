@@ -122,6 +122,7 @@ final = map_reduce(chunks, summarize, reduce_)
 - [Anthropic — Contextual Retrieval (2024)](https://www.anthropic.com/news/contextual-retrieval) — приём: дописывать к каждому чанку поясняющий контекст перед эмбеддингом и BM25 (мост chunking → retrieval).
 - [Chroma — Context Rot (2025)](https://www.trychroma.com/research/context-rot) — свежий эмпирический разбор: как деградирует качество с ростом числа токенов на входе.
 - [Anthropic — PDF support](https://platform.claude.com/docs/en/build-with-claude/pdf-support) — работа с файлами: PDF (текст + таблицы и графики), Files API, чанкинг больших документов.
+- [Hsieh et al., 2024 — RULER (NVIDIA)](https://arxiv.org/abs/2404.06654) — каноничный бенчмарк «заявленное окно ≠ эффективное»: почти все модели проходят needle-in-a-haystack, но сыпятся на задачах сложнее с ростом длины.
 
 ---
 **Часы:** ~4 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

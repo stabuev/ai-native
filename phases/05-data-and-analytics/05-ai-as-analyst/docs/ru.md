@@ -154,6 +154,7 @@ df.groupby("region")["amount"].sum().sort_values(ascending=False)   # = aggregat
 - [PandasAI](https://github.com/sinaptik-ai/pandas-ai) — естественный язык поверх dataframe: «pandas под управлением промпта» (v3.0.0, 2025).
 - [Anthropic — Use Claude for Excel](https://support.claude.com/en/articles/12650343-use-claude-for-excel) — свежая интеграция: читать, править и создавать таблицы прямо в Excel (CSV/Excel в Claude).
 - [TDS — My First Exploratory Data Analysis with ChatGPT](https://towardsdatascience.com/my-first-exploratory-data-analysis-with-chatgpt-7f100005efdc/) — практический разбор EDA через чат (Medium).
+- [DABstep (Adyen × Hugging Face, 2025)](https://arxiv.org/abs/2506.23719) — бенчмарк агентов-аналитиков на 450+ реальных задачах: лучшие модели решают лишь ~15% сложных — числовой аргумент, почему результат ИИ-аналитика надо проверять (5.5).
 
 ---
 **Часы:** ~4 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

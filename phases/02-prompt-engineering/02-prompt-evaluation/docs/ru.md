@@ -129,6 +129,8 @@ print(compare({"claude": v_claude, "openai": v_openai, "gemini": v_gemini}, CASE
 - [DeepEval](https://github.com/confident-ai/deepeval) — «Pytest для LLM»: юнит-тесты и метрики (G-Eval, relevancy, faithfulness).
 - [Hamel Husain — Your AI Product Needs Evals (2024)](https://hamel.dev/blog/posts/evals/) — влиятельный практический разбор: зачем и как строить evals.
 - [Zheng et al., 2023 — Judging LLM-as-a-Judge (MT-Bench)](https://arxiv.org/abs/2306.05685) — первоисточник подхода «модель-судья».
+- [OpenAI — Evaluation best practices](https://developers.openai.com/api/docs/guides/evaluation-best-practices) — официальный гайд второго провайдера: непрерывные evals на каждое изменение, микс прод-данных и экспертных кейсов, «модель лучше различает, чем генерирует».
+- [Liu et al., 2023 — G-Eval](https://arxiv.org/abs/2303.16634) — классика LLM-судьи по рубрике: модель сперва генерирует шаги оценки, потом оценивает по ним (пара к MT-Bench).
 
 ---
 **Часы:** ~3 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

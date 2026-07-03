@@ -162,6 +162,7 @@ genai.Client().models.generate_content(model="gemini-2.x-flash", contents="Пр�
 - [Fan et al., 2018 — Hierarchical Neural Story Generation](https://arxiv.org/abs/1805.04833) — первоисточник top-k (дополняет Holtzman по top-p).
 - [Thinking Machines — Defeating Nondeterminism in LLM Inference](https://thinkingmachines.ai/blog/defeating-nondeterminism-in-llm-inference/) — почему вывод недетерминирован даже при temperature=0 (батчинг, неассоциативность float) и как это чинят batch-invariant ядрами.
 - [Maxime Labonne — Decoding Strategies in LLMs](https://huggingface.co/blog/mlabonne/decoding-strategies) — глубокий разбор greedy / beam / top-k / nucleus и роли температуры, с кодом.
+- [Nguyen et al., 2024 — Min-p Sampling (ICLR 2025 oral)](https://arxiv.org/abs/2407.01082) — следующий шаг после top-p: порог обрезки масштабируется от уверенности модели (доли top-токена); принят в Hugging Face Transformers и vLLM.
 
 ---
 **Часы:** ~3 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

@@ -119,6 +119,7 @@ print(len(enc.encode(text)), "токенов")     # реальный счётч
 - [Tiktokenizer](https://tiktokenizer.vercel.app/) — интерактивно: вставляешь текст, видишь разбиение на токены по разным моделям.
 - [Andrej Karpathy — «Let's build the GPT Tokenizer»](https://www.youtube.com/watch?v=zduSFxRajkE) — 2-часовая сборка токенайзера с нуля (в духе Build It) + разбор «квирков» токенизации.
 - [Hugging Face — LLM Course, гл. 6 (Tokenizers)](https://huggingface.co/learn/llm-course/chapter6/1) — практический разбор: обучить свой токенайзер, сравнение BPE / WordPiece / Unigram.
+- [Sebastian Raschka — BPE from scratch (2025)](https://sebastianraschka.com/blog/2025/bpe-from-scratch.html) — пошаговая сборка BPE-токенайзера кодом, ровно в духе Build It, со сверкой против tiktoken.
 
 ---
 **Часы:** ~3 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов** (эталон уровня «теория»).

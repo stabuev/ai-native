@@ -84,11 +84,11 @@ competency_report({промпты:✓, агенты:✓, MCP:✗}) → {done: 2,
 - **`before_after(before, after, lower_is_better)`** — по каждому ключу вернуть `{before, after, improvement_pct}` (dict'ы before/after — метрика→значение, lower_is_better — метрика→bool).
 - **`competency_report(checked)`** — по dict'у компетенция→bool вернуть `{done, total, missing}`.
 
-**Готово, когда** все тесты в `test_metrics.py` зелёные — они проверяют: время −70% и стоимость −80% (lower); качество +25.7% (higher); ROI 5.5; структура `before_after`; `competency_report` считает done/total и собирает missing.
+**Готово, когда** все тесты в `test_metrics.py` зелёные — они проверяют: улучшение времени 70% и стоимости 80% (lower); качества 25.7% (higher); ROI 5.5; структура `before_after`; `competency_report` считает done/total и собирает missing.
 
 ```bash
 pytest code -q          # красное → реализуй metrics.py → зелёное
-python code/metrics.py  # демо: −70% / −80% / +25.7% и ROI 5.5
+python code/metrics.py  # демо: +70% / +80% / +25.7% улучшения и ROI 5.5
 ```
 
 **Подсказка.** Знак улучшения решает флаг `lower_is_better` — не хардкодь одно направление. В `before_after` бери направление через `lower_is_better.get(k, True)` (по умолчанию «меньше = лучше»).
@@ -133,6 +133,7 @@ python code/metrics.py  # демо: −70% / −80% / +25.7% и ROI 5.5
 - [Agility at Scale — Proving ROI: Measuring the Business Value of Enterprise AI](https://agility-at-scale.com/implementing/roi-of-enterprise-ai/) — практика: baseline «до», отделение эффекта AI от внешних факторов, Realized/Trending/Capability ROI, payback-период.
 - [Cole Nussbaumer Knaflic — Storytelling with Data](https://www.storytellingwithdata.com/books) — как показать результат, а не вывалить числа: контекст, убрать шум, направить внимание, before/after-makeover'ы (навык демо и защиты).
 - [AlterSquare — Why AI Projects Stall After the First Demo](https://altersquare.medium.com/why-ai-projects-stall-after-the-first-demo-3aa0b639e684) — «science-experiment trap», показывай реальный рабочий процесс, а не вау-демо; про переход демо → прод.
+- [MIT NANDA — The GenAI Divide: State of AI in Business 2025](https://www.aigl.blog/state-of-ai-in-business-2025/) — громкое исследование: 95% корпоративных GenAI-пилотов не показывают измеримого ROI — сильнейший аргумент, почему защита строится на числах «до/после».
 
 ---
 **Часы:** ~10 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**
