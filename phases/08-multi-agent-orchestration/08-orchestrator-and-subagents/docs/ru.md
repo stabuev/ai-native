@@ -67,7 +67,7 @@ register: researcher, writer, reviewer
 
 **Задание: собери оркестратор** — реестр субагентов-ролей, делегирование и сборку плана. Только стандартная библиотека, без сети.
 
-> **Перед запуском.** Работай в своей папке курса (`ai-native/8.1-orchestrator/`). Нужен только **Python 3** (для теста ещё `pytest`).
+> **Перед запуском.** Работай в своей папке курса (`ai-native/8.1-orchestrator/`), а файлы урока клади в подпапку `code/` (как в 0.1). Нужен только **Python 3** (для теста ещё `pytest`).
 
 Создай файл `orchestrator.py` с классом `Orchestrator`:
 
@@ -121,6 +121,13 @@ Agent teams на практике (мульти-провайдер):
 - [Anthropic — How we built our multi-agent research system](https://www.anthropic.com/engineering/multi-agent-research-system) — orchestrator-worker на практике, цифры и принципы.
 - [Anthropic — Building Effective Agents](https://www.anthropic.com/research/building-effective-agents) — паттерн orchestrator-workers.
 - [Claude Code — Subagents](https://code.claude.com/docs/en/sub-agents) — изолированные субагенты с ролями.
+- [Wu et al., 2023 — AutoGen](https://arxiv.org/abs/2308.08155) — мульти-агентные «разговоры» как инфраструктура (seminal, Microsoft).
+- [Hong et al., 2023 — MetaGPT](https://arxiv.org/abs/2308.00352) — ролевые агенты по SOP, assembly-line (ровно «оркестратор раздаёт роли»).
+- [OpenAI Agents SDK — Agent orchestration](https://openai.github.io/openai-agents-python/multi_agent/) — два паттерна: manager (agents-as-tools) vs handoffs.
+- [LangGraph — Multi-agent (supervisor)](https://docs.langchain.com/oss/python/langchain/multi-agent) — центральный супервайзер раздаёт задачи воркерам через handoff-инструменты.
+- [OpenAI Swarm](https://github.com/openai/swarm) — образовательный лёгкий фреймворк оркестрации: примитивы Agents + handoffs/routines.
+- [DeepLearning.AI — AI Agentic Design Patterns with AutoGen](https://www.deeplearning.ai/courses/ai-agentic-design-patterns-with-autogen) — курс по мульти-агентным паттернам от авторов AutoGen.
+- [Johni D. Marangon — Building Multi-Agents with OpenAI Agent SDK (Medium)](https://medium.com/@johnidouglasmarangon/building-multi-agents-with-openai-agent-sdk-8dd9ecfb7663) — практический разбор оркестрации.
 
 ---
 **Часы:** ~5 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

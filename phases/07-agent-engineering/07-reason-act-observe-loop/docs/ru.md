@@ -65,7 +65,7 @@
 
 **Задание: собери цикл агента reason→act→observe с нуля** — с guardrails. Только стандартная библиотека, без сети и без LLM.
 
-> **Перед запуском.** Работай в своей папке курса (`ai-native/7.1-agent-loop/`). Нужен только **Python 3** (для теста ещё `pytest`).
+> **Перед запуском.** Работай в своей папке курса (`ai-native/7.1-agent-loop/`), а файлы урока клади в подпапку `code/` (как в 0.1). Нужен только **Python 3** (для теста ещё `pytest`).
 
 Создай файл `agent_loop.py`:
 
@@ -130,6 +130,12 @@ def llm_policy(goal, history):
 - [ReAct: Reasoning + Acting (arXiv 2210.03629)](https://arxiv.org/abs/2210.03629) — первоисточник цикла reason→act→observe.
 - [Anthropic — Building Effective Agents](https://www.anthropic.com/research/building-effective-agents) — агент как LLM с инструментами в цикле; когда он вообще нужен.
 - [Anthropic — Writing effective tools for agents](https://www.anthropic.com/engineering/writing-tools-for-agents) — как проектировать инструменты и интерфейс агент↔среда.
+- [Thorsten Ball — How to Build an Agent](https://ampcode.com/how-to-build-an-agent) — агент-редактор кода в ~300 строк на голом reason-act цикле (ровно Build It урока).
+- [Anthropic — Building agents with the Claude Agent SDK](https://www.anthropic.com/engineering/building-agents-with-the-claude-agent-sdk) — «тот же агент через фреймворк»: встроенный agent loop, tools, контекст.
+- [Lilian Weng — LLM Powered Autonomous Agents (2023)](https://lilianweng.github.io/posts/2023-06-23-agent/) — каноничная карта агента: planning + memory + tool use.
+- [Chip Huyen — Agents (эссе, 2025)](https://huyenchip.com/2025/01/07/agents.html) — обстоятельный разбор: планирование, инструменты, типичные провалы.
+- [12-factor agents (HumanLayer)](https://github.com/humanlayer/12-factor-agents) — принципы надёжных агентов для прода (own your context / loop / prompts).
+- [Hugging Face — AI Agents Course](https://huggingface.co/learn/agents-course/en/unit0/introduction) — бесплатный курс с практикой (smolagents / LangGraph / LlamaIndex), финал на GAIA.
 
 ---
 **Часы:** ~5 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

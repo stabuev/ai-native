@@ -30,7 +30,7 @@ prompt ─► [ контекстное окно ] ─► P(next token) ─► ar
 
 Два следствия: **(1)** ответ строится пошагово — поэтому возможен стриминг (токены отдаются по мере генерации); **(2)** окно конечно — длинная история выходит за него, и модель её больше не «видит» (отсюда бюджет контекста).
 
-**Reasoning-модели** (Claude extended thinking, DeepSeek V4 thinking-mode, o-серия) добавляют к циклу скрытый этап «размышления»: перед ответом генерируются *thinking*-токены, за которые ты тоже платишь. Это поднимает качество на сложных задачах, но увеличивает и стоимость, и задержку — учитывай в бюджете (Фаза 9).
+**Reasoning-модели** (Claude extended thinking, DeepSeek V4 thinking-mode, o-серия OpenAI) добавляют к циклу скрытый этап «размышления»: перед ответом генерируются **thinking**-токены, за которые ты тоже платишь. Это поднимает качество на сложных задачах, но увеличивает и стоимость, и задержку — учитывай в бюджете (Фаза 9).
 
 ## РАЗБОР ПО ШАГАМ
 
@@ -57,7 +57,7 @@ next_token_probs(["b","c"]) → { "x": 2/3, "y": 1/3 }
 
 **Задание: собери учебный inference-loop** — стандартная библиотека, без сети. Модель игрушечная (n-граммы с backoff), но механизм тот же, что у LLM: предсказать токен → дописать → повторить, глядя на контекстное окно.
 
-> **Перед запуском.** Работай в своей папке курса (`ai-native/1.2-context-window/`). Нужен только **Python 3**, всё офлайн (для теста ещё `pytest`).
+> **Перед запуском.** Работай в своей папке курса (`ai-native/1.2-context-window/`), а файлы урока клади в подпапку `code/` (как в 0.1). Нужен только **Python 3**, всё офлайн (для теста ещё `pytest`).
 
 Создай `inference_loop.py` и реализуй три функции:
 
@@ -125,9 +125,16 @@ for chunk in genai.Client().models.generate_content_stream(
 
 ## Материалы
 
-- [Anthropic — Streaming Messages](https://docs.anthropic.com/en/api/messages-streaming) — как устроен стриминг (SSE, `text_delta`) у Claude.
+- [Anthropic — Streaming Messages](https://platform.claude.com/docs/en/api/messages-streaming) — как устроен стриминг (SSE, `text_delta`) у Claude.
 - [OpenAI — Streaming responses](https://platform.openai.com/docs/guides/streaming-responses) — стриминг в Responses API.
 - [Gemini — Quickstart](https://ai.google.dev/gemini-api/docs/quickstart) — первый вызов и стриминг у Google.
+- [Anthropic — Context windows](https://platform.claude.com/docs/en/build-with-claude/context-windows) — что такое контекст-окно, «context rot» и как считаются токены запроса.
+- [Jay Alammar — The Illustrated GPT-2](https://jalammar.github.io/illustrated-gpt2/) — визуально, как работает авторегрессионная генерация (тот самый inference-loop).
+- [Andrej Karpathy — «Deep Dive into LLMs like ChatGPT»](https://www.youtube.com/watch?v=7xTGNNLPyMI) — весь стек (претрейн → токенизация → inference) с ментальными моделями.
+- [Jay Alammar — The Illustrated Transformer](https://jalammar.github.io/illustrated-transformer/) — визуальный разбор attention и архитектуры трансформера.
+- [3Blue1Brown — «Attention in transformers»](https://www.3blue1brown.com/lessons/attention/) — лучший визуальный разбор attention: Q/K/V, маскирование, контекст-сайз.
+- [Anthropic — Effective context engineering for AI agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) — «context rot» и как курировать содержимое контекст-окна.
+- [Lilian Weng — Large Transformer Model Inference Optimization](https://lilianweng.github.io/posts/2023-01-10-inference-optimization/) — как реально работает inference: KV-cache, сложность attention.
 
 ---
 **Часы:** ~3 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

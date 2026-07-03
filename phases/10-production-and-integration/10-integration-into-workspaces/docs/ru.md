@@ -60,7 +60,7 @@
 
 **Задание: собери безопасную обёртку AI-шага** — фича-флаг + graceful fallback. Только стандартная библиотека, без сети.
 
-> **Перед запуском.** Работай в своей папке курса (`ai-native/10.1-integration/`). Нужен только **Python 3** (для теста ещё `pytest`).
+> **Перед запуском.** Работай в своей папке курса (`ai-native/10.1-integration/`), а файлы урока клади в подпапку `code/` (как в 0.1). Нужен только **Python 3** (для теста ещё `pytest`).
 
 Создай файл `integration.py`:
 
@@ -116,6 +116,13 @@ python code/integration.py # демо: ИИ работает / упал → fall
 - [Microsoft 365 Copilot — Overview](https://learn.microsoft.com/en-us/copilot/microsoft-365/microsoft-365-copilot-overview) — ИИ в рабочих приложениях.
 - [Gemini for Google Workspace](https://support.google.com/docs/answer/13952129) — ИИ в Gmail/Docs/Sheets.
 - [Microsoft 365 Copilot — архитектура](https://learn.microsoft.com/en-us/microsoft-365/copilot/microsoft-365-copilot-architecture) — данные, доступ, границы безопасности.
+- [Anthropic — Claude for Enterprise](https://www.anthropic.com/product/enterprise) — третий провайдер: governance, интеграции (GitHub/Google Workspace), MCP-коннекторы, SSO/audit.
+- [OpenAI — ChatGPT Enterprise](https://openai.com/index/introducing-chatgpt-enterprise/) — ещё провайдер: seats, admin-консоль, SSO, коннекторы (SharePoint/GitHub/Drive/Box); не тренируют на данных.
+- [Google Workspace — Gemini (admin deploy)](https://knowledge.workspace.google.com/admin/gemini/google-workspace-with-gemini) — включение и управление Gemini по OU, лицензии, granular-контроль.
+- [Microsoft — Copilot Studio](https://learn.microsoft.com/en-us/microsoft-copilot-studio/) — low-code сборка/расширение агентов в M365 (MCP, коннекторы) — встраивание под свои процессы.
+- [Microsoft — Cloud Adoption Framework: AI strategy](https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ai/strategy) — авторитетный фреймворк стратегии и внедрения (для «плана интеграции»).
+- [Stanford — The Enterprise AI Playbook (51 внедрений, 2026)](https://digitaleconomy.stanford.edu/publication/enterprise-ai-playbook/) — эмпирика: 77% сложностей «невидимые» (change management, данные, процессы), модель часто взаимозаменяема, 61% успешных имели прошлый провал.
+- [Change Management for AI Adoption: 2026 Playbook](https://www.digitalapplied.com/blog/change-management-ai-adoption-2026-overcoming-resistance-playbook) — человеческая сторона: лидерство, чемпионы, quick wins, метрики результата (а не «числа запросов»).
 
 ---
 **Часы:** ~4 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

@@ -67,7 +67,7 @@ remember("value", 2)
 
 **Задание: собери агента с планом и памятью** поверх идеи цикла из 7.1. Только стандартная библиотека, без сети.
 
-> **Перед запуском.** Работай в своей папке курса (`ai-native/7.2-planner-agent/`). Нужен только **Python 3** (для теста ещё `pytest`).
+> **Перед запуском.** Работай в своей папке курса (`ai-native/7.2-planner-agent/`), а файлы урока клади в подпапку `code/` (как в 0.1). Нужен только **Python 3** (для теста ещё `pytest`).
 
 Создай файл `planner_agent.py`:
 
@@ -122,6 +122,11 @@ python code/planner_agent.py # демо: (2+3)*4-1 = 19, видны шаги и 
 - [Anthropic — Agent SDK overview](https://platform.claude.com/docs/en/agent-sdk/overview) — agent loop, контекст, инструменты.
 - [Anthropic — Memory tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool) — память агента между сессиями.
 - [ReAct (arXiv 2210.03629)](https://arxiv.org/abs/2210.03629) — рассуждение и действие как основа агента.
+- [Huang et al., 2024 — Understanding the Planning of LLM Agents: A Survey](https://arxiv.org/abs/2402.02716) — таксономия планирования: декомпозиция, выбор плана, рефлексия, память.
+- [LangGraph — Persistence](https://docs.langchain.com/oss/python/langgraph/persistence) — checkpointers (короткая память) + stores (длинная), resume / HITL / fault-tolerance в реальном фреймворке.
+- [Anthropic — Effective harnesses for long-running agents (2025)](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents) — многосессионность, трекинг прогресса, восстановление контекста.
+- [DeepLearning.AI — Agentic AI (Andrew Ng, 2025)](https://www.deeplearning.ai/courses/agentic-ai) — паттерны Reflection / Tool / Planning / Multi-agent на чистом Python.
+- [Towards AI — Memory Management in LangGraph (Medium)](https://pub.towardsai.net/understanding-memory-management-in-langgraph-a-practical-guide-for-genai-students-b3642c9ea7e1) — практический разбор памяти агента.
 
 ---
 **Часы:** ~5 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

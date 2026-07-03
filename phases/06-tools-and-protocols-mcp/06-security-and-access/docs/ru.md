@@ -64,7 +64,7 @@ MCP-сервер исполняет то, что просит модель. Но
 
 **Задание: собери слой контроля доступа** — principal, проверку прав, защиту пути и обёртку с аудитом. Только стандартная библиотека (`posixpath`), без сети.
 
-> **Перед запуском.** Работай в своей папке курса (`ai-native/6.5-security/`). Нужен только **Python 3** (для теста ещё `pytest`).
+> **Перед запуском.** Работай в своей папке курса (`ai-native/6.5-security/`), а файлы урока клади в подпапку `code/` (как в 0.1). Нужен только **Python 3** (для теста ещё `pytest`).
 
 Создай файл `mcp_security.py`: множество `WRITE_TOOLS` (инструменты, меняющие состояние: `write_file`, `delete_file`, `send_email`…) и:
 
@@ -121,6 +121,12 @@ python code/mcp_security.py # демо: ok / нет инструмента / pat
 - [MCP — Security best practices](https://modelcontextprotocol.io/docs/tutorials/security/security_best_practices) — риски и меры (в т.ч. confused deputy).
 - [MCP — Authorization (spec)](https://modelcontextprotocol.io/specification/2025-11-25) — OAuth 2.1, Resource Indicators.
 - [Red Hat — MCP security risks and controls](https://www.redhat.com/en/blog/model-context-protocol-mcp-understanding-security-risks-and-controls) — практический разбор рисков.
+- [Simon Willison — The lethal trifecta](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/) — каноничная рамка: приватные данные + недоверенный контент + внешняя связь = утечка.
+- [Invariant Labs — MCP Tool Poisoning Attacks](https://invariantlabs.ai/blog/mcp-security-notification-tool-poisoning-attacks) — скрытые инструкции в описаниях инструментов, невидимые пользователю.
+- [Damn Vulnerable MCP Server](https://github.com/harishsg993010/damn-vulnerable-MCP-server) — hands-on лаба: 10 challenge'ей (prompt injection, tool poisoning, rug pull, token theft, RCE) для обучения.
+- [OWASP GenAI — Secure MCP Server Development](https://genai.owasp.org/resource/a-practical-guide-for-secure-mcp-server-development/) — авторитетный фреймворк: auth, валидация, изоляция сессий, hardened deployment.
+- [TDS — The MCP Security Survival Guide (Medium)](https://towardsdatascience.com/the-mcp-security-survival-guide-best-practices-pitfalls-and-real-world-lessons/) — модели угроз и реальные инциденты.
+- [Microsoft — mcp-for-beginners: Security](https://github.com/microsoft/mcp-for-beginners/blob/main/02-Security/mcp-security-best-practices-2025.md) — открытая программа под спеку 2025-11-25.
 
 ---
 **Часы:** ~4 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

@@ -3,7 +3,7 @@
 **Фаза 5 — Данные и аналитика** · **Результат фазы:** Анализировать данные с ИИ, делать NL→SQL и автоотчёты с валидацией результатов.
 <!-- exercise -->
 
-**Requires (только для USE IT):** платный API-ключ одного из провайдеров. BUILD IT работает офлайн, без ключей и без сети (sqlite из stdlib).
+**Requires (только для USE IT):** платный API-ключ одного из провайдеров. BUILD IT работает офлайн, без ключей и без сети (sqlite входит в Python, ставить не нужно).
 
 **В 5.1–5.2 данные жили в файле. Реальные данные живут в БД.** «Спроси базу на человеческом языке» (NL→SQL) звучит мечтой — но без одной важной детали превращается в лотерею с цифрами. Эта деталь — **семантический слой**.
 
@@ -65,7 +65,7 @@ table:      sales
 
 **Задание: собери NL→SQL поверх семантического слоя** + исполнение на sqlite. Только стандартная библиотека (`sqlite3`), без сети.
 
-> **Перед запуском.** Работай в своей папке курса (`ai-native/5.3-nl-to-sql/`). Нужен только **Python 3** (для теста ещё `pytest`).
+> **Перед запуском.** Работай в своей папке курса (`ai-native/5.3-nl-to-sql/`), а файлы урока клади в подпапку `code/` (как в 0.1). Нужен только **Python 3** (для теста ещё `pytest`).
 
 Создай файл `nl_to_sql.py`:
 
@@ -126,6 +126,11 @@ sql = Anthropic().messages.create(model="claude-sonnet-4-6", max_tokens=200,
 - [dbt — Semantic Layer](https://docs.getdbt.com/docs/use-dbt-semantic-layer/dbt-sl) — определять метрики централизованно.
 - [dbt — Creating metrics](https://docs.getdbt.com/docs/build/metrics-overview) — типы метрик и их описание.
 - [Yu et al., 2018 — Spider (text-to-SQL)](https://arxiv.org/abs/1809.08887) — бенчмарк и сложность NL→SQL.
+- [Li et al., 2023 — BIRD benchmark](https://arxiv.org/abs/2305.03111) — современный text-to-SQL бенчмарк (наследник Spider): грязные БД, 12.7k пар, ChatGPT ~40% против 93% у человека.
+- [WrenAI](https://github.com/Canner/WrenAI) — open-source GenBI / text-to-SQL движок с context-слоем (22+ источника данных).
+- [Cube](https://cube.dev/) — универсальный семантический слой: метрики один раз → BI, приложения, AI (альтернатива dbt).
+- [Uber — QueryGPT](https://www.uber.com/en/blog/query-gpt/) — продакшн NL→SQL: мульти-агент, «workspaces», −70% времени (140k часов/мес).
+- [Eladio Rincón — Building Modern Text-to-SQL Systems (Medium)](https://erincon01.medium.com/building-modern-text-to-sql-systems-with-genai-lessons-from-linkedin-uber-and-open-source-69c829fa16cf) — уроки LinkedIn / Uber / open-source.
 
 ---
 **Часы:** ~4 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

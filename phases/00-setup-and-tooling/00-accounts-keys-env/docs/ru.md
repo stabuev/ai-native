@@ -71,7 +71,7 @@ OPENAI_API_KEY=your-key-here
 
 **Задание: собери офлайн-валидатор окружения** — стандартная библиотека, без сети. Он ловит типовые ошибки `.env` до первого запроса.
 
-> **Перед запуском.** Работай в своей папке курса из урока 0.1 — заведи вложенную `ai-native/0.2-accounts-keys-env/`. Для BUILD IT нужен только **Python 3**, всё офлайн и без ключей (для теста ещё `pytest`). Настоящие ключи и venv заведём ниже, в USE IT.
+> **Перед запуском.** Как в уроке 0.1: заведи папку урока с подпапкой `code/` внутри — `ai-native/0.2-accounts-keys-env/code/` — и клади туда решение и скопированный тест. Нужен только **Python 3** и `pytest` (`pip install pytest`, если ещё не ставил), всё офлайн и без ключей. Настоящие ключи и venv заведём ниже, в USE IT.
 
 Создай `envcheck.py`. Константы бери готовыми (это просто данные):
 
@@ -142,6 +142,8 @@ print(genai.Client().models.generate_content(
     model="gemini-2.x-flash", contents="Привет одним словом").text)
 ```
 
+> **Про имена моделей в примерах.** По всему курсу `gpt-5.x` и `gemini-2.x-flash` — **условные** обозначения поколений, а не готовые ID: подставляй точный идентификатор из доки провайдера (у Claude ID пишем полностью, напр. `claude-haiku-4-5`). Модели и их ID обновляются — сверяйся с актуальным списком. И ещё: код в USE IT дальше по курсу — это **наброски** (импорты как здесь, данные подставляешь свои), а рабочий с тестами код всегда в BUILD IT.
+
 Для проверки бери **самую дешёвую** модель (Haiku / Flash) — первый запрос не должен стоить дорого (правило из урока 0.1).
 
 ## SHIP IT
@@ -165,10 +167,16 @@ Drop-in набор для любого проекта курса: `.env.example`
 
 ## Материалы
 
-- [Anthropic — Quickstart](https://docs.anthropic.com/en/docs/quickstart) — ключ и первый запрос к Claude.
+- [Anthropic — Quickstart](https://platform.claude.com/docs/en/docs/quickstart) — ключ и первый запрос к Claude.
 - [OpenAI — Developer quickstart](https://platform.openai.com/docs/quickstart) — ключ и первый запрос к OpenAI.
 - [Gemini — API keys](https://ai.google.dev/gemini-api/docs/api-key) — получение и хранение ключа Google.
 - [python-dotenv](https://pypi.org/project/python-dotenv/) — загрузка `.env` в окружение (12-factor).
+- [OpenAI — Best Practices for API Key Safety](https://help.openai.com/en/articles/5112595-best-practices-for-api-key-safety) — не хардкодить ключ, держать в env-переменных, не коммитить, ротация, project-keys.
+- [The Twelve-Factor App — III. Config](https://12factor.net/config) — канонический первоисточник: конфиг и секреты хранятся в переменных окружения, а не в коде.
+- [Python Packaging — venv & pip guide](https://packaging.python.org/en/latest/guides/installing-using-pip-and-virtual-environments/) — официальный гайд по созданию виртуального окружения и установке пакетов.
+- [GitHub — About secret scanning](https://docs.github.com/en/code-security/secret-scanning/introduction/about-secret-scanning) — автодетект утёкших ключей/токенов и push protection, чтобы не закоммитить секрет.
+- [Anthropic — Python SDK](https://github.com/anthropics/anthropic-sdk-python) — официальный клиент, `client.messages.create()` для первого запроса к Claude.
+- [OpenAI — Python SDK](https://github.com/openai/openai-python) — официальный клиент для первого запроса к OpenAI (мульти-провайдер).
 
 ---
 **Часы:** ~2 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

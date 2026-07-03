@@ -66,7 +66,7 @@ check_usecase(sends_pii=False, external=True,  automated_decision=False)
 
 **Задание: собери валидатор политики ИИ и проверку кейса.** Только стандартная библиотека, без сети.
 
-> **Перед запуском.** Работай в своей папке курса (`ai-native/11.4-ai-usage-policy/`). Нужен только **Python 3** (для теста ещё `pytest`).
+> **Перед запуском.** Работай в своей папке курса (`ai-native/11.4-ai-usage-policy/`), а файлы урока клади в подпапку `code/` (как в 0.1). Нужен только **Python 3** (для теста ещё `pytest`).
 
 Создай файл `policy.py`: кортеж `REQUIRED_SECTIONS` (5 обязательных разделов политики) и:
 
@@ -118,6 +118,12 @@ python code/policy.py   # демо: неполная политика + 3 кей
 - [NIST — AI Risk Management Framework](https://www.nist.gov/itl/ai-risk-management-framework) — функция Govern и управление рисками на всём жизненном цикле.
 - [ISO/IEC 42001:2023 — AI management systems](https://www.iso.org/standard/42001) — сертифицируемая система управления ИИ (AIMS), цикл PDCA.
 - [EU AI Act — high-level summary](https://artificialintelligenceact.eu/high-level-summary/) — уровни риска, обязанности и поэтапное вступление в силу.
+- [NIST — AI 600-1 Generative AI Profile](https://www.nist.gov/publications/artificial-intelligence-risk-management-framework-generative-artificial-intelligence) — 12 GenAI-рисков + 200+ действий по Govern/Map/Measure/Manage (операционализация RMF).
+- [Google — Secure AI Framework (SAIF)](https://saif.google/) — 6 элементов безопасности AI на весь жизненный цикл (security-раздел политики).
+- [Microsoft — Responsible AI Standard v2](https://cdn-dynmedia-1.microsoft.com/is/content/microsoftcorp/microsoft/final/en-us/microsoft-brand/documents/Microsoft-Responsible-AI-Standard-General-Requirements.pdf) — 17 целей по 6 принципам + impact assessments (шаблон корп-стандарта).
+- [SANS — AI Acceptable Use Standard](https://www.sans.org/information-security-policy/artificial-intelligence-acceptable-use-standard) — готовый шаблон политики использования ИИ (ровно артефакт урока).
+- [Anthropic — Usage Policy](https://www.anthropic.com/legal/aup) — реальный AUP провайдера: Universal Usage Standards, High-Risk Use Cases, правила для агентов и MCP.
+- [EU AI Act — GPAI Code of Practice (2025)](https://digital-strategy.ec.europa.eu/en/policies/contents-code-gpai) — добровольный кодекс, 3 главы: Transparency, Copyright, Safety & Security.
 
 ---
 **Часы:** ~3 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

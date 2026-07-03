@@ -63,7 +63,7 @@ severity_counts → {high: 1, medium: 2}
 
 **Задание: собери аудит вывода на риски** — bias, overclaim, copyright + сводка. Только стандартная библиотека (`re`), без сети.
 
-> **Перед запуском.** Работай в своей папке курса (`ai-native/11.3-risk-audit/`). Нужен только **Python 3** (для теста ещё `pytest`).
+> **Перед запуском.** Работай в своей папке курса (`ai-native/11.3-risk-audit/`), а файлы урока клади в подпапку `code/` (как в 0.1). Нужен только **Python 3** (для теста ещё `pytest`).
 
 Создай файл `risk_audit.py`: списки `BIAS_TERMS` (стереотипные обобщения), `OVERCLAIM` (абсолютные обещания: «гарантирую», «100% точно», «всегда прав»…) и:
 
@@ -115,6 +115,13 @@ python code/risk_audit.py # демо: bias(high) + overclaim(medium) + copyright
 - [NIST — AI Risk Management Framework](https://www.nist.gov/itl/ai-risk-management-framework) — Govern/Map/Measure/Manage.
 - [EU AI Act — regulatory framework](https://digital-strategy.ec.europa.eu/en/policies/regulatory-framework-ai) — риск-ориентированное регулирование.
 - [EU AI Act — high-level summary](https://artificialintelligenceact.eu/high-level-summary/) — уровни риска и обязанности.
+- [Mehrabi et al., 2021 — A Survey on Bias and Fairness in ML](https://arxiv.org/abs/1908.09635) — таксономия источников предвзятости (данные vs алгоритм) и метрик справедливости (ACM CSUR).
+- [Gallegos et al., 2024 — Bias and Fairness in LLMs: A Survey](https://arxiv.org/abs/2309.00770) — LLM-специфичная таксономия bias: метрики на уровне embeddings / probabilities / текста.
+- [Parrish et al., 2022 — BBQ: Bias Benchmark for QA](https://arxiv.org/abs/2110.08193) — измерять соц. предвзятость в ответах: 9 измерений, 58k примеров (ACL).
+- [Tamkin et al., 2023 (Anthropic) — Evaluating and Mitigating Discrimination in LM Decisions](https://arxiv.org/abs/2312.03689) — проактивный аудит дискриминации: 70 сценариев решений, варьируем демографию (discrim-eval) — ровно «аудит вывода на риски».
+- [Fairlearn (Microsoft)](https://fairlearn.org/) — open-source тулкит: оценка и снижение fairness-вреда по группам.
+- [IBM AI Fairness 360 (AIF360)](https://github.com/ibm/aif360) — 71 метрика и 9 алгоритмов снижения bias (pre-/in-/post-processing).
+- [US Copyright Office — Copyright and Artificial Intelligence](https://www.copyright.gov/ai/) — юридический первоисточник: копирайтность AI-вывода и обучение на защищённых работах (Part 1–3).
 
 ---
 **Часы:** ~3 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

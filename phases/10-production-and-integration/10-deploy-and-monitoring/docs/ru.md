@@ -58,7 +58,7 @@ recent_errors: [{latency:1500, error:"timeout"}]
 
 **Задание: собери логгер вызовов и метрики здоровья** — error_rate, перцентиль латентности, последние ошибки. Только стандартная библиотека, без сети.
 
-> **Перед запуском.** Работай в своей папке курса (`ai-native/10.2-monitoring/`). Нужен только **Python 3** (для теста ещё `pytest`).
+> **Перед запуском.** Работай в своей папке курса (`ai-native/10.2-monitoring/`), а файлы урока клади в подпапку `code/` (как в 0.1). Нужен только **Python 3** (для теста ещё `pytest`).
 
 Создай файл `monitoring.py` с классом `CallLogger`:
 
@@ -113,6 +113,13 @@ python code/monitoring.py # демо: error_rate 0.2, p95 1500, последни
 - [OpenTelemetry — GenAI observability](https://opentelemetry.io/blog/2026/genai-observability/) — трейсинг вызовов LLM.
 - [OpenTelemetry — for Generative AI](https://opentelemetry.io/blog/2024/otel-generative-ai/) — семантические конвенции `gen_ai.*`.
 - [Langfuse — Observability](https://langfuse.com/docs/observability/overview) — трейсинг, ошибки, токены, оценка.
+- [Google SRE — Monitoring Distributed Systems (Four Golden Signals)](https://sre.google/sre-book/monitoring-distributed-systems/) — latency / traffic / errors / saturation; латентность успешных vs ошибочных (мост к p95 из урока).
+- [Google SRE Workbook — Alerting on SLOs](https://sre.google/workbook/alerting-on-slos/) — burn-rate алертинг: превратить SLO в осмысленные алерты без шума (для «мониторинг-конфига»).
+- [OpenLLMetry (Traceloop)](https://github.com/traceloop/openllmetry) — OTel-инструментация LLM: логирует prompt/completion в spans (с privacy-тумблером), провайдеры + vector-DB.
+- [Datadog — LLM Observability](https://docs.datadoghq.com/llm_observability/) — прод-мониторинг: end-to-end трейсы, latency/tokens, quality/safety-оценки, авто-инструментация OpenAI/Anthropic/LangChain.
+- [OpenAI — Production best practices](https://platform.openai.com/docs/guides/production-best-practices) — вывод в прод: security, изоляция окружений, лимиты, латентность.
+- [Anthropic — Errors](https://platform.claude.com/docs/en/api/errors) — коды 429/500/504/529, `request-id`, типизированные исключения — что логировать в проде.
+- [Anthropic — Rate limits](https://platform.claude.com/docs/en/api/rate-limits) — token bucket, `retry-after`, backoff, `anthropic-ratelimit-*` headers (сатурация).
 
 ---
 **Часы:** ~4 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

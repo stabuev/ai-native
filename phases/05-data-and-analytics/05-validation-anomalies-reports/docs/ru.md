@@ -64,7 +64,7 @@ build_report → отчёт с метриками и флагами → (по р
 
 **Задание: собери контроль качества** — валидацию по правилам, детекцию аномалий и сборку отчёта. Только стандартная библиотека (`statistics`), без сети.
 
-> **Перед запуском.** Работай в своей папке курса (`ai-native/5.5-validation/`). Нужен только **Python 3** (для теста ещё `pytest`).
+> **Перед запуском.** Работай в своей папке курса (`ai-native/5.5-validation/`), а файлы урока клади в подпапку `code/` (как в 0.1). Нужен только **Python 3** (для теста ещё `pytest`).
 
 Создай файл `validation.py` с тремя функциями:
 
@@ -123,8 +123,14 @@ if problems or anomalies:
 ## Материалы
 
 - [scikit-learn — Outlier detection](https://scikit-learn.org/stable/modules/outlier_detection.html) — методы детекции аномалий за пределами z-score.
-- [Anthropic — Reduce hallucinations](https://docs.claude.com/en/docs/test-and-evaluate/strengthen-guardrails/reduce-hallucinations) — проверяемость и «не доверяй вслепую».
+- [Anthropic — Reduce hallucinations](https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations) — проверяемость и «не доверяй вслепую».
 - [Databricks — AI/BI Genie](https://docs.databricks.com/aws/en/genie/) — автоматизация и MCP-доступ к данным.
+- [Great Expectations](https://github.com/great-expectations/great_expectations) — валидация данных: «expectations» как юнит-тесты для данных и результатов.
+- [Pandera](https://github.com/unionai-oss/pandera) — валидация dataframe: схемы + статистические проверки (pandas / polars).
+- [Evidently AI](https://github.com/evidentlyai/evidently) — мониторинг data drift, качества и аномалий + отчёты (ровно «аномалии + автоотчёты»).
+- [MCP servers (official)](https://github.com/modelcontextprotocol/servers) — референс-серверы MCP, включая коннекторы к БД (артефакт урока: агент + MCP к БД).
+- [O'Reilly — Data Quality Fundamentals, гл. 4](https://www.oreilly.com/library/view/data-quality-fundamentals/9781098112035/ch04.html) — построение anomaly-детекции и мониторинга (каноничная книга по data observability).
+- [Monte Carlo — Data Quality Anomaly Detection](https://www.montecarlodata.com/blog-data-quality-anomaly-detection-everything-you-need-to-know/) — практический разбор от лидеров data observability: типы мониторов, метрики, «unknown unknowns».
 
 ---
 **Часы:** ~4 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

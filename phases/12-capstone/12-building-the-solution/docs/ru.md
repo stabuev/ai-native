@@ -74,7 +74,7 @@ run("проведи анализ архитектуры кода")
 
 **Задание: собери end-to-end процесс из кирпичей курса.** Только стандартная библиотека, без сети.
 
-> **Перед запуском.** Работай в своей папке курса (`ai-native/12.2-solution/`). Нужен только **Python 3** (для теста ещё `pytest`).
+> **Перед запуском.** Работай в своей папке курса (`ai-native/12.2-solution/`), а файлы урока клади в подпапку `code/` (как в 0.1). Нужен только **Python 3** (для теста ещё `pytest`).
 
 Создай файл `solution.py`: словарь `ROUTE` (уровень → модель и цены), функцию `classify` и класс `Capstone`:
 
@@ -129,6 +129,12 @@ python code/solution.py # демо: простая→haiku, сложная→opu
 - [Anthropic — Building Effective Agents](https://www.anthropic.com/research/building-effective-agents) — паттерны сборки агентных систем.
 - [Anthropic — Agent SDK overview](https://platform.claude.com/docs/en/agent-sdk/overview) — agent loop, инструменты, контекст.
 - [MCP — Specification 2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25) — актуальная спека подключения инструментов и данных.
+- [Anthropic — Building agents with the Claude Agent SDK](https://www.anthropic.com/engineering/building-agents-with-the-claude-agent-sdk) — как реально собрать агента: context engineering через структуру файлов, дизайн инструментов, память на длинных задачах, субагенты.
+- [OpenAI — A Practical Guide to Building Agents (PDF)](https://cdn.openai.com/business-guides-and-resources/a-practical-guide-to-building-agents.pdf) — мульти-провайдерный разбор: 3 компонента агента, выбор модели accuracy→cost/latency, дизайн инструментов, guardrails, multi-agent.
+- [humanlayer — 12-Factor Agents](https://github.com/humanlayer/12-factor-agents) — 12 принципов надёжной сборки прод-агента: «агент — это просто софт», модульность, контроль над стейтом и промптами.
+- [Anthropic — Claude Cookbooks: agent patterns](https://github.com/anthropics/claude-cookbooks/tree/main/patterns/agents) — минимальные рабочие реализации паттернов из Building Effective Agents (референс-код для сборки по образцу).
+- [Chip Huyen — Agents](https://huyenchip.com/2025/01/07/agents.html) — эссе про tools + planning + failure modes с разбором «почему и как», а не только паттерны.
+- [LangGraph — overview](https://docs.langchain.com/oss/python/langgraph/overview) — открытый (MIT) фреймворк оркестрации: short-/long-term memory, human-in-the-loop, durable execution.
 
 ---
 **Часы:** ~10 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

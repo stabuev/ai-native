@@ -66,7 +66,7 @@ compare(versions, cases) → [("good", 1.0), ("half", 0.33), ("bad", 0.0)]
 
 **Задание: собери mini eval-harness** — стандартная библиотека, без сети.
 
-> **Перед запуском.** Работай в своей папке курса (`ai-native/2.5-prompt-eval/`). Нужен только **Python 3**, всё офлайн (для теста ещё `pytest`).
+> **Перед запуском.** Работай в своей папке курса (`ai-native/2.5-prompt-eval/`), а файлы урока клади в подпапку `code/` (как в 0.1). Нужен только **Python 3**, всё офлайн (для теста ещё `pytest`).
 
 Реализуй метрики и прогон:
 
@@ -123,9 +123,12 @@ print(compare({"claude": v_claude, "openai": v_openai, "gemini": v_gemini}, CASE
 
 ## Материалы
 
-- [Anthropic — Create strong empirical evaluations](https://docs.anthropic.com/en/docs/build-with-claude/develop-tests) — как строить eval-наборы и грейдинг.
-- [Anthropic — Define your success criteria](https://docs.anthropic.com/en/docs/build-with-claude/define-success) — что именно измерять (SMART-критерии).
+- [Anthropic — Define success criteria & build evaluations](https://platform.claude.com/docs/en/docs/build-with-claude/define-success) — что измерять (SMART-критерии) и как строить eval-наборы и грейдинг.
 - [anthropics/anthropic-cookbook — building_evals](https://github.com/anthropics/anthropic-cookbook/blob/main/misc/building_evals.ipynb) — практический ноутбук по evals.
+- [promptfoo](https://github.com/promptfoo/promptfoo) — тесты промптов с ассершенами, сравнение версий и моделей, CI/CD, red-team.
+- [DeepEval](https://github.com/confident-ai/deepeval) — «Pytest для LLM»: юнит-тесты и метрики (G-Eval, relevancy, faithfulness).
+- [Hamel Husain — Your AI Product Needs Evals (2024)](https://hamel.dev/blog/posts/evals/) — влиятельный практический разбор: зачем и как строить evals.
+- [Zheng et al., 2023 — Judging LLM-as-a-Judge (MT-Bench)](https://arxiv.org/abs/2306.05685) — первоисточник подхода «модель-судья».
 
 ---
 **Часы:** ~3 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

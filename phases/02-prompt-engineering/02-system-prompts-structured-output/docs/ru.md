@@ -31,7 +31,7 @@ system prompt (роль + строгий формат)
 
 Два уровня надёжности:
 
-- **(1) Provider structured output / function calling** — заставляет модель держать схему на стороне API. У OpenAI это Structured Outputs: ответ **гарантированно соответствует** переданной JSON-схеме (это сильнее «JSON mode», который обещает лишь валидный JSON, но не твою структуру). У Google — `response_schema`, у Anthropic — через tool use (описываешь `input_schema` инструмента).
+- **(1) Provider structured output / function calling** — заставляет модель держать схему на стороне API. У OpenAI это Structured Outputs: ответ **гарантированно соответствует** переданной JSON-схеме (это сильнее «JSON mode», который обещает лишь валидный JSON, но не твою структуру). У Google — `response_schema`, у Anthropic — нативный `output_format` (strict constrained decoding) или через tool use (`input_schema` инструмента).
 - **(2) Свой валидатор** — страховка на приёме: распарсить ответ и проверить, что поля и типы на месте. Дёшево и ловит то, что молча ломает прод.
 
 **JSON Schema** — стандарт описания структуры: `type` (string/number/integer/boolean/array/object), `required` (обязательные поля), `additionalProperties: false` (запретить лишние). На нём говорят все провайдеры.
@@ -72,7 +72,7 @@ validate_schema(obj, SCHEMA) → []      # пустой список = всё в
 
 **Задание: собери извлечение JSON и валидатор схемы** — стандартная библиотека (`json`), без сети.
 
-> **Перед запуском.** Работай в своей папке курса (`ai-native/2.4-structured-output/`). Нужен только **Python 3**, всё офлайн (для теста ещё `pytest`).
+> **Перед запуском.** Работай в своей папке курса (`ai-native/2.4-structured-output/`), а файлы урока клади в подпапку `code/` (как в 0.1). Нужен только **Python 3**, всё офлайн (для теста ещё `pytest`).
 
 Данные бери готовыми (карта типов и пример схемы/системного промпта):
 
@@ -117,7 +117,7 @@ OpenAI().responses.create(model="gpt-5.x", input="...",
 # Google — responseSchema в config
 genai.Client().models.generate_content(model="gemini-2.x-flash", contents="...",
     config={"response_mime_type": "application/json", "response_schema": schema})
-# Anthropic — через tool use (function calling): описываешь input_schema инструмента
+# Anthropic — нативный Structured Outputs (output_format + strict) либо tool use (input_schema)
 ```
 
 Даже с гарантией провайдера прогоняй ответ через свой `validate_schema` — это дешёвая страховка (доверяй, но проверяй).
@@ -146,6 +146,12 @@ genai.Client().models.generate_content(model="gemini-2.x-flash", contents="...",
 - [OpenAI — Structured model outputs](https://platform.openai.com/docs/guides/structured-outputs) — гарантированное соответствие JSON-схеме.
 - [OpenAI — Introducing Structured Outputs](https://openai.com/index/introducing-structured-outputs-in-the-api/) — зачем и чем отличается от JSON mode.
 - [JSON Schema](https://json-schema.org/) — стандарт описания схем (типы, required, additionalProperties).
+- [Anthropic — Structured Outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs) — нативный constrained decoding у Claude: `output_format` + strict tool use, гарантия соответствия JSON-схеме.
+- [Anthropic — Giving Claude a role with a system prompt](https://platform.claude.com/docs/en/docs/build-with-claude/prompt-engineering/system-prompts) — вторая половина урока: как системный промпт задаёт роль, тон и фокус.
+- [Google Gemini — Structured output](https://ai.google.dev/gemini-api/docs/structured-output) — JSON по response-схеме у Google (мульти-провайдер).
+- [Instructor (Pydantic)](https://github.com/567-labs/instructor) — популярная библиотека структурированного вывода: Pydantic-валидация, ретраи, мульти-провайдер.
+- [Outlines](https://github.com/dottxt-ai/outlines) — constrained-генерация (JSON / regex / грамматика): как структурный вывод устроен «под капотом».
+- [BAML](https://github.com/BoundaryML/baml) — DSL для надёжных LLM-функций: schema-first, статическая типизация, тесты.
 
 ---
 **Часы:** ~3 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

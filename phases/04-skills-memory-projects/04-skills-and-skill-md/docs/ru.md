@@ -59,11 +59,11 @@ calc   : "Считает арифметику, числа и проценты"
 
 ```
 слова запроса:  {отредактируй, текст, письма}
-∩ editor desc:  {текст}            → score 1   ← выбран
+∩ editor desc:  {текст, письма}    → score 2   ← выбран
 ∩ calc desc:    {}                 → score 0
 ```
 
-Выигрывает `editor` — у него есть общее слово `текст`. На запрос «посчитай проценты» победит `calc` (общее слово `проценты`). А на «погода завтра» оба дадут score 0 → **ни один скилл не сработает**.
+Выигрывает `editor` — у него есть общие слова `текст` и `письма`. На запрос «посчитай проценты» победит `calc` (общее слово `проценты`). А на «погода завтра» оба дадут score 0 → **ни один скилл не сработает**.
 
 Здесь же видно, почему description пишут с запасом формулировок. Запрос «сократи имейл» по словам **не** пересечётся с `editor` (`сократи`≠`сокращает`, `имейл`≠`письмо`) — и наш простой матчер промахнётся. Настоящий агент матчит семантически и поймёт, но и он работает тем точнее, чем больше разных слов-триггеров в описании. Отсюда правило: в `description` перечисляй синонимы и типичные фразы запроса («сократи», «ужми», «резюмируй», «письмо», «имейл», «отчёт»).
 
@@ -71,7 +71,7 @@ calc   : "Считает арифметику, числа и проценты"
 
 **Задание: собери загрузчик скиллов** — парсер `SKILL.md` + валидатор + матчер. Только стандартная библиотека Python, без PyYAML и без сети.
 
-> **Перед запуском.** Работай в своей папке курса (`ai-native/4.1-skills/`). Нужен только **Python 3** (для теста ещё `pytest`).
+> **Перед запуском.** Работай в своей папке курса (`ai-native/4.1-skills/`), а файлы урока клади в подпапку `code/` (как в 0.1). Нужен только **Python 3** (для теста ещё `pytest`).
 
 Создай файл `skill_loader.py` и реализуй три функции:
 
@@ -131,10 +131,15 @@ ls ~/.claude/skills/*/SKILL.md   # личные скиллы
 
 ## Материалы
 
-- [Anthropic — Agent Skills overview](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/overview) — что такое скиллы, три уровня загрузки, требования к полям.
-- [Agent Skills — best practices](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/best-practices) — как писать `description` и тело, чтобы скилл срабатывал.
+- [Anthropic — Agent Skills overview](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview) — что такое скиллы, три уровня загрузки, требования к полям.
+- [Agent Skills — best practices](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices) — как писать `description` и тело, чтобы скилл срабатывал.
 - [anthropics/skills](https://github.com/anthropics/skills) — публичные скиллы и `template-skill`.
 - [Use Skills in Claude Code](https://code.claude.com/docs/en/skills) — где живут скиллы (`.claude/skills`, `~/.claude/skills`).
+- [agentskills.io](https://agentskills.io/) — открытый кросс-платформенный стандарт Agent Skills (Specification + Quickstart): одна SKILL.md работает в Claude/Cursor/Codex/Gemini CLI/VS Code — про артефакт «кросс-платформенный skill».
+- [Anthropic — Equipping agents with Agent Skills (2025)](https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills) — инженерный первоисточник: зачем скиллы, progressive disclosure как «оглавление → глава → приложение».
+- [Claude Code — Create plugins](https://code.claude.com/docs/en/plugins) — как упаковать и раздать скиллы через плагины и marketplace (неймспейсы, версии).
+- [Bibek Poudel — The SKILL.md Pattern (Medium)](https://bibek-poudel.medium.com/the-skill-md-pattern-how-to-write-ai-agent-skills-that-actually-work-72a3169dd7ee) — практика: почему `description` решает триггеринг, структура файлов, тестирование.
+- [Simon Willison — «Claude Skills are awesome, maybe a bigger deal than MCP» (2025)](https://simonwillison.net/2025/Oct/16/claude-skills/) — практика и контекст: почему скиллы — это Markdown + progressive disclosure.
 
 ---
 **Часы:** ~4 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

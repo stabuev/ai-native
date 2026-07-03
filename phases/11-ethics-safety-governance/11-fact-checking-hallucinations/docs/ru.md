@@ -64,7 +64,7 @@ claim: "Возврат НЕВОЗМОЖЕН в течение 14 дней"   (п
 
 **Задание: собери пайплайн фактчекинга** — извлечение утверждений, проверка заземления, отчёт. Только стандартная библиотека (`re`), без сети.
 
-> **Перед запуском.** Работай в своей папке курса (`ai-native/11.2-fact-check/`). Нужен только **Python 3** (для теста ещё `pytest`).
+> **Перед запуском.** Работай в своей папке курса (`ai-native/11.2-fact-check/`), а файлы урока клади в подпапку `code/` (как в 0.1). Нужен только **Python 3** (для теста ещё `pytest`).
 
 Создай файл `fact_check.py`:
 
@@ -115,9 +115,16 @@ python code/fact_check.py # демо: «14 дней» supported, «100 лет» 
 
 ## Материалы
 
-- [Anthropic — Reduce hallucinations](https://docs.claude.com/en/docs/test-and-evaluate/strengthen-guardrails/reduce-hallucinations) — цитаты, «не знаю», низкая температура.
+- [Anthropic — Reduce hallucinations](https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations) — цитаты, «не знаю», низкая температура.
 - [anthropics/courses — Avoiding Hallucinations](https://github.com/anthropics/courses/blob/master/prompt_engineering_interactive_tutorial/Anthropic%201P/08_Avoiding_Hallucinations.ipynb) — практика.
 - [Ji et al., 2022 — Survey of Hallucination in NLG](https://arxiv.org/abs/2202.03629) — типы и причины галлюцинаций.
+- [Manakul et al., 2023 — SelfCheckGPT](https://arxiv.org/abs/2303.08896) — детект галлюцинаций сэмплированием нескольких ответов (кросс-проверка модели с собой, без внешней БД).
+- [Min et al., 2023 — FActScore (EMNLP)](https://arxiv.org/abs/2305.14251) — разбить ответ на атомарные факты и проверить каждый по надёжному источнику.
+- [Dhuliawala et al., 2023 — Chain-of-Verification (CoVe)](https://arxiv.org/abs/2309.11495) — модель сама генерит вопросы-проверки, отвечает независимо и уточняет ответ.
+- [Chern et al., 2023 — FacTool](https://arxiv.org/abs/2307.13528) — tool-augmented фреймворк фактчекинга (QA / код / математика / наука).
+- [Niu et al., 2024 — RAGTruth](https://arxiv.org/abs/2401.00396) — первый крупный бенчмарк галлюцинаций в RAG (span-level аннотации).
+- [Anthropic — Citations](https://platform.claude.com/docs/en/build-with-claude/citations) — обоснованные ответы со ссылками на конкретные предложения источника (кросс-проверка источниками).
+- [Google Gemini — Grounding with Google Search](https://ai.google.dev/gemini-api/docs/google-search) — грондинг ответа в реальном вебе + цитаты (мульти-провайдер).
 
 ---
 **Часы:** ~3 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

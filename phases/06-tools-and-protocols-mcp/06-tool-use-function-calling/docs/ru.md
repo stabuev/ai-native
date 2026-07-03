@@ -66,7 +66,7 @@
 
 **Задание: собери цикл function-calling с нуля** — инструмент со схемой, валидацию, диспетчер и tool-use-цикл. Только стандартная библиотека, без сети.
 
-> **Перед запуском.** Работай в своей папке курса (`ai-native/6.1-tool-use/`). Нужен только **Python 3** (для теста ещё `pytest`).
+> **Перед запуском.** Работай в своей папке курса (`ai-native/6.1-tool-use/`), а файлы урока клади в подпапку `code/` (как в 0.1). Нужен только **Python 3** (для теста ещё `pytest`).
 
 Создай файл `function_calling.py`:
 
@@ -125,9 +125,16 @@ tools = [{"name": "add", "description": "сложить два числа",
 
 ## Материалы
 
-- [Anthropic — Tool use](https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/overview) — tool use в Claude изнутри (tool_use / tool_result).
+- [Anthropic — Tool use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview) — tool use в Claude изнутри (tool_use / tool_result).
 - [OpenAI — Function calling](https://platform.openai.com/docs/guides/function-calling) — схемы и цикл tool calling.
 - [JSON Schema](https://json-schema.org/) — как описывать параметры инструментов.
+- [Schick et al., 2023 — Toolformer](https://arxiv.org/abs/2302.04363) — seminal: модель сама учится звать инструменты/API и когда это делать.
+- [Patil et al., 2023 — Gorilla](https://arxiv.org/abs/2305.15334) — LLM, вызывающий тысячи API (пионер надёжного function-calling).
+- [Berkeley Function-Calling Leaderboard (BFCL V4)](https://gorilla.cs.berkeley.edu/leaderboard.html) — как модели реально справляются с tool-calling (актуальный eval).
+- [Google Gemini — Function calling](https://ai.google.dev/gemini-api/docs/function-calling) — мульти-провайдер (в дополнение к Anthropic и OpenAI).
+- [UC Berkeley — Advanced LLM Agents MOOC](https://llmagents-learning.org/sp25) — открытый курс (Dawn Song), лекции по tool use / function calling на YouTube.
+- [James Tang — LLM Function Calling Explained: Request/Response Payloads (Medium)](https://medium.com/@jamestang/llm-function-calling-explained-a-deep-dive-into-the-request-and-response-payloads-894800fcad75) — разбор именно `tool_use` / `tool_result` пейлоадов.
+- [Martin Fowler — Function calling using LLMs](https://martinfowler.com/articles/function-call-LLM.html) — авторитетный разбор с построением агента-примера.
 
 ---
 **Часы:** ~4 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

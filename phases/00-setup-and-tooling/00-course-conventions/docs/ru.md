@@ -98,8 +98,12 @@ pytest code -q
 ## Материалы
 
 - [pytest — Get started](https://docs.pytest.org/en/stable/getting-started.html) — как писать и запускать тесты урока.
-- [Agent Skills — overview](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/overview) — механика скиллов, на которой стоит `/lesson-author`.
-- [ai-engineering-from-scratch](https://github.com/stabuev/ai-engineering-from-scratch) — образец каркаса «фазы → уроки → артефакты».
+- [pytest — Good Integration Practices](https://docs.pytest.org/en/stable/explanation/goodpractices.html) — где хранить тесты, автопоиск и конвенция `test_*.py` (как в DoD курса).
+- [Agent Skills — overview](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview) — механика скиллов, на которой стоит `/lesson-author`.
+- [Diátaxis](https://diataxis.fr/) — рамка организации техдоков (tutorial · how-to · reference · explanation); помогает так же структурировать свои материалы.
+- [ai-engineering-from-scratch (rohitg00)](https://github.com/rohitg00/ai-engineering-from-scratch) — образец каркаса «фазы → уроки → артефакты», вдохновивший формат курса.
+- [Google — Technical Writing](https://developers.google.com/tech-writing) — бесплатные курсы по ясной техдокументации; помогают оформлять свои материалы так же чётко.
+- [Markdown Guide](https://www.markdownguide.org/) — полный справочник по Markdown, на котором пишутся `docs/ru.md`.
 
 ---
 **Часы:** ~2 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

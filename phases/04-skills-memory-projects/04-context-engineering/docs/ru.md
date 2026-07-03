@@ -64,7 +64,7 @@ history: used 50 + 40 = 90 > 60  → DROPPED
 
 **Задание: собери движок контекста** — оценка размера, сборка под бюджет, компакция истории. Только стандартная библиотека, без сети.
 
-> **Перед запуском.** Работай в своей папке курса (`ai-native/4.4-context/`). Нужен только **Python 3** (для теста ещё `pytest`).
+> **Перед запуском.** Работай в своей папке курса (`ai-native/4.4-context/`), а файлы урока клади в подпапку `code/` (как в 0.1). Нужен только **Python 3** (для теста ещё `pytest`).
 
 Создай файл `context_engine.py` с тремя функциями:
 
@@ -118,8 +118,14 @@ python code/context_engine.py  # демо: что влезло в бюджет 6
 ## Материалы
 
 - [Anthropic — Effective context engineering for AI agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) — context rot, бюджет внимания, стратегии.
-- [Anthropic — Long context prompting tips](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/long-context-tips) — порядок данных в окне.
+- [Anthropic — Long context prompting tips](https://platform.claude.com/docs/en/docs/build-with-claude/prompt-engineering/long-context-tips) — порядок данных в окне.
 - [Anthropic — Claude models overview](https://platform.claude.com/docs/en/about-claude/models/overview) — размеры контекстных окон по моделям.
+- [Anthropic — Compaction](https://platform.claude.com/docs/en/build-with-claude/compaction) — серверная суммаризация старого контекста (ровно компакция, которую урок собирает).
+- [LangChain — Context Engineering for Agents](https://www.langchain.com/blog/context-engineering-for-agents) — рамка write / select / compress / isolate контекста.
+- [Manus — Context Engineering: Lessons from Building Manus (2025)](https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus) — глубокий разбор из прода: KV-cache, файловая система как контекст.
+- [Philipp Schmid — The New Skill in AI is Context Engineering](https://www.philschmid.de/context-engineering) — почему контекст важнее «промпта», с примерами.
+- [Drew Breunig — How Long Contexts Fail (2025)](https://www.dbreunig.com/2025/06/22/how-contexts-fail-and-how-to-fix-them.html) — таксономия отказов: poisoning / distraction / confusion / clash.
+- [Mei et al., 2025 — A Survey of Context Engineering for LLMs](https://arxiv.org/abs/2507.13334) — систематический обзор дисциплины context engineering.
 
 ---
 **Часы:** ~4 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

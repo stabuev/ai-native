@@ -74,7 +74,7 @@ roi(100, 20, 50): сэкономлено 80, выгода 80+50=130, /20 → 6.5
 
 **Задание: собери FinOps-учёт** — журнал с тегами, агрегации, бюджет и ROI. Только стандартная библиотека, без сети.
 
-> **Перед запуском.** Работай в своей папке курса (`ai-native/9.4-finops/`). Нужен только **Python 3** (для теста ещё `pytest`).
+> **Перед запуском.** Работай в своей папке курса (`ai-native/9.4-finops/`), а файлы урока клади в подпапку `code/` (как в 0.1). Нужен только **Python 3** (для теста ещё `pytest`).
 
 Создай файл `finops.py`:
 
@@ -131,6 +131,12 @@ python code/finops.py # демо: расходы по разрезам, cache-hi
 - [FinOps Foundation — FinOps for AI](https://www.finops.org/wg/finops-for-ai-overview/) — фреймворк управления стоимостью ИИ.
 - [CloudZero — FinOps for AI](https://www.cloudzero.com/blog/finops-for-ai/) — почему ИИ меняет cost management.
 - [Anthropic — Pricing](https://platform.claude.com/docs/en/about-claude/pricing) — компоненты стоимости для учёта.
+- [Anthropic — Usage & Cost API](https://platform.claude.com/docs/en/api/usage-cost-api) — программный учёт токенов с разбивкой по model/workspace/key/tier и uncached/cached/creation (ровно тегирование урока).
+- [OpenAI — Usage & Cost API](https://platform.openai.com/docs/api-reference/usage) — программный мониторинг расходов для своего дашборда.
+- [Helicone](https://docs.helicone.ai/guides/cookbooks/cost-tracking) — open-source LLM-обсервабилити: custom properties (тегирование), cost tracking, sessions.
+- [LiteLLM — Tag Budgets & Spend Tracking](https://docs.litellm.ai/docs/proxy/tag_budgets) — теги + бюджеты с жёсткими лимитами (reject при превышении): лимиты и алерты.
+- [CloudZero — State of AI Costs 2025](https://www.cloudzero.com/state-of-ai-costs/) — данные: расходы +36%, лишь 22% привязывают AI-spend к бизнес-результату (зачем учёт и теги).
+- [FinOps Foundation — Unit Economics](https://www.finops.org/framework/capabilities/unit-economics/) — cost per outcome / cost per successful output — метрика для ROI урока.
 
 ---
 **Часы:** ~4 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

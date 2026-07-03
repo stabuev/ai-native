@@ -38,6 +38,8 @@ trace (один запрос)
 - `total_duration()` — сумма длительностей **корневых** spans (не двойной счёт: дети уже внутри родителя).
 - `slowest()` — самый долгий span — узкое место.
 
+> **Что такое контекст-менеджер (`with`).** `@contextmanager` превращает функцию с `yield` в объект для `with`: код **до** `yield` выполняется при входе в блок `with tracer.span("retrieve"):`, код **после** `yield` — при выходе из него (даже если внутри случилась ошибка — за это отвечает `try/finally`). Поэтому «замер начался» пишется автоматически на входе, а «замер закончился, длительность такая-то» — на выходе; тебе остаётся лишь обернуть шаг в `with`.
+
 Ключ — **вложенность через стек**: пока span открыт, он на вершине стека и становится родителем всех, кто открылся внутри. Так из плоского списка замеров восстанавливается дерево «шаг → подшаг».
 
 ## РАЗБОР ПО ШАГАМ
@@ -61,7 +63,7 @@ slowest()        → a   (6 > 2)
 
 **Задание: собери трейсер вложенных spans** — контекст-менеджер с родителем и длительностью + сводка. Только стандартная библиотека (`contextlib`, `time`), без сети.
 
-> **Перед запуском.** Работай в своей папке курса (`ai-native/10.4-tracer/`). Нужен только **Python 3** (для теста ещё `pytest`).
+> **Перед запуском.** Работай в своей папке курса (`ai-native/10.4-tracer/`), а файлы урока клади в подпапку `code/` (как в 0.1). Нужен только **Python 3** (для теста ещё `pytest`).
 
 Создай файл `tracer.py` с классом `Tracer(clock=None)` (`clock` по умолчанию `time.perf_counter`, подменяется в тестах):
 
@@ -116,6 +118,12 @@ python code/tracer.py # демо: agent_run → retrieve + llm_call, узкое 
 - [Arize Phoenix](https://arize.com/docs/phoenix) — open-source трейсинг/eval на OpenTelemetry.
 - [LangSmith](https://docs.langchain.com/langsmith/) — трейсинг и оценка агентов.
 - [OpenTelemetry — GenAI observability](https://opentelemetry.io/blog/2026/genai-observability/) — стандартные spans/метрики.
+- [Sigelman et al., 2010 — Dapper (Google)](https://research.google/pubs/dapper-a-large-scale-distributed-systems-tracing-infrastructure/) — первоисточник распределённого трейсинга: tree / span / annotation, trace-id и span-id (родоначальник концепции spans).
+- [OpenTelemetry — Traces & Spans](https://opentelemetry.io/docs/concepts/signals/traces/) — span = единица работы, parent/child, span-id, attributes, kind — то, что урок строит с нуля.
+- [OpenTelemetry — GenAI spans (semantic conventions)](https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-spans/) — стандартные спаны агентов: `invoke_agent`, `execute_tool`, `gen_ai.*` атрибуты.
+- [OpenInference (Arize)](https://github.com/Arize-ai/openinference) — семантические конвенции AI-трейсов: span-kind (LLM/TOOL/AGENT/RETRIEVER…) и атрибуты (под капотом Phoenix).
+- [Langfuse — Get Started with Tracing](https://langfuse.com/docs/observability/get-started) — traces / observations / sessions поверх OTel (упомянут в Use It урока).
+- [Dzero Labs — Logs, Events, Traces & Spans (Medium)](https://medium.com/dzerolabs/observability-journey-understanding-logs-events-traces-and-spans-836524d63172) — доступный разбор основ трейсинга.
 
 ---
 **Часы:** ~4 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

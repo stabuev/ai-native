@@ -67,7 +67,7 @@ accuracy(few-shot) = 2 / 2 = 1.0
 
 **Задание: собери few-shot/CoT-промпты и измерь ценность примеров** — стандартная библиотека, без сети.
 
-> **Перед запуском.** Работай в своей папке курса (`ai-native/2.2-few-shot-cot/`). Нужен только **Python 3**, всё офлайн (для теста ещё `pytest`).
+> **Перед запуском.** Работай в своей папке курса (`ai-native/2.2-few-shot-cot/`), а файлы урока клади в подпапку `code/` (как в 0.1). Нужен только **Python 3**, всё офлайн (для теста ещё `pytest`).
 
 Создай `few_shot.py` и реализуй:
 
@@ -130,6 +130,11 @@ for prompt in (zero, few, cot):
 - [Brown et al., 2020 — Language Models are Few-Shot Learners (GPT-3)](https://arxiv.org/abs/2005.14165) — откуда взялся few-shot (in-context learning).
 - [Wei et al., 2022 — Chain-of-Thought Prompting](https://arxiv.org/abs/2201.11903) — первоисточник CoT.
 - [anthropics/prompt-eng-interactive-tutorial](https://github.com/anthropics/prompt-eng-interactive-tutorial) — практические главы про примеры и пошаговое мышление.
+- [Wang & Zhou, 2024 (NeurIPS) — Chain-of-Thought Reasoning Without Prompting](https://arxiv.org/abs/2402.10200) — CoT-decoding: цепочки рассуждений уже «зашиты» в модель, их достаёт перебор top-k веток, а не промпт.
+- [DeepSeek-R1, 2025 (Nature) — Incentivizing Reasoning via RL](https://arxiv.org/abs/2501.12948) — эра reasoning-моделей: CoT, выученный через RL, «aha moment».
+- [Anthropic, 2025 — Reasoning Models Don't Always Say What They Think](https://arxiv.org/abs/2505.05410) — важный нюанс: озвученная цепочка ≠ реальная причина ответа (faithfulness).
+- [Cameron R. Wolfe — Demystifying Reasoning Models (2025)](https://cameronrwolfe.substack.com/p/demystifying-reasoning-models) — практический мост CoT → o1/R1 и test-time compute.
+- [Wang et al., 2022 — Self-Consistency Improves CoT](https://arxiv.org/abs/2203.11171) — по-прежнему стандартный приём: сэмплируй несколько цепочек, бери консенсус.
 
 ---
 **Часы:** ~3 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

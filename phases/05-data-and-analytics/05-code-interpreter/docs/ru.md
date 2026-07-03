@@ -65,7 +65,7 @@ Code Interpreter замыкает цикл: модель генерирует Py
 
 **Задание: собери учебную песочницу** — статическую проверку + ограниченный исполнитель. Только стандартная библиотека, без сети.
 
-> **Перед запуском.** Работай в своей папке курса (`ai-native/5.2-code-interpreter/`). Нужен только **Python 3** (для теста ещё `pytest`).
+> **Перед запуском.** Работай в своей папке курса (`ai-native/5.2-code-interpreter/`), а файлы урока клади в подпапку `code/` (как в 0.1). Нужен только **Python 3** (для теста ещё `pytest`).
 
 Создай файл `sandbox.py`: исключение `SandboxError`, словарь `SAFE_BUILTINS` (безопасные функции вроде `len`, `sum`, `min`, `max`, `sorted`, `range`…), кортеж `FORBIDDEN` (запрещённые подстроки: `import`, `__`, `open(`, `exec(`, `eval(`, `os.`, `sys.`, `subprocess`…) и две функции:
 
@@ -117,7 +117,13 @@ python code/sandbox.py # демо: считает среднее; блокиру
 
 - [OpenAI — Code Interpreter (API)](https://platform.openai.com/docs/guides/tools-code-interpreter) — инструмент исполнения кода.
 - [OpenAI — Data analysis with ChatGPT](https://help.openai.com/en/articles/8437071-code-interpreter) — как устроена изоляция и работа с файлами.
-- [Anthropic — Code execution tool](https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/code-execution-tool) — Python в песочнице Claude.
+- [Anthropic — Code execution tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/code-execution-tool) — Python в песочнице Claude.
+- [E2B](https://github.com/e2b-dev/E2B) — open-source secure sandboxes для запуска AI-кода в облаке (реальный «sandbox-исполнитель»).
+- [Open Interpreter](https://github.com/OpenInterpreter/open-interpreter) — локальный движок исполнения кода LLM: парсинг блоков, approval, exec (ChatGPT-CI у себя).
+- [gVisor (Google)](https://github.com/google/gvisor) — application-kernel sandbox: как делается настоящая изоляция недоверенного кода (ровно оговорка урока → 6.5).
+- [Pyodide](https://github.com/pyodide/pyodide) — CPython в WebAssembly: изолированный Python (браузер / WASM-песочница).
+- [Shrish — Making our own code interpreter: making of a sandbox (Medium)](https://medium.com/@Shrishml/making-our-own-code-interpreter-part-1-making-of-a-sandbox-382da3339eaa) — сборка Docker + FastAPI-песочницы, прямо в духе Build It.
+- [Embrace The Red — Lack of Isolation in Code Interpreter GPT sessions](https://embracethered.com/blog/posts/2024/lack-of-isolation-gpts-code-interpreter/) — почему изоляция критична: реальная уязвимость (мост к 6.5 и безопасности).
 
 ---
 **Часы:** ~4 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

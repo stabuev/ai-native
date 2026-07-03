@@ -89,7 +89,7 @@ combine:       {Москва: 75, Питер: 50, Казань: 20}
 
 **Задание: собери мини-аналитику** — `load_csv` + `aggregate` + `top_n`, по принципу split-apply-combine. Только стандартная библиотека (`csv`, `io`, `statistics`), без сети.
 
-> **Перед запуском.** Работай в своей папке курса (`ai-native/5.1-ai-analyst/`). Нужен только **Python 3** (для теста ещё `pytest`).
+> **Перед запуском.** Работай в своей папке курса (`ai-native/5.1-ai-analyst/`), а файлы урока клади в подпапку `code/` (как в 0.1). Нужен только **Python 3** (для теста ещё `pytest`).
 
 Создай файл `analyze.py` с тремя функциями:
 
@@ -149,7 +149,11 @@ df.groupby("region")["amount"].sum().sort_values(ascending=False)   # = aggregat
 
 - [pandas — Getting started](https://pandas.pydata.org/docs/getting_started/index.html) — стандартный инструмент анализа данных (`groupby`).
 - [OpenAI — Data analysis / Code Interpreter](https://help.openai.com/en/articles/8437071-code-interpreter) — анализ загруженных файлов кодом.
-- [Anthropic — Code execution tool](https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/code-execution-tool) — анализ данных кодом через API.
+- [Anthropic — Code execution tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/code-execution-tool) — анализ данных кодом через API.
+- [Wes McKinney — Python for Data Analysis (3e, бесплатно онлайн)](https://wesmckinney.com/book/) — «библия» pandas от автора библиотеки.
+- [PandasAI](https://github.com/sinaptik-ai/pandas-ai) — естественный язык поверх dataframe: «pandas под управлением промпта» (v3.0.0, 2025).
+- [Anthropic — Use Claude for Excel](https://support.claude.com/en/articles/12650343-use-claude-for-excel) — свежая интеграция: читать, править и создавать таблицы прямо в Excel (CSV/Excel в Claude).
+- [TDS — My First Exploratory Data Analysis with ChatGPT](https://towardsdatascience.com/my-first-exploratory-data-analysis-with-chatgpt-7f100005efdc/) — практический разбор EDA через чат (Medium).
 
 ---
 **Часы:** ~4 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

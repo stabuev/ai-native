@@ -64,7 +64,7 @@
 
 **Задание: собери редакторский конвейер** — стандартная библиотека (`re`, `collections`), без сети.
 
-> **Перед запуском.** Работай в своей папке курса (`ai-native/3.1-editing-pipeline/`). Нужен только **Python 3**, всё офлайн (для теста ещё `pytest`).
+> **Перед запуском.** Работай в своей папке курса (`ai-native/3.1-editing-pipeline/`), а файлы урока клади в подпапку `code/` (как в 0.1). Нужен только **Python 3**, всё офлайн (для теста ещё `pytest`).
 
 Данные бери готовыми (филлеры и словарь тонов):
 
@@ -135,9 +135,14 @@ final = stage("Перепиши в деловом тоне", edited)
 
 ## Материалы
 
-- [Anthropic — Prompting best practices](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/claude-4-best-practices) — приёмы для качественных текстовых задач.
-- [Anthropic — Prompt engineering overview](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/overview) — обзор техник.
+- [Anthropic — Prompting best practices](https://platform.claude.com/docs/en/docs/build-with-claude/prompt-engineering/claude-4-best-practices) — приёмы для качественных текстовых задач.
+- [Anthropic — Prompt engineering overview](https://platform.claude.com/docs/en/docs/build-with-claude/prompt-engineering/overview) — обзор техник.
 - [anthropics/prompt-eng-interactive-tutorial](https://github.com/anthropics/prompt-eng-interactive-tutorial) — практика на примерах.
+- [Stiennon et al., 2020 — Learning to Summarize from Human Feedback](https://arxiv.org/abs/2009.01325) — seminal: качество суммаризации по человеческим предпочтениям (корни RLHF), почему ROUGE — плохой прокси.
+- [Adams et al., 2023 — Chain of Density](https://arxiv.org/abs/2309.04269) — итеративно уплотнять саммари сущностями без роста длины; люди предпочитают такие.
+- [Anthropic — Summarization cookbook guide](https://github.com/anthropics/claude-cookbooks/blob/main/capabilities/summarization/guide.ipynb) — guided/meta-суммаризация, чанкинг длинных документов, оценка качества.
+- [Reif et al., 2021 (Google) — A Recipe for Arbitrary Text Style Transfer](https://arxiv.org/abs/2109.03910) — классика: стиль и тон как задача переписывания по инструкции («make this melodramatic»).
+- [Raheja et al., 2023 — CoEdIT](https://arxiv.org/abs/2305.09857) — instruction-based редактура: «сделай проще», «нейтральнее по тону»; SOTA-редактор.
 
 ---
 **Часы:** ~4 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

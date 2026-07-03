@@ -56,7 +56,7 @@
 
 **Задание: собери привратник конфиденциальности** — детектор PII, классификатор уровня, маскировку и решение об отправке. Только стандартная библиотека (`re`), без сети.
 
-> **Перед запуском.** Работай в своей папке курса (`ai-native/11.1-privacy/`). Нужен только **Python 3** (для теста ещё `pytest`).
+> **Перед запуском.** Работай в своей папке курса (`ai-native/11.1-privacy/`), а файлы урока клади в подпапку `code/` (как в 0.1). Нужен только **Python 3** (для теста ещё `pytest`).
 
 Создай файл `data_classifier.py`:
 
@@ -113,6 +113,12 @@ python code/data_classifier.py # демо: текст с ключом → restri
 - [Anthropic — Commercial Customers (privacy)](https://privacy.claude.com/en/collections/10663361-commercial-customers) — данные бизнеса не идут на обучение.
 - [Anthropic — Updates to Consumer Terms](https://www.anthropic.com/news/updates-to-our-consumer-terms) — opt-in по использованию данных.
 - [DeepSeek — Privacy Policy](https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html) — кейс data residency (хранение в КНР).
+- [OpenAI — Enterprise privacy](https://openai.com/enterprise-privacy/) — не тренируют на business data по умолчанию, ZDR, EKM, BAA/HIPAA.
+- [Google Workspace — Generative AI privacy & security](https://workspace.google.com/security/ai-privacy/) — данные Workspace не идут на обучение вне домена; ISO 42001, DLP, data-regions.
+- [Microsoft Presidio](https://github.com/microsoft/presidio) — open-source детект и анонимизация PII (analyzer/anonymizer: replace/mask/redact) — ровно Build It урока.
+- [OWASP — LLM02:2025 Sensitive Information Disclosure](https://genai.owasp.org/llmrisk/llm022025-sensitive-information-disclosure/) — риск утечки PII/секретов через вывод; митигации (санитизация, least privilege). Кейс: утечка DeepSeek ClickHouse.
+- [NIST — Privacy Framework](https://www.nist.gov/privacy-framework) — Identify-P / Govern-P / Control-P / Communicate-P / Protect-P; v1.1 покрывает AI-приватность.
+- [TDS — PII anonymization with Microsoft Presidio (Medium)](https://medium.com/data-science/building-a-customized-pii-anonymizer-with-microsoft-presidio-b5c2ddfe523b) — практическая сборка кастомного анонимайзера.
 
 ---
 **Часы:** ~3 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

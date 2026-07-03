@@ -71,7 +71,7 @@ client → {"method":"tools/call","params":{name, arguments}}        → result:
 
 **Задание: собери мини MCP-сервер на JSON-RPC** — обработчик `initialize`/`tools/list`/`tools/call` с корректными ошибками. Только стандартная библиотека, без сети.
 
-> **Перед запуском.** Работай в своей папке курса (`ai-native/6.3-mcp-server/`). Нужен только **Python 3** (для теста ещё `pytest`).
+> **Перед запуском.** Работай в своей папке курса (`ai-native/6.3-mcp-server/`), а файлы урока клади в подпапку `code/` (как в 0.1). Нужен только **Python 3** (для теста ещё `pytest`).
 
 Создай файл `mini_mcp_server.py`: dataclass `Tool(name, description, input_schema, fn)` и класс `MiniMCP(name, version)`:
 
@@ -138,6 +138,11 @@ FastMCP сам строит `inputSchema` из аннотаций типов (`a
 - [MCP — Build an MCP server](https://modelcontextprotocol.io/docs/develop/build-server) — пошаговый гайд.
 - [modelcontextprotocol/python-sdk](https://github.com/modelcontextprotocol/python-sdk) — официальный SDK с FastMCP.
 - [FastMCP](https://gofastmcp.com) — расширенный фреймворк поверх SDK.
+- [MCP — Server concepts](https://modelcontextprotocol.io/docs/learn/server-concepts) — как сервер отдаёт tools/resources/prompts и кто чем управляет (model/app/user).
+- [MCP — Transports (спека 2025-11-25)](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports) — STDIO и Streamable HTTP: ровно транспорты из урока.
+- [FastMCP — Create an MCP Server in Python (офиц. туториал)](https://gofastmcp.com/tutorials/create-mcp-server) — пошагово: tool из функции, ресурсы, запуск.
+- [freeCodeCamp — Build Your First MCP Server using FastMCP](https://www.freecodecamp.org/news/how-to-build-your-first-mcp-server-using-fastmcp/) — авторитетный практический разбор.
+- [FastMCP: Build your First MCP Server (YouTube)](https://www.youtube.com/watch?v=UVf-hLVbdrQ) — видео-туториал по сборке сервера на FastMCP.
 
 ---
 **Часы:** ~4 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

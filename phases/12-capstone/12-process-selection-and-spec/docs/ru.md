@@ -78,7 +78,7 @@ validate_spec → []          (готова: есть цель, измеримы
 
 **Задание: собери спецификацию Capstone и валидатор измеримости.** Только стандартная библиотека (`dataclasses`), без сети.
 
-> **Перед запуском.** Работай в своей папке курса (`ai-native/12.1-capstone-spec/`). Нужен только **Python 3** (для теста ещё `pytest`).
+> **Перед запуском.** Работай в своей папке курса (`ai-native/12.1-capstone-spec/`), а файлы урока клади в подпапку `code/` (как в 0.1). Нужен только **Python 3** (для теста ещё `pytest`).
 
 Создай файл `spec.py` с двумя dataclass'ами и тремя функциями:
 
@@ -104,7 +104,7 @@ python code/spec.py   # демо: валидная спека → "нет — г
 
 - **Возьми свой процесс** — разбор тикетов, подготовка отчётов, ответы клиентам. Зафиксируй **baseline руками**: сколько времени/денег он занимает сейчас (без этого «после» не с чем сравнить).
 - **Критерии успеха по Anthropic (SMART)** — Specific, Measurable, Achievable, Relevant. Даже «размытое» (этика, безопасность) квантуется: не «безопасные ответы», а «< 0.1% из 10 000 прогонов помечены фильтром токсичности».
-- **Проектируй eval заранее** — как именно померишь качество (exact match / string match / LLM-судья), а не «на глаз потом». Автоматизируй грейдинг, где можно (это Фаза 2.5 и урок про eval-harness).
+- **Проектируй eval заранее** — как именно померишь качество (exact match / string match / LLM-судья), а не «на глаз потом». Автоматизируй грейдинг, где можно (это урок 2.5 про eval-harness).
 - **Согласуй ограничения** — приватность (11.1), human-in-the-loop на критичном (7.3), бюджет и алерты (Фаза 9). Спека без ограничений и потолка расходов — риск в проде.
 
 ## SHIP IT
@@ -132,6 +132,11 @@ python code/spec.py   # демо: валидная спека → "нет — г
 - [Anthropic — Define success criteria & build evaluations](https://platform.claude.com/docs/en/docs/build-with-claude/define-success) — критерии успеха SMART, bad-vs-good примеры, дизайн и грейдинг eval.
 - [Anthropic — Evals cookbook](https://platform.claude.com/cookbook/misc-building-evals) — код-примеры human/code/LLM-грейдинга качества.
 - [ai-engineering-from-scratch (rohitg00)](https://github.com/rohitg00/ai-engineering-from-scratch) — образец каркаса «фазы → артефакты», вдохновивший формат Build It / Use It / Ship It.
+- [Google — People + AI Guidebook (PAIR)](https://pair.withgoogle.com/guidebook/) — глава «User Needs + Success Definition»: как ставить цель и метрики успеха AI-продукта.
+- [Microsoft — HAX Toolkit (Guidelines for Human-AI Interaction)](https://www.microsoft.com/en-us/haxtoolkit/) — 18 гайдлайнов + Workbook / Design Patterns для проектирования AI-фичи.
+- [Andrew Ng — Machine Learning Yearning](https://info.deeplearning.ai/machine-learning-yearning-book) — single-number eval metric + optimizing/satisficing (budget/latency как satisficing) — ровно метрики, ограничения и бюджет.
+- [Chip Huyen — AI Engineering (2025)](https://huyenchip.com/books/) — планирование AI-приложения: выбор модели, датасета, eval-бенчмарков и метрик под задачу.
+- [Reforge — Write a PRD for a Generative AI Feature](https://www.reforge.com/guides/write-a-prd-for-a-generative-ai-feature) — спека AI-фичи: evaluation criteria вместо acceptance, tiered thresholds, cost economics.
 
 ---
 **Часы:** ~10 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

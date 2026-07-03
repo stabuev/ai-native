@@ -72,7 +72,7 @@ RunConfig("sonnet-4.6", prompt_version="v2")→ другой         (смени
 
 **Задание: собери телеметрию по процессам и отпечаток конфига.** Только стандартная библиотека (`hashlib`, `json`, `dataclasses`), без сети.
 
-> **Перед запуском.** Работай в своей папке курса (`ai-native/10.3-telemetry/`). Нужен только **Python 3** (для теста ещё `pytest`).
+> **Перед запуском.** Работай в своей папке курса (`ai-native/10.3-telemetry/`), а файлы урока клади в подпапку `code/` (как в 0.1). Нужен только **Python 3** (для теста ещё `pytest`).
 
 Создай файл `telemetry.py`:
 
@@ -129,7 +129,13 @@ python code/telemetry.py # демо: расходы по процессам + о
 
 - [Langfuse — Get started with tracing](https://langfuse.com/docs/observability/get-started) — токены, сессии, трейсы.
 - [OpenTelemetry — GenAI observability](https://opentelemetry.io/blog/2026/genai-observability/) — стандартные поля токенов/латентности.
-- [Anthropic — Create strong empirical evaluations](https://docs.anthropic.com/en/docs/build-with-claude/develop-tests) — измеримость и воспроизводимость качества.
+- [Anthropic — Create strong empirical evaluations](https://platform.claude.com/docs/en/docs/build-with-claude/define-success) — измеримость и воспроизводимость качества.
+- [Thinking Machines — Defeating Nondeterminism in LLM Inference](https://thinkingmachines.ai/blog/defeating-nondeterminism-in-llm-inference/) — почему вывод недетерминирован даже при temp=0 (батч-зависимость reduction-ядер) и как чинят (batch-invariant kernels → bit-identical).
+- [OpenAI — Reproducible outputs (seed + system_fingerprint)](https://github.com/openai/openai-cookbook/blob/main/examples/Reproducible_outputs_with_the_seed_parameter.ipynb) — `seed` + `system_fingerprint`: fingerprint фиксирует конфиг (best-effort, не гарантия бит-в-бит).
+- [Anthropic — Increase output consistency](https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/increase-consistency) — у Claude нет seed: формат, prefill, примеры, retrieval для консистентности формы.
+- [Weights & Biases — Experiment tracking](https://docs.wandb.ai/models/track) — логировать config/seed/версии/артефакты для воспроизводимости и дашборда «до-после».
+- [Pineau et al., 2021 — Improving Reproducibility in ML (NeurIPS program)](https://arxiv.org/abs/2003.12206) — классический фреймворк воспроизводимости и ML Reproducibility Checklist.
+- [Cobus Greyling — OpenAI Seeding, Model Fingerprints & Log Probabilities (Medium)](https://cobusgreyling.medium.com/openai-seeding-model-fingerprints-log-probabilities-cedf094e8b02) — практический разбор seed/fingerprint/logprobs.
 
 ---
 **Часы:** ~4 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

@@ -75,7 +75,7 @@ competency_report({промпты:✓, агенты:✓, MCP:✗}) → {done: 2,
 
 **Задание: собери калькулятор защиты** — улучшения «до/после», ROI и отчёт по компетенциям. Только стандартная библиотека, без сети.
 
-> **Перед запуском.** Работай в своей папке курса (`ai-native/12.3-defense/`). Нужен только **Python 3** (для теста ещё `pytest`).
+> **Перед запуском.** Работай в своей папке курса (`ai-native/12.3-defense/`), а файлы урока клади в подпапку `code/` (как в 0.1). Нужен только **Python 3** (для теста ещё `pytest`).
 
 Создай файл `metrics.py` с четырьмя функциями:
 
@@ -129,6 +129,10 @@ python code/metrics.py  # демо: −70% / −80% / +25.7% и ROI 5.5
 - [FinOps Foundation — FinOps for AI](https://www.finops.org/wg/finops-for-ai-overview/) — стоимость AI, unit-экономика, cost per inference/outcome.
 - [Anthropic — Define success criteria & build evaluations](https://platform.claude.com/docs/en/docs/build-with-claude/define-success) — измерение качества: методы грейдинга.
 - [CloudZero — FinOps for AI](https://www.cloudzero.com/blog/finops-for-ai/) — ROI и привязка AI-расходов к бизнес-результату.
+- [McKinsey — The State of AI](https://www.mckinsey.com/capabilities/quantumblack/our-insights/the-state-of-ai) — почему ценность приходит только при строгом замере исходов: high performers ставят измеримые бизнес-цели и меряют эффект (аргумент за защиту числами).
+- [Agility at Scale — Proving ROI: Measuring the Business Value of Enterprise AI](https://agility-at-scale.com/implementing/roi-of-enterprise-ai/) — практика: baseline «до», отделение эффекта AI от внешних факторов, Realized/Trending/Capability ROI, payback-период.
+- [Cole Nussbaumer Knaflic — Storytelling with Data](https://www.storytellingwithdata.com/books) — как показать результат, а не вывалить числа: контекст, убрать шум, направить внимание, before/after-makeover'ы (навык демо и защиты).
+- [AlterSquare — Why AI Projects Stall After the First Demo](https://altersquare.medium.com/why-ai-projects-stall-after-the-first-demo-3aa0b639e684) — «science-experiment trap», показывай реальный рабочий процесс, а не вау-демо; про переход демо → прод.
 
 ---
 **Часы:** ~10 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

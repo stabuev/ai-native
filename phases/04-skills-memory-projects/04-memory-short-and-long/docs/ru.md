@@ -61,7 +61,7 @@ B: 0.5 ** (1/30)   = 0.5 ** 0.03 = 0.977   → score = 1 + 0.977 = 1.977
 
 **Задание: собери файловую память агента** — класс `MemoryStore` с релевантностью, свежестью и персистентностью. Только стандартная библиотека (`json`, `re`, `time`), без сети.
 
-> **Перед запуском.** Работай в своей папке курса (`ai-native/4.2-memory/`). Нужен только **Python 3** (для теста ещё `pytest`).
+> **Перед запуском.** Работай в своей папке курса (`ai-native/4.2-memory/`), а файлы урока клади в подпапку `code/` (как в 0.1). Нужен только **Python 3** (для теста ещё `pytest`).
 
 Создай файл `memory_store.py` с классом `MemoryStore(half_life=30.0)` и методами:
 
@@ -118,6 +118,12 @@ python code/memory_store.py # демо: поиск «кофе» — свежая
 - [OpenAI — Memory FAQ](https://help.openai.com/en/articles/8590148-memory-faq) — как устроена память ChatGPT и управление ей.
 - [OpenAI — Memory and new controls (blog)](https://openai.com/index/memory-and-new-controls-for-chatgpt/) — анонс и принципы.
 - [Anthropic — Effective context engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) — память как часть управляемого контекста, структурированные заметки.
+- [Park et al., 2023 — Generative Agents](https://arxiv.org/abs/2304.03442) — memory stream с извлечением по recency + importance + relevance — ровно темпоральность и поиск из урока.
+- [Packer et al., 2023 — MemGPT](https://arxiv.org/abs/2310.08560) — «LLM как ОС»: иерархическая память (working / archival) и пейджинг контекста.
+- [Anthropic — Memory tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool) — клиентская файловая память между сессиями (`/memories`, view/create/str_replace) — почти то, что урок строит руками.
+- [Mem0](https://github.com/mem0ai/mem0) — популярный «слой памяти» для агентов: персистентные факты о пользователе и поиск.
+- [Letta (наследник MemGPT)](https://github.com/letta-ai/letta) — платформа stateful-агентов: постоянная память, самообучение поверх идей MemGPT.
+- [TDS — A Practical Guide to Memory for Autonomous LLM Agents](https://towardsdatascience.com/a-practical-guide-to-memory-for-autonomous-llm-agents/) — таксономия short/long, semantic/procedural/episodic и курирование памяти (Medium).
 
 ---
 **Часы:** ~4 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

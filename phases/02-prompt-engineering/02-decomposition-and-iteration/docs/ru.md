@@ -69,7 +69,7 @@ history = [
 
 **Задание: собери раннер цепочки промптов с трейсом** — стандартная библиотека, без сети.
 
-> **Перед запуском.** Работай в своей папке курса (`ai-native/2.3-decomposition/`). Нужен только **Python 3**, всё офлайн (для теста ещё `pytest`).
+> **Перед запуском.** Работай в своей папке курса (`ai-native/2.3-decomposition/`), а файлы урока клади в подпапку `code/` (как в 0.1). Нужен только **Python 3**, всё офлайн (для теста ещё `pytest`).
 
 Демо-шаги бери готовыми (это пример цепочки; в проде вместо них — вызовы модели):
 
@@ -126,7 +126,7 @@ chain = [ChainStep("outline", step_llm("Составь план")),
 ## ЧАСТЫЕ ОШИБКИ
 
 - **Мегапромпт вместо цепочки.** «Сделай всё сразу» роняет шаги и не отлаживается. Если задача из нескольких этапов — дроби на шаги с одной целью каждый.
-- **Дробить тривиальное.** Простой однашаговый запрос не нужно разбивать на цепочку — это лишние вызовы, токены и задержка. Декомпозиция — для многошаговых задач.
+- **Дробить тривиальное.** Простой одношаговый запрос не нужно разбивать на цепочку — это лишние вызовы, токены и задержка. Декомпозиция — для многошаговых задач.
 - **Терять трейс.** Без истории вход/выход непонятно, какой шаг сломался. Сохраняй промежуточные результаты — в этом половина пользы.
 - **Гнать независимые шаги последовательно.** Если шаг не зависит от предыдущего, его можно выполнить параллельно — последовательность нужна только при зависимости.
 
@@ -138,9 +138,13 @@ chain = [ChainStep("outline", step_llm("Составь план")),
 
 ## Материалы
 
-- [Anthropic — Chain complex prompts](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/chain-prompts) — когда и как дробить задачу на цепочку.
+- [Anthropic — Chain complex prompts](https://platform.claude.com/docs/en/docs/build-with-claude/prompt-engineering/chain-prompts) — когда и как дробить задачу на цепочку.
 - [Wei et al., 2022 — Chain-of-Thought](https://arxiv.org/abs/2201.11903) — пошаговое рассуждение как основа декомпозиции.
-- [Anthropic — Prompting best practices](https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/claude-4-best-practices) — паттерн self-correction (generate → review → improve).
+- [Anthropic — Prompting best practices](https://platform.claude.com/docs/en/docs/build-with-claude/prompt-engineering/claude-4-best-practices) — паттерн self-correction (generate → review → improve).
+- [Anthropic — Building Effective Agents (2024)](https://www.anthropic.com/research/building-effective-agents) — каноничное современное описание паттерна prompt chaining: декомпозиция задачи в цепочку шагов.
+- [Madaan et al., 2023 — Self-Refine](https://arxiv.org/abs/2303.17651) — про итеративное уточнение: модель сама даёт себе фидбэк и улучшает вывод (~+20%).
+- [Zhou et al., 2022 — Least-to-Most Prompting](https://arxiv.org/abs/2205.10625) — первоисточник декомпозиции: разбить сложное на подзадачи и решать по порядку.
+- [DSPy (Stanford)](https://github.com/stanfordnlp/dspy) — современный подход: **программировать** пайплайны из промптов и оптимизировать их автоматически вместо ручных цепочек.
 
 ---
 **Часы:** ~3 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

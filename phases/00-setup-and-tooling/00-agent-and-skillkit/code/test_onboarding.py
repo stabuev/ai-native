@@ -11,17 +11,17 @@ def test_score_range_and_levels():
     assert level(21) == "Инженер"
 
 
-def test_route_beginner_is_full_200h():
+def test_route_beginner_is_full_228h():
     r = route(score([0] * len(QUESTIONS)))
     assert r["level"] == "Новичок"
-    assert r["total_hours"] == 200
+    assert r["total_hours"] == 228        # сумма базовых часов = README / ROADMAP
     assert all(p["action"] == "focus" for p in r["plan"])
 
 
 def test_route_engineer_is_shorter_but_keeps_capstone():
     r = route(score([3] * len(QUESTIONS)))
     assert r["level"] == "Инженер"
-    assert r["total_hours"] < 200
+    assert r["total_hours"] < 228
     plan = {p["phase"]: p["action"] for p in r["plan"]}
     assert plan[0] == "skip"        # инженер пропускает setup
     assert plan[12] == "focus"      # capstone делают все

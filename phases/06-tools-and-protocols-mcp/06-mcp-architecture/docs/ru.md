@@ -85,7 +85,7 @@ srv.get_prompt("greet", name="Иван") → "Привет, Иван!"          
 
 **Задание: собери in-process модель MCP** — сервер с тремя примитивами и клиент с discovery/invoke. Только стандартная библиотека, без сети.
 
-> **Перед запуском.** Работай в своей папке курса (`ai-native/6.2-mcp-architecture/`). Нужен только **Python 3** (для теста ещё `pytest`).
+> **Перед запуском.** Работай в своей папке курса (`ai-native/6.2-mcp-architecture/`), а файлы урока клади в подпапку `code/` (как в 0.1). Нужен только **Python 3** (для теста ещё `pytest`).
 
 Создай файл `mcp_architecture.py` с двумя классами:
 
@@ -105,7 +105,7 @@ python code/mcp_architecture.py # демо: discovery + вызов tool/resource
 
 ## USE IT
 
-Готовых MCP-серверов уже десятки — подключаешь, не пишет код (мульти-платформа):
+Готовых MCP-серверов уже десятки — подключаешь без единой строчки кода (мульти-платформа):
 
 - **Claude Desktop / Claude Code** — добавить сервер в конфиг MCP; клиент сам сделает discovery и покажет инструменты.
 - **Cursor и другие host'ы** — тот же протокол, свои настройки подключения.
@@ -138,6 +138,10 @@ python code/mcp_architecture.py # демо: discovery + вызов tool/resource
 - [MCP — Specification](https://modelcontextprotocol.io/specification/2025-11-25) — протокол, примитивы, capability negotiation.
 - [Anthropic — Introducing MCP](https://www.anthropic.com/news/model-context-protocol) — зачем нужен стандарт.
 - [modelcontextprotocol/servers](https://github.com/modelcontextprotocol/servers) — готовые серверы-примеры.
+- [MCP — Architecture overview](https://modelcontextprotocol.io/docs/learn/architecture) — официальная страница по теме урока: host/client/server, примитивы (tools/resources/prompts), capability negotiation, JSON-RPC, транспорты.
+- [DeepLearning.AI — MCP: Build Rich-Context AI Apps with Anthropic](https://learn.deeplearning.ai/courses/mcp-build-rich-context-ai-apps-with-anthropic) — бесплатный курс от Anthropic (Elie Schoppik): архитектура → свой сервер → подключение.
+- [MCP Blog — One Year of MCP (релиз спеки 2025-11-25)](https://blog.modelcontextprotocol.io/posts/2025-11-25-first-mcp-anniversary/) — что нового и куда развивается протокол (Tasks и др.).
+- [Rick Hightower — Claude and MCP: Content-Based Tool Integration (Medium)](https://medium.com/@richardhightower/anthropics-claude-and-mcp-a-deep-dive-into-content-based-tool-integration-dcf18cba82f0) — техническое сравнение подходов (Claude как content items vs OpenAI function calls).
 
 ---
 **Часы:** ~4 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

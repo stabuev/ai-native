@@ -115,6 +115,10 @@ print(len(enc.encode(text)), "токенов")     # реальный счётч
 - [openai/tiktoken](https://github.com/openai/tiktoken) — продакшн-BPE-токенайзер (есть учебный submodule с визуализацией).
 - [karpathy/minbpe](https://github.com/karpathy/minbpe) — минимальная чистая реализация BPE для понимания механизма.
 - [Sennrich et al., 2016 — Subword Units (BPE)](https://arxiv.org/abs/1508.07909) — первоисточник BPE в NLP.
+- [Hugging Face — Summary of the tokenizers](https://huggingface.co/docs/transformers/en/tokenizer_summary) — BPE / WordPiece / Unigram / SentencePiece рядом, с пошаговым примером слияний.
+- [Tiktokenizer](https://tiktokenizer.vercel.app/) — интерактивно: вставляешь текст, видишь разбиение на токены по разным моделям.
+- [Andrej Karpathy — «Let's build the GPT Tokenizer»](https://www.youtube.com/watch?v=zduSFxRajkE) — 2-часовая сборка токенайзера с нуля (в духе Build It) + разбор «квирков» токенизации.
+- [Hugging Face — LLM Course, гл. 6 (Tokenizers)](https://huggingface.co/learn/llm-course/chapter6/1) — практический разбор: обучить свой токенайзер, сравнение BPE / WordPiece / Unigram.
 
 ---
 **Часы:** ~3 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов** (эталон уровня «теория»).

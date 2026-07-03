@@ -77,7 +77,7 @@ safe_to_act({"tool": "delete"}, allowlist)
 
 **Задание: собери ядро защиты от prompt injection** — детект, санитизация и гейт действия. Только стандартная библиотека (`re`), без сети.
 
-> **Перед запуском.** Работай в своей папке курса (`ai-native/11.5-prompt-injection/`). Нужен только **Python 3** (для теста ещё `pytest`).
+> **Перед запуском.** Работай в своей папке курса (`ai-native/11.5-prompt-injection/`), а файлы урока клади в подпапку `code/` (как в 0.1). Нужен только **Python 3** (для теста ещё `pytest`).
 
 Создай файл `injection_defense.py`: кортеж `INJECTION_PATTERNS` (маркеры инъекций на EN и RU) и:
 
@@ -131,6 +131,13 @@ python code/injection_defense.py  # демо: детект + sanitize + 3 вер
 - [OWASP GenAI — LLM01:2025 Prompt Injection](https://genai.owasp.org/llmrisk/llm01-prompt-injection/) — каноничное описание риска №1, direct/indirect и митигации.
 - [OWASP — Top 10 for LLM Applications](https://owasp.org/www-project-top-10-for-large-language-model-applications/) — весь список рисков LLM-приложений.
 - [Anthropic — Building Effective Agents](https://www.anthropic.com/research/building-effective-agents) — guardrails и ограничение автономии агента.
+- [Greshake et al., 2023 — Indirect Prompt Injection (AISec)](https://arxiv.org/abs/2302.12173) — seminal: недоверенные данные из RAG/веба = «arbitrary code» (ровно RAG-poisoning урока).
+- [Simon Willison — Prompt injection (серия)](https://simonwillison.net/series/prompt-injection/) — ввёл термин; direct/indirect и почему проблема не решается «ещё одним AI».
+- [Debenedetti et al., 2024 — AgentDojo (NeurIPS)](https://arxiv.org/abs/2406.13352) — среда для оценки атак и защит от prompt injection на агентах (97 задач, 629 тестов).
+- [DeepMind — CaMeL: Defeating Prompt Injections by Design (2025)](https://arxiv.org/abs/2503.18813) — защита через capabilities + data-flow (не «ещё AI»), 67% на AgentDojo.
+- [Lakera — Gandalf](https://gandalf.lakera.ai/) — интерактивная игра prompt injection (7 уровней): обучение атаке и защите.
+- [NVIDIA garak](https://github.com/NVIDIA/garak) — LLM vulnerability scanner (red-team: injection, jailbreak, data leakage).
+- [Meta — Llama Prompt Guard 2](https://www.llama.com/docs/model-cards-and-prompt-formats/prompt-guard/) — классификатор входа (injection/jailbreak) как guardrail-слой; с честной оговоркой, что обходится adaptive-атаками.
 
 ---
 **Часы:** ~4 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**
