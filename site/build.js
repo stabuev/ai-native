@@ -14,6 +14,17 @@ const path = require("path");
 const ROOT = path.join(__dirname, "..");
 const PHASES_DIR = path.join(ROOT, "phases");
 
+// ---------- SEO / деплой ----------
+const SITE_ORIGIN = "https://datascience.xyz";   // домен деплоя
+const DEPLOY_BASE = "/courses/ainative/";         // подпапка на домене (для абсолютных canonical/sitemap)
+const SITE_PAGES = ["index", "catalog", "prereqs", "glossary"]; // верхнеуровневые страницы (для переписи ссылок в контенте)
+function escAttr(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function lessonSlug(dir) {   // dir = "phases/<phase>/<NN-lesson>" → "lesson" без числового префикса
+  return path.basename(dir).replace(/^\d+-/, "");
+}
+
 // ---------- мини-рендер Markdown -> HTML ----------
 function esc(s) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -311,7 +322,8 @@ function build() {
       html = html.replace("<p>{{quiz}}</p>", quiz ? `<div class="quiz-section" data-lesson="${id}"></div>` : "");
       cur.lessons.push({
         id, title: ls[3].trim(), status: done ? "done" : "planned",
-        motto: lm.motto, hours: lm.hours, dir: L ? L.dir : null, quiz, html,
+        motto: lm.motto, hours: lm.hours, dir: L ? L.dir : null,
+        slug: L ? lessonSlug(L.dir) : null, quiz, html,
       });
     }
   }
@@ -327,6 +339,79 @@ function build() {
   return { phases, meta };
 }
 
+// ---------- SEO: статическая страница на каждый урок (SSR-контент + мета) ----------
+// Контент рендерится в HTML на этапе сборки, поэтому краулер видит текст урока без JS.
+// Пути к ассетам относительные (../../) — работает и локально (/), и в подпапке (/courses/ainative/).
+function staticLessonHtml(l, prev, next) {
+  const title = escAttr(`${l.id} ${l.title} — AI Native`);
+  const desc = escAttr(l.motto || `Урок ${l.id} курса AI Native: ${l.title}. Разбор по шагам с кодом и артефактом.`);
+  const url = `${SITE_ORIGIN}${DEPLOY_BASE}lessons/${l.slug}/`;
+  // ссылки на site-страницы внутри контента переанкорить на ../../ (страница лежит на 2 уровня глубже)
+  const content = l.html.replace(/href="(index|catalog|prereqs|glossary)\.html"/g, 'href="../../$1.html"');
+  const pn =
+    (prev ? `<a href="../../lessons/${prev.slug}/"><small>← ${prev.id}</small>${esc(prev.title)}</a>` : "<span></span>")
+    + (next ? `<a href="../../lessons/${next.slug}/" style="text-align:right"><small>${next.id} →</small>${esc(next.title)}</a>` : "<span></span>");
+  return `<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${title}</title>
+  <meta name="description" content="${desc}">
+  <link rel="canonical" href="${url}">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="${title}">
+  <meta property="og:description" content="${desc}">
+  <meta property="og:url" content="${url}">
+  <meta property="og:image" content="${SITE_ORIGIN}${DEPLOY_BASE}og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="${l.id}">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1">${content}</article>
+    <div class="nav-prevnext" id="prevnext">${pn}</div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>
+`;
+}
+
+function writeStaticLessons(phases) {
+  const lessonsDir = path.join(__dirname, "lessons");
+  fs.rmSync(lessonsDir, { recursive: true, force: true });   // чистим устаревшее
+  const flat = phases.flatMap((p) => p.lessons).filter((l) => l.slug && l.html);
+  for (let i = 0; i < flat.length; i++) {
+    const l = flat[i];
+    const dir = path.join(lessonsDir, l.slug);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "index.html"), staticLessonHtml(l, flat[i - 1], flat[i + 1]));
+  }
+  return flat.length;
+}
+
+function writeSitemap(phases) {
+  const urls = SITE_PAGES.map((p) => `${DEPLOY_BASE}${p}.html`)
+    .concat(phases.flatMap((p) => p.lessons).filter((l) => l.slug && l.html)
+      .map((l) => `${DEPLOY_BASE}lessons/${l.slug}/`));
+  const today = new Date().toISOString().slice(0, 10);
+  const body = urls.map((u) =>
+    `  <url><loc>${SITE_ORIGIN}${u}</loc><lastmod>${today}</lastmod></url>`).join("\n");
+  fs.writeFileSync(path.join(__dirname, "sitemap.xml"),
+    `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${body}\n</urlset>\n`);
+  return urls.length;
+}
+
 function main() {
   const { phases, meta } = build();
   const glossary = readGlossary();
@@ -335,6 +420,9 @@ function main() {
     + "const PHASES = " + JSON.stringify(phases) + ";\n"
     + "const GLOSSARY = " + JSON.stringify(glossary) + ";\n";
   fs.writeFileSync(path.join(__dirname, "data.js"), out);
+  const nPages = writeStaticLessons(phases);
+  const nUrls = writeSitemap(phases);
   console.log(`data.js: фаз ${meta.phases}, уроков ${meta.lessons} (готово ${meta.done}), ~${meta.hours} ч, глоссарий ${glossary.length}`);
+  console.log(`SEO: статических страниц уроков ${nPages}, sitemap.xml URL ${nUrls}`);
 }
 main();

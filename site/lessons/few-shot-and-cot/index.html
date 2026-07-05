@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>2.2 Few-shot и chain-of-thought — AI Native</title>
+  <meta name="description" content="Покажи примеры — и модель поймёт формат; попроси рассуждать — и она решит сложное.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/few-shot-and-cot/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="2.2 Few-shot и chain-of-thought — AI Native">
+  <meta property="og:description" content="Покажи примеры — и модель поймёт формат; попроси рассуждать — и она решит сложное.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/few-shot-and-cot/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="2.2">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 2.2 · Few-shot и chain-of-thought</h1><p><strong>Фаза 2 — Промпт-инжиниринг</strong> · <strong>Результат фазы:</strong> Писать воспроизводимые промпты и измерять их качество через eval-harness.</p><p><strong>Requires (только для USE IT):</strong> платный API-ключ одного из провайдеров. BUILD IT работает офлайн, без ключей и без сети.</p><p><strong>Этот урок — про две самые дешёвые техники, которые резко поднимают качество без дообучения.</strong> В уроке 2.1 мы собрали анатомию промпта; блок «Примеры» был отложен — здесь он раскрывается. <strong>Few-shot</strong> (показать примеры) задаёт формат и смысл задачи, <strong>chain-of-thought</strong> (попросить рассуждать по шагам) помогает на многошаговых задачах. Обе работают прямо в промпте, без переобучения модели.</p><blockquote><strong>MOTTO.</strong> Покажи примеры — и модель поймёт формат; попроси рассуждать — и она решит сложное.</blockquote><h2>PROBLEM</h2><p>На задачах с нестандартным форматом или многошаговым рассуждением «просто спросить» сбоит: модель угадывает разметку, путает классы, перескакивает к неверному ответу. Дообучать модель ради этого дорого и медленно. Нужны приёмы, которые поднимают качество <strong>здесь и сейчас, прямо в промпте</strong> — и их два: few-shot и chain-of-thought.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Принцип — <strong>«покажи, а не объясняй»</strong>. Описать желаемый формат словами трудно и неоднозначно; пара примеров «вход → выход» передаёт его точнее любого описания. А для задач, где надо посчитать или связать несколько фактов, помогает дать модели <strong>подумать вслух</strong>: промежуточные шаги резко снижают шанс прыгнуть к неверному ответу.</p><h3>Как это работает</h3><pre><code>zero-shot : задача → ответ                          (модель угадывает формат)
+few-shot  : пример, пример, пример → задача → ответ  (учится по образцам)
+CoT       : задача → «думай по шагам» → шаги → ответ (разворачивает рассуждение)</code></pre><ul><li><strong>Few-shot — это in-context learning.</strong> Модель «подхватывает» паттерн из 2–5 примеров прямо в промпте, <strong>без обновления весов</strong> — именно это показали Brown et al. (2020) на GPT-3: большая модель учится задаче по нескольким примерам во время вывода. Лучше всего работает там, где важны формат и семантика метки: классификация, разметка, извлечение, единый стиль ответа.</li><li><strong>CoT — это рассуждение по шагам.</strong> Если попросить модель сначала расписать промежуточные шаги, а потом дать ответ, точность на арифметике, логике и многошаговых задачах заметно растёт (Wei et al., 2022). Reasoning-модели из урока 1.2 делают это автоматически (скрытые thinking-токены), но и обычную модель можно «развязать» фразой «думай по шагам».</li><li><strong>Когда что.</strong> Few-shot — когда нужен формат/семантика; CoT — когда нужно рассуждение. Их можно сочетать (few-shot CoT — примеры, где показано само рассуждение).</li></ul><p>Важно: примеры должны быть <strong>качественными и разнообразными</strong> (модель копирует и ошибки тоже), а их число — в меру: каждый пример занимает место в контекстном окне (урок 1.2) и стоит токенов.</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Покажем численно, <strong>зачем</strong> примеры, на игрушечной классификации тональности. Обучающие примеры (вход → метка):</p><pre><code>"обожаю прекрасный фильм"      → pos
+"чудесный замечательный день"  → pos
+"ненавижу отвратительную еду"  → neg
+"ужасный кошмарный сервис"     → neg</code></pre><p>Тест: <code>"обожаю прекрасный сериал" → pos</code>, <code>"ужасный кошмарный продукт" → neg</code>.</p><p><strong>Zero-shot</strong> (без примеров) — модель «угадывает», в нашей игрушке это дефолтная метка <code>neg</code>. Тогда из двух тестовых она угадает только второй:</p><pre><code>accuracy(zero-shot) = 1 / 2 = 0.5</code></pre><p><strong>Few-shot</strong> — берём метку самого похожего примера (похожесть по доле общих слов, Жаккар):</p><ul><li><code>"обожаю прекрасный сериал"</code> ближе всего к <code>"обожаю прекрасный фильм"</code> (2 общих слова из 4 → 0.5) → метка <strong>pos</strong> ✓;</li><li><code>"ужасный кошмарный продукт"</code> ближе к <code>"ужасный кошмарный сервис"</code> (0.5) → метка <strong>neg</strong> ✓.</li></ul><pre><code>accuracy(few-shot) = 2 / 2 = 1.0</code></pre><p>Те же данные, разница 0.5 → 1.0 — только за счёт того, что в промпт положили примеры. Это и есть in-context learning в миниатюре (на реальной модели вместо Жаккара — её собственное понимание).</p><h2>BUILD IT</h2><p><strong>Задание: собери few-shot/CoT-промпты и измерь ценность примеров</strong> — стандартная библиотека, без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/2.2-few-shot-cot/</code>), а файлы урока клади в подпапку <code>code/</code> (как в 0.1). Нужен только <strong>Python 3</strong>, всё офлайн (для теста ещё <code>pytest</code>).</blockquote><p>Создай <code>few_shot.py</code> и реализуй:</p><ul><li><strong><code>format_few_shot(instruction, examples, query)</code></strong> — собери промпт: инструкция, затем каждый пример как <code>Вход: {inp}\nВыход: {out}</code>, и в конце <code>Вход: {query}\nВыход:</code> (хвост оставь открытым — модель его продолжит). <code>examples</code> — список пар <code>(вход, выход)</code>.</li><li><strong><code>format_cot(instruction, query)</code></strong> — верни промпт, который просит рассуждать пошагово перед ответом (например «Думай по шагам, затем дай ответ»).</li><li><strong><code>_similarity(a, b)</code></strong> — похожесть строк по Жаккару: доля общих слов = <code>|пересечение| / |объединение|</code> множеств слов.</li><li><strong><code>knn_predict(query, examples)</code></strong> — few-shot аналог: верни метку примера с максимальной <code>_similarity</code> к <code>query</code> (на пустом списке — <code>None</code>).</li><li><strong><code>zero_shot_predict(query, default)</code></strong> — без примеров верни <code>default</code>.</li><li><strong><code>accuracy(predict_fn, dataset)</code></strong> — доля верных предсказаний на наборе пар <code>(вход, метка)</code>.</li></ul><p><strong>Готово, когда</strong> тест <code>test_few_shot.py</code> зелёный — он проверяет, что few-shot промпт содержит примеры и запрос и кончается на <code>Выход:</code>, что CoT просит шаги, что <code>knn_predict</code> берёт самый похожий пример, и что few-shot бьёт zero-shot (1.0 против 0.5).</p><pre><code>pytest code -q             # красное → реализуй функции → зелёное
+python code/few_shot.py    # демо: few-shot промпт + accuracy few-shot vs zero-shot</code></pre><p><strong>Подсказка.</strong> <code>_similarity</code>: переведи строки в <code>set(a.split())</code> и считай <code>len(sa &amp; sb) / len(sa | sb)</code>. <code>knn_predict</code>: <code>max(examples, key=lambda e: _similarity(query, e[0]))[1]</code>.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>Сравни качество с/без примеров на реальной модели (мульти-провайдер): прогони один кейс в трёх режимах — zero-shot, few-shot, CoT — и сравни ответы.</p><pre><code>zero = "Классифицируй тональность: 'ужасный сервис'"
+few  = format_few_shot("Классифицируй тональность.", EXAMPLES, "ужасный сервис")
+cot  = format_cot("Классифицируй тональность.", "ужасный сервис")
+for prompt in (zero, few, cot):
+    Anthropic().messages.create(model="claude-haiku-4-5", max_tokens=100,
+        messages=[{"role": "user", "content": prompt}])
+    OpenAI().responses.create(model="gpt-5.x", input=prompt)
+    genai.Client().models.generate_content(model="gemini-2.x-flash", contents=prompt)</code></pre><p>На простой задаче разницу видно на глаз; <strong>системно</strong> мерить долю верных на наборе кейсов будем в уроке 2.5 (eval-harness).</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Набор few-shot заготовок → <a href="#f-phases-02-prompt-engineering-02-few-shot-and-cot-outputs-few-shot-templates-md"><code>outputs/few-shot-templates.md</code></a></p><p>Готовые шаблоны few-shot и CoT под типовые задачи (классификация, извлечение, рассуждение) — подставляешь свои примеры.</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Few-shot с плохими примерами.</strong> Модель копирует и формат, и ошибки. Примеры должны быть аккуратными, однозначными и покрывать разные классы.</li><li><strong>Заваливать промпт десятками примеров.</strong> Каждый пример занимает контекст (урок 1.2) и стоит токенов. Обычно хватает 2–5 хорошо подобранных.</li><li><strong>CoT там, где нужен только формат.</strong> Для простой классификации рассуждение вслух лишь раздувает ответ; CoT — для многошаговых задач (счёт, логика).</li><li><strong>Сравнивать режимы на одном примере и делать выводы.</strong> Один кейс — это анекдот, а не метрика. Меряй долю верных на наборе (урок 2.5).</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="2.2"></div><h2>Материалы</h2><ul><li><a href="https://arxiv.org/abs/2005.14165" target="_blank" rel="noopener">Brown et al., 2020 — Language Models are Few-Shot Learners (GPT-3)</a> — откуда взялся few-shot (in-context learning).</li><li><a href="https://arxiv.org/abs/2201.11903" target="_blank" rel="noopener">Wei et al., 2022 — Chain-of-Thought Prompting</a> — первоисточник CoT.</li><li><a href="https://github.com/anthropics/prompt-eng-interactive-tutorial" target="_blank" rel="noopener">anthropics/prompt-eng-interactive-tutorial</a> — практические главы про примеры и пошаговое мышление.</li><li><a href="https://arxiv.org/abs/2402.10200" target="_blank" rel="noopener">Wang &amp; Zhou, 2024 (NeurIPS) — Chain-of-Thought Reasoning Without Prompting</a> — CoT-decoding: цепочки рассуждений уже «зашиты» в модель, их достаёт перебор top-k веток, а не промпт.</li><li><a href="https://arxiv.org/abs/2501.12948" target="_blank" rel="noopener">DeepSeek-R1, 2025 (Nature) — Incentivizing Reasoning via RL</a> — эра reasoning-моделей: CoT, выученный через RL, «aha moment».</li><li><a href="https://arxiv.org/abs/2505.05410" target="_blank" rel="noopener">Anthropic, 2025 — Reasoning Models Don't Always Say What They Think</a> — важный нюанс: озвученная цепочка ≠ реальная причина ответа (faithfulness).</li><li><a href="https://cameronrwolfe.substack.com/p/demystifying-reasoning-models" target="_blank" rel="noopener">Cameron R. Wolfe — Demystifying Reasoning Models (2025)</a> — практический мост CoT → o1/R1 и test-time compute.</li><li><a href="https://arxiv.org/abs/2203.11171" target="_blank" rel="noopener">Wang et al., 2022 — Self-Consistency Improves CoT</a> — по-прежнему стандартный приём: сэмплируй несколько цепочек, бери консенсус.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-02-prompt-engineering-02-few-shot-and-cot-code-test-few-shot-py" open data-test="1"><summary><span class="fname">code/test_few_shot.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from few_shot import format_few_shot, format_cot, knn_predict, zero_shot_predict, accuracy
+
+EXAMPLES = [
+    ("обожаю прекрасный фильм", "pos"),
+    ("чудесный замечательный день", "pos"),
+    ("ненавижу отвратительную еду", "neg"),
+    ("ужасный кошмарный сервис", "neg"),
+]
+TEST = [("обожаю прекрасный сериал", "pos"), ("ужасный кошмарный продукт", "neg")]
+
+
+def test_few_shot_prompt_contains_examples_and_query():
+    p = format_few_shot("Классифицируй.", EXAMPLES, "новый текст")
+    assert "обожаю прекрасный фильм" in p
+    assert p.rstrip().endswith("Выход:")
+    assert "новый текст" in p
+
+
+def test_cot_prompt_asks_for_steps():
+    p = format_cot("Реши задачу.", "2+2*2")
+    assert "по шагам" in p.lower()
+
+
+def test_few_shot_beats_zero_shot():
+    few = accuracy(lambda x: knn_predict(x, EXAMPLES), TEST)
+    zero = accuracy(lambda x: zero_shot_predict(x, "neg"), TEST)
+    assert few &gt; zero
+    assert few == 1.0
+
+
+def test_knn_uses_most_similar_example():
+    assert knn_predict("обожаю прекрасный сюжет", EXAMPLES) == "pos"
+    assert knn_predict("ужасный кошмарный интерфейс", EXAMPLES) == "neg"
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-02-prompt-engineering-02-few-shot-and-cot-code-few-shot-py"><summary><span class="fname">code/few_shot.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Few-shot и chain-of-thought — Build It для урока 2.2.
+
+Без зависимостей. Показывает, ЗАЧЕМ примеры в промпте: на игрушечной задаче
+few-shot (решение по примерам) бьёт zero-shot (без примеров). Плюс сборщики
+few-shot и CoT промптов, которые дальше переносятся на реальную модель.
+"""
+
+
+def format_few_shot(instruction, examples, query):
+    """Few-shot промпт: инструкция + примеры (вход→выход) + запрос."""
+    lines = [instruction, ""]
+    for inp, out in examples:
+        lines.append(f"Вход: {inp}\nВыход: {out}\n")
+    lines.append(f"Вход: {query}\nВыход:")
+    return "\n".join(lines)
+
+
+def format_cot(instruction, query):
+    """CoT-вариант: попросить рассуждать пошагово перед финальным ответом."""
+    return f"{instruction}\n\nЗадача: {query}\nДумай по шагам, затем дай ответ."
+
+
+# --- демонстрация ценности примеров на игрушечной задаче классификации ---
+def _similarity(a, b):
+    """Похожесть по доле общих слов (Жаккар)."""
+    sa, sb = set(a.split()), set(b.split())
+    return len(sa &amp; sb) / len(sa | sb) if (sa | sb) else 0.0
+
+
+def knn_predict(query, examples):
+    """Few-shot аналог: метка самого похожего примера."""
+    if not examples:
+        return None
+    return max(examples, key=lambda e: _similarity(query, e[0]))[1]
+
+
+def zero_shot_predict(query, default):
+    """Без примеров модель «угадывает» — берём дефолтную метку."""
+    return default
+
+
+def accuracy(predict_fn, dataset):
+    """Доля верных предсказаний на наборе (вход, метка)."""
+    return sum(predict_fn(x) == y for x, y in dataset) / len(dataset)
+
+
+if __name__ == "__main__":
+    examples = [
+        ("обожаю прекрасный фильм", "pos"),
+        ("чудесный замечательный день", "pos"),
+        ("ненавижу отвратительную еду", "neg"),
+        ("ужасный кошмарный сервис", "neg"),
+    ]
+    test = [("обожаю прекрасный сериал", "pos"), ("ужасный кошмарный продукт", "neg")]
+    print("few-shot промпт:\n", format_few_shot("Классифицируй тональность.", examples, "ужасный кошмарный фильм"))
+    print("\nfew-shot accuracy:", accuracy(lambda x: knn_predict(x, examples), test))
+    print("zero-shot accuracy:", accuracy(lambda x: zero_shot_predict(x, "neg"), test))
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-02-prompt-engineering-02-few-shot-and-cot-outputs-few-shot-templates-md" open><summary><span class="fname">outputs/few-shot-templates.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: набор few-shot и CoT заготовок
+
+Готовые шаблоны под типовые задачи. Сборщики — в [`code/few_shot.py`](../code/few_shot.py).
+
+## Few-shot: классификация
+
+```
+Классифицируй тональность отзыва: pos / neg / neutral.
+
+Вход: обожаю этот продукт
+Выход: pos
+
+Вход: ужасная поддержка
+Выход: neg
+
+Вход: {новый отзыв}
+Выход:
+```
+
+## Few-shot: извлечение в формат
+
+```
+Извлеки сущности в виде «поле: значение».
+
+Вход: Иван Петров, заказ #123, срочно
+Выход: имя: Иван Петров; заказ: 123; приоритет: high
+
+Вход: {новый текст}
+Выход:
+```
+
+## Chain-of-thought: рассуждение
+
+```
+Реши задачу. Думай по шагам, затем дай финальный ответ после «Ответ:».
+
+Задача: {условие}
+```
+
+## CoT few-shot (примеры с рассуждением)
+
+```
+Вопрос: В корзине 3 яблока, добавили 2×2. Сколько стало?
+Рассуждение: 2×2=4; 3+4=7.
+Ответ: 7
+
+Вопрос: {новый вопрос}
+```
+
+## Правила
+
+- **Few-shot** — когда важен формат/класс: 2–5 примеров, покрывающих разные случаи (и граничные).
+- **CoT** — когда задача многошаговая (арифметика, логика): проси «думай по шагам».
+- Примеры должны быть **согласованы по формату** — модель копирует их разметку.
+- Не раздувай: лишние примеры жгут токены (бюджет — урок 1.1) и не всегда помогают.
+- Эффект **измеряй** на наборе кейсов (eval-harness, урок 2.5), а не на одном примере.
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~3 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/prompt-anatomy/"><small>← 2.1</small>Анатомия промпта</a><a href="../../lessons/decomposition-and-iteration/" style="text-align:right"><small>2.3 →</small>Декомпозиция и итеративное уточнение</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

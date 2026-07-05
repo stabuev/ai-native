@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>3.5 Production RAG — AI Native</title>
+  <meta name="description" content="Прод-RAG — это не «один ретривер», а гибрид сигналов, reranking и измеримое качество.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/production-rag/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="3.5 Production RAG — AI Native">
+  <meta property="og:description" content="Прод-RAG — это не «один ретривер», а гибрид сигналов, reranking и измеримое качество.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/production-rag/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="3.5">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 3.5 · Production RAG</h1><p><strong>Фаза 3 — Текст и документы</strong> · <strong>Результат фазы:</strong> Строить пайплайны резюмирования и редактуры; собрать базовый RAG над своим корпусом.</p><p><strong>Requires (только для USE IT):</strong> платный API-ключ одного из провайдеров. BUILD IT работает офлайн, без ключей и без сети.</p><p><strong>Это венец Фазы 3: базовый RAG доводим до продакшн-уровня.</strong> Один ретривер из 3.3–3.4 в реальности промахивается, а «стало ли лучше» — неизвестно. Прод-RAG добавляет три вещи: <strong>гибрид</strong> двух ретриверов (семантика + точные слова), <strong>переранжирование</strong> слиянием рангов (RRF) и <strong>измеримую оценку</strong> (RAGAS). Собираем гибрид сами, чтобы понять, как сводятся сигналы.</p><blockquote><strong>MOTTO.</strong> Прод-RAG — это не «один ретривер», а гибрид сигналов, reranking и измеримое качество.</blockquote><h2>PROBLEM</h2><p>Чистый vector-RAG (3.3–3.4) в проде проседает: семантика промахивается на <strong>точных</strong> терминах, кодах, именах (<code>numpy</code>, артикул, фамилия), потому что «по смыслу» они близки много к чему. А чистый keyword-поиск промахивается на синонимах и перефразировках. Вдобавок без оценки непонятно, помогла ли правка пайплайна. Прод-RAG объединяет оба сигнала, переранжирует и <strong>меряет</strong> качество ретрива и ответа.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Это как спросить <strong>двух экспертов</strong> с разными слепыми зонами: один судит по смыслу (vector), другой — по точным словам (keyword). Документ, который оба ставят высоко, почти наверняка релевантен. Гибрид берёт лучшее из обоих, а оценка заменяет «мне кажется, лучше» на число.</p><h3>Как это работает</h3><pre><code>запрос ─┬─ vector ranking (семантика, TF-IDF/эмбеддинги)
+        └─ keyword ranking (точные слова)
+                │ Reciprocal Rank Fusion (слияние рангов)
+                ▼
+        rerank → top-k → ответ
+                │
+        eval: faithfulness · context precision/recall (RAGAS)</code></pre><ul><li><strong>Два сигнала.</strong> <code>vector_ranking</code> — по косинусной близости (из 3.3), ловит смысл и синонимы. <code>keyword_ranking</code> — по числу точных совпадений слов, ловит термины и коды, которые семантика «размывает».</li><li><strong>RRF (Reciprocal Rank Fusion).</strong> Как слить два списка, если их «оценки» несравнимы (косинус 0..1 против числа совпадений)? RRF смотрит только на <strong>ранги</strong>: каждый документ получает <code>score = Σ 1/(k + rank + 1)</code> по всем спискам (обычно <code>k=60</code>). Документ, стоящий высоко <strong>в обоих</strong> списках, набирает больше всех — консенсус побеждает, и шкалы сигналов сравнивать не нужно.</li><li><strong>Reranking → top-k.</strong> Берём верх слитого списка. (В проде сюда же ставят cross-encoder-реранкер — отдельную модель, которая переоценивает пары «запрос-документ».)</li><li><strong>Оценка (RAGAS).</strong> Меряем пайплайн без ручной разметки и <strong>отдельно</strong> по частям: <code>context precision/recall</code> — качество <strong>ретрива</strong> (нашли ли нужное и не лишнее), <code>faithfulness</code> / <code>answer relevancy</code> — качество <strong>ответа</strong> (заземлён ли он на контекст и по делу ли). Так видно, чинить ретрив или генерацию.</li></ul><h2>РАЗБОР ПО ШАГАМ</h2><p>Главное здесь — <strong>как RRF сводит два ранжирования</strong>. Пусть на запрос vector выдал порядок документов <code>[2, 0, 1]</code>, а keyword — <code>[2, 1, 0]</code> (списки расходятся). Считаем RRF-скор каждого документа, <code>score = Σ 1/(60 + rank + 1)</code>:</p><pre><code>doc2: vector #1 (1/61) + keyword #1 (1/61) = 0.0328   ← топ в обоих → максимум
+doc0: vector #2 (1/62) + keyword #3 (1/63) = 0.0320
+doc1: vector #3 (1/63) + keyword #2 (1/62) = 0.0320</code></pre><p>Слитый порядок → <code>[2, 0, 1]</code>: <strong><code>doc2</code> первым</strong>, потому что он на вершине обоих списков. А вот <code>doc0</code> и <code>doc1</code> набрали <strong>поровну</strong> (0.0320) — их взаимный порядок решает тай-брейк: наш код обрабатывает vector-список первым, поэтому при равенстве очков выше встаёт тот, кто раньше попал в счётчик (<code>doc0</code>). Ключевая идея: RRF использует только позиции, поэтому честно сводит сигналы с разными шкалами.</p><p>И зачем нужен keyword рядом с vector: на запросе вроде <code>numpy матрицы</code> keyword <strong>гарантированно</strong> поднимает документ с точным словом <code>numpy</code>, даже если чистая семантика поставила бы его ниже. Гибрид через RRF забирает оба попадания — и точный термин, и смысловое.</p><h2>BUILD IT</h2><p><strong>Задание: собери гибридный ретривер с RRF</strong> — стандартная библиотека, без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/3.5-production-rag/</code>), а файлы урока клади в подпапку <code>code/</code> (как в 0.1). Нужен только <strong>Python 3</strong>, всё офлайн (для теста ещё <code>pytest</code>).</blockquote><p>Реализуй (TF-IDF <code>build_index</code> — как в уроке 3.3):</p><ul><li><strong><code>vector_ranking(query, index)</code></strong> — верни индексы документов по убыванию косинусной близости запроса к их tf-idf векторам (семантика).</li><li><strong><code>keyword_ranking(query, index)</code></strong> — верни индексы по убыванию числа точных совпадений слов запроса со словами документа (лексика).</li><li><strong><code>reciprocal_rank_fusion(rankings, k=60)</code></strong> — слей несколько ранжирований: для каждого списка и каждой позиции <code>rank</code> (с 0) прибавь документу <code>1/(k + rank + 1)</code>; верни индексы по убыванию суммарного score.</li><li><strong><code>hybrid_search(query, index, top_k=3)</code></strong> — слей <code>vector_ranking</code> и <code>keyword_ranking</code> через RRF и верни <code>top_k</code> как <code>[{"doc": ...}]</code>.</li></ul><p><strong>Готово, когда</strong> тест <code>test_hybrid_retriever.py</code> зелёный — он проверяет, что RRF ставит консенсус-документ первым, что keyword ловит точный термин (<code>numpy</code>), что гибрид выдаёт релевантный документ первым, уважает <code>top_k</code>, а ранжирования возвращают все индексы.</p><pre><code>pytest code -q                  # красное → реализуй функции → зелёное
+python code/hybrid_retriever.py # демо: гибридный поиск по «numpy матрицы»</code></pre><p><strong>Подсказка.</strong> В RRF держи <code>Counter</code> по индексам; пройди каждое ранжирование с <code>enumerate</code> и прибавляй <code>1/(k + rank + 1)</code>, затем <code>scores.most_common()</code>.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>В проде — managed retrieval, графовый RAG и автоматическая оценка (мульти-провайдер):</p><ul><li><strong>GraphRAG</strong> (Microsoft) — строит граф сущностей/связей и community-саммари: сильнее baseline-RAG на «глобальных» вопросах по большому корпусу.</li><li><strong>Managed retrieval</strong> — гибридный поиск из коробки (Chroma/pgvector/векторные БД), нейроэмбеддинги вместо TF-IDF.</li><li><strong>RAGAS</strong> — оценка пайплайна без ручной разметки: faithfulness, answer relevancy, context precision/recall — отдельно по ретриверу и генератору.</li></ul><h2>SHIP IT</h2><p><strong>Артефакт:</strong> production-rag pipeline + eval-отчёт → <a href="#f-phases-03-text-and-documents-03-production-rag-outputs-production-rag-pipeline-md"><code>outputs/production-rag-pipeline.md</code></a></p><p>Рецепт прод-RAG (chunking → гибрид → rerank → ответ → eval) + шаблон отчёта по метрикам RAGAS. Связь с 3.2 (chunking), 3.3–3.4 (retrieval/store), 2.5/7.5 (eval).</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Полагаться только на vector.</strong> На точных терминах, кодах и именах семантика промахивается — добавь keyword-сигнал и слей через RRF.</li><li><strong>Складывать несравнимые скоры.</strong> Косинус и число совпадений в разных шкалах; усреднять их «в лоб» неверно. RRF сводит по рангам, а не по сырым значениям.</li><li><strong>Оценивать RAG «на глаз» и целиком.</strong> Меряй метриками (RAGAS) и <strong>раздельно</strong>: плохой ответ может быть из-за ретрива (не нашли) или генерации (не использовал контекст) — лечится по-разному.</li><li><strong>Усложнять раньше времени.</strong> GraphRAG и реранкеры стоят денег и задержки; включай их, когда базовый гибрид измеримо не дотягивает, а не «на всякий случай».</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="3.5"></div><h2>Материалы</h2><ul><li><a href="https://microsoft.github.io/graphrag/" target="_blank" rel="noopener">Microsoft GraphRAG</a> — графовый RAG для сложных запросов.</li><li><a href="https://docs.ragas.io/en/stable/concepts/metrics/available_metrics/" target="_blank" rel="noopener">Ragas — метрики</a> — faithfulness, context precision/recall.</li><li><a href="https://arxiv.org/abs/2309.15217" target="_blank" rel="noopener">Ragas (arXiv 2309.15217)</a> — first-source автоматической оценки RAG.</li><li><a href="https://doi.org/10.1145/1571941.1572114" target="_blank" rel="noopener">Cormack et al., 2009 — Reciprocal Rank Fusion (RRF)</a> — первоисточник фьюжна ранжирований, который урок собирает своими руками.</li><li><a href="https://doi.org/10.1561/1500000019" target="_blank" rel="noopener">Robertson &amp; Zaragoza, 2009 — BM25 and Beyond</a> — keyword-ретрив (вторая половина гибрида vector+keyword).</li><li><a href="https://www.anthropic.com/news/contextual-retrieval" target="_blank" rel="noopener">Anthropic — Contextual Retrieval (2024)</a> — production-гибрид: контекстные эмбеддинги + BM25 + reranking.</li><li><a href="https://www.sbert.net/examples/applications/retrieve_rerank/README.html" target="_blank" rel="noopener">Sentence-Transformers — Retrieve &amp; Re-Rank</a> — bi-encoder ретрив + cross-encoder reranking.</li><li><a href="https://docs.cohere.com/docs/rerank-overview" target="_blank" rel="noopener">Cohere — Rerank</a> — managed-reranker для RAG.</li><li><a href="https://arxiv.org/abs/2312.10997" target="_blank" rel="noopener">Gao et al., 2023 — RAG: A Survey</a> — карта Naive / Advanced / Modular RAG.</li><li><a href="https://medium.com/@devalshah1619/mathematical-intuition-behind-reciprocal-rank-fusion-rrf-explained-in-2-mins-002df0cc5e2a" target="_blank" rel="noopener">Deval Shah — RRF explained (Medium)</a> — доступная интуиция и формула RRF.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-03-text-and-documents-03-production-rag-code-test-hybrid-retriever-py" open data-test="1"><summary><span class="fname">code/test_hybrid_retriever.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from hybrid_retriever import (build_index, vector_ranking, keyword_ranking,
+                              reciprocal_rank_fusion, hybrid_search)
+
+DOCS = [
+    "машинное обучение и нейронные сети для классификации",
+    "рецепт борща со свёклой и капустой",
+    "библиотека numpy быстрые операции над матрицами в python",
+]
+
+
+def test_rrf_ranks_consensus_first():
+    # документ 2 первый в обоих списках → первый после слияния
+    fused = reciprocal_rank_fusion([[2, 0, 1], [2, 1, 0]])
+    assert fused[0] == 2
+
+
+def test_keyword_catches_exact_term():
+    index = build_index(DOCS)
+    assert keyword_ranking("numpy", index)[0] == 2
+
+
+def test_hybrid_returns_relevant_first():
+    index = build_index(DOCS)
+    top = hybrid_search("numpy матрицами", index, top_k=1)
+    assert "numpy" in top[0]["doc"]
+
+
+def test_hybrid_respects_top_k():
+    index = build_index(DOCS)
+    assert len(hybrid_search("обучение", index, top_k=2)) == 2
+
+
+def test_vector_and_keyword_return_all_indices():
+    index = build_index(DOCS)
+    assert sorted(vector_ranking("x", index)) == [0, 1, 2]
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-03-text-and-documents-03-production-rag-code-hybrid-retriever-py"><summary><span class="fname">code/hybrid_retriever.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Production RAG: гибридный ретривер (vector+keyword) + RRF-reranking — Build It 3.5.
+
+Без зависимостей. Чистый vector-RAG (3.3) промахивается на точных терминах/кодах,
+keyword — на синонимах. Прод-RAG объединяет оба сигнала и переранжирует слиянием
+рангов (Reciprocal Rank Fusion). В USE IT — managed retrieval / GraphRAG + RAGAS.
+"""
+import math
+import re
+from collections import Counter
+
+
+def _tok(text):
+    return re.findall(r"\w+", text.lower())
+
+
+def build_index(docs):
+    toks = [_tok(d) for d in docs]
+    df = Counter()
+    for t in toks:
+        df.update(set(t))
+    n = len(docs)
+    idf = {w: math.log((n + 1) / (c + 1)) + 1 for w, c in df.items()}
+
+    def vec(t):
+        tf = Counter(t)
+        total = sum(tf.values()) or 1
+        return {w: (c / total) * idf.get(w, 0.0) for w, c in tf.items()}
+
+    return {"docs": list(docs), "idf": idf, "vecs": [vec(t) for t in toks]}
+
+
+def _cos(a, b):
+    common = set(a) &amp; set(b)
+    dot = sum(a[w] * b[w] for w in common)
+    na = math.sqrt(sum(v * v for v in a.values()))
+    nb = math.sqrt(sum(v * v for v in b.values()))
+    return dot / (na * nb) if na and nb else 0.0
+
+
+def vector_ranking(query, index):
+    """Индексы документов по убыванию косинусной близости (семантика)."""
+    qtf = Counter(_tok(query))
+    total = sum(qtf.values()) or 1
+    qv = {w: (c / total) * index["idf"].get(w, 0.0) for w, c in qtf.items()}
+    return sorted(range(len(index["docs"])),
+                  key=lambda i: _cos(qv, index["vecs"][i]), reverse=True)
+
+
+def keyword_ranking(query, index):
+    """Индексы документов по числу точных совпадений слов (лексика)."""
+    q = set(_tok(query))
+    return sorted(range(len(index["docs"])),
+                  key=lambda i: len(q &amp; set(_tok(index["docs"][i]))), reverse=True)
+
+
+def reciprocal_rank_fusion(rankings, k=60):
+    """Слить несколько ранжирований в одно (RRF): score = sum 1/(k + rank)."""
+    scores = Counter()
+    for ranking in rankings:
+        for rank, idx in enumerate(ranking):
+            scores[idx] += 1 / (k + rank + 1)
+    return [idx for idx, _ in scores.most_common()]
+
+
+def hybrid_search(query, index, top_k=3):
+    """Гибрид: vector + keyword, переранжированные через RRF."""
+    fused = reciprocal_rank_fusion([vector_ranking(query, index), keyword_ranking(query, index)])
+    return [{"doc": index["docs"][i]} for i in fused[:top_k]]
+
+
+if __name__ == "__main__":
+    docs = [
+        "машинное обучение и нейронные сети для классификации",
+        "рецепт борща со свёклой и капустой",
+        "библиотека numpy: быстрые операции над матрицами в python",
+    ]
+    index = build_index(docs)
+    for hit in hybrid_search("numpy матрицы", index, top_k=2):
+        print(hit["doc"])
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-03-text-and-documents-03-production-rag-outputs-production-rag-pipeline-md" open><summary><span class="fname">outputs/production-rag-pipeline.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: production-RAG pipeline + eval-отчёт
+
+Рецепт прод-RAG и шаблон отчёта по качеству. Код гибрида — [`code/hybrid_retriever.py`](../code/hybrid_retriever.py).
+
+## Пайплайн
+
+```
+документы → chunking (overlap, урок 3.2)
+          → индексация (vector + keyword)
+запрос    → vector ranking ─┐
+          → keyword ranking ─┤ RRF (слияние рангов)
+                             → rerank → top-k
+          → augment (контекст в промпт, требовать цитаты) → ответ
+          → eval (RAGAS): faithfulness, context precision/recall
+```
+
+## Использование (код)
+
+```python
+from hybrid_retriever import build_index, hybrid_search
+index = build_index(chunks)
+hits = hybrid_search("вопрос пользователя", index, top_k=5)
+# контекст = [h["doc"] for h in hits] → в промпт модели (mini_rag из 3.3)
+```
+
+## Шаблон eval-отчёта (RAGAS)
+
+| Метрика | Что меряет | Значение | Порог |
+|---|---|---|---|
+| Faithfulness | ответ заземлён в контексте | 0.xx | ≥ 0.9 |
+| Answer relevancy | ответ по вопросу | 0.xx | ≥ 0.85 |
+| Context precision | релевантные чанки вверху | 0.xx | ≥ 0.8 |
+| Context recall | нужное попало в контекст | 0.xx | ≥ 0.8 |
+
+## Правила
+
+- **Гибрид &gt; один сигнал**: vector ловит смысл, keyword — точные термины; RRF сводит.
+- **Меряй ретривер и генератор отдельно** (RAGAS) — так видно, где ломается.
+- **Чанкинг с overlap** (3.2) и подсчёт бюджета (1.1) — основа.
+- На «глобальных» вопросах по большому корпусу — рассмотри **GraphRAG**.
+- Качество — в CI (порог на метрики), как evals (7.5).
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/vector-stores/"><small>← 3.4</small>Векторные хранилища</a><a href="../../lessons/skills-and-skill-md/" style="text-align:right"><small>4.1 →</small>Skills и SKILL.md</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

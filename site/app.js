@@ -1,5 +1,7 @@
 /* app.js — рендеринг страниц из data.js (PHASES, META, GLOSSARY) + личный прогресс. */
 const $ = (sel, root = document) => root.querySelector(sel);
+const BASE = () => window.__BASE__ || "";          // "" на верхних страницах, "../../" на страницах уроков
+const lessonURL = (l) => `${BASE()}lessons/${l.slug}/`;   // чистый URL урока
 
 /* кнопка «Копировать» на встроенных блоках кода (делегирование, переживает ре-рендер) */
 document.addEventListener("click", (e) => {
@@ -66,7 +68,7 @@ function lessonRow(l) {
     <input type="checkbox" class="chk" data-id="${l.id}" ${done ? "checked" : ""} title="отметить пройденным">
     ${statusDot(l.status)}
     <span class="lid">${l.id}</span>
-    <span class="ltitle"><a href="lesson.html?id=${l.id}">${l.title}</a>${l.motto ? `<small>${l.motto}</small>` : ""}</span>
+    <span class="ltitle"><a href="${lessonURL(l)}">${l.title}</a>${l.motto ? `<small>${l.motto}</small>` : ""}</span>
   </li>`;
 }
 function phaseBlock(p) {
@@ -101,14 +103,14 @@ function renderCatalog() {
 
 /* ---------- УРОК ---------- */
 function renderLesson() {
-  const id = new URLSearchParams(location.search).get("id");
+  const id = document.body.dataset.lessonId || new URLSearchParams(location.search).get("id");
   const list = flat();
   const idx = list.findIndex((l) => l.id === id);
   const art = $("#lesson");
-  if (idx < 0) { art.innerHTML = "<p>Урок не найден. <a href='catalog.html'>В каталог →</a></p>"; return; }
+  if (idx < 0) { art.innerHTML = `<p>Урок не найден. <a href='${BASE()}catalog.html'>В каталог →</a></p>`; return; }
   const l = list[idx];
   document.title = `${l.id} ${l.title} — AI Native`;
-  art.innerHTML = l.html;
+  if (art.dataset.ssr !== "1") art.innerHTML = l.html;   // на статической странице контент уже вшит (SSR) — не перерисовываем
 
   const mount = art.querySelector(".quiz-section[data-lesson]");
   if (mount && l.quiz && l.quiz.questions) renderQuiz(mount, l.quiz);
@@ -127,8 +129,8 @@ function renderLesson() {
 
   const prev = list[idx - 1], next = list[idx + 1];
   $("#prevnext").innerHTML =
-    (prev ? `<a href="lesson.html?id=${prev.id}"><small>← ${prev.id}</small>${prev.title}</a>` : "<span></span>")
-    + (next ? `<a href="lesson.html?id=${next.id}" style="text-align:right"><small>${next.id} →</small>${next.title}</a>` : "<span></span>");
+    (prev ? `<a href="${lessonURL(prev)}"><small>← ${prev.id}</small>${prev.title}</a>` : "<span></span>")
+    + (next ? `<a href="${lessonURL(next)}" style="text-align:right"><small>${next.id} →</small>${next.title}</a>` : "<span></span>");
 }
 
 /* ---------- КВИЗ УРОКА (монтируется в тег {{quiz}}) ---------- */

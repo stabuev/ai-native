@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>12.1 Выбор процесса и спецификация — AI Native</title>
+  <meta name="description" content="Capstone начинается не с кода, а со спецификации: цель, измеримые метрики, ограничения, бюджет.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/process-selection-and-spec/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="12.1 Выбор процесса и спецификация — AI Native">
+  <meta property="og:description" content="Capstone начинается не с кода, а со спецификации: цель, измеримые метрики, ограничения, бюджет.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/process-selection-and-spec/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="12.1">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 12.1 · Выбор процесса и спецификация</h1><p><strong>Фаза 12 — Capstone</strong> · <strong>Результат фазы:</strong> Автоматизировать реальный процесс end-to-end и защитить решение с метриками эффекта.</p><p><strong>Весь курс вёл к этому: собрать своё, работающее, и доказать, что оно лучше.</strong> Capstone — не «покажи, что умеешь звать API», а «возьми реальный процесс и измеримо его улучши». И первый шаг тут не код, а спецификация: без неё нечего защищать и нечем мерить «до/после».</p><blockquote><strong>MOTTO.</strong> Capstone начинается не с кода, а со спецификации: цель, измеримые метрики, ограничения, бюджет.</blockquote><h2>PROBLEM</h2><p>«Автоматизирую что-нибудь с ИИ» — путь в никуда. Через две недели ты не сможешь ответить на простой вопрос защиты: «стало лучше — насколько?». Без зафиксированной цели и <strong>измеримых</strong> метрик нет базовой линии («до»), нет цели («после»), нет доказательства эффекта — только ощущение «вроде работает».</p><p>Нужно выбрать один реальный процесс и записать спецификацию так, чтобы успех был <strong>проверяемым числом</strong>, а не мнением. Anthropic формулирует это прямо: хорошие критерии успеха — конкретные и измеримые; вместо «хорошая работа модели» пиши «F1 ≥ 0.85 на отложенной выборке из 10 000 постов». Соберём валидатор, который не пропустит спеку без измеримых метрик и бюджета.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Спецификация Capstone — это как <strong>техзадание на ремонт с приёмкой по акту</strong>, а не «сделайте красиво». «Красиво» нельзя принять — каждый поймёт по-своему. А «плитка уложена, шов ≤ 2 мм, срок 5 дней, бюджет 50 т.р.» — можно проверить и предъявить. Метрика без базовой линии («стало быстрее») бесполезна так же, как «стало красивее»: быстрее чего? на сколько?</p><p>Ключевая мысль: <strong>измеримость — это пара чисел, а не одно.</strong> Нужен baseline («как сейчас, руками») и target («куда целимся»). Одно число без другого не даёт эффекта: target без baseline не с чем сравнить, baseline без target — это не цель, а констатация.</p><h3>Как это работает</h3><pre><code>CapstoneSpec
+  goal        — что автоматизируем (один конкретный процесс)
+  metrics[]   — каждая: baseline («до») + target (цель)   ← без пары чисел нет защиты
+  constraints — приватность (11.1), human-in-the-loop (7.3), безопасность (6.5)
+  budget_usd  — потолок расходов (FinOps, Фаза 9)
+        │ validate_spec → чего не хватает до сборки</code></pre><ul><li><code>Metric</code> / <code>CapstoneSpec</code> — структура спеки (dataclass): у метрики есть <code>baseline</code>, <code>target</code>, <code>unit</code>.</li><li><code>is_measurable(metric)</code> — метрика измерима, если заданы <strong>и</strong> baseline, <strong>и</strong> target.</li><li><code>validate_spec(spec)</code> — вернуть список проблем: нет цели / нет метрик / ни одна не измерима / не задан бюджет (пусто = готова к сборке).</li></ul><p>Хороший выбор процесса: <strong>частый · болезненный · с понятной метрикой эффекта</strong> (время / стоимость / качество) · не критичный для жизни на старте. Именно такой процесс легко измерить и не страшно доверить ИИ на первом заходе.</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Возьмём сырую идею и доведём до спеки, которую примет валидатор.</p><p>Плохая формулировка (в терминах Anthropic — не Specific, не Measurable):</p><pre><code>goal="сделать поддержку лучше", metrics=[Metric("качество")], budget=None
+validate_spec → ["ни одна метрика не измерима (нужны baseline и target)", "не задан бюджет"]
+   (защищать нечего: «лучше» — это не число)</code></pre><p>Доводим до измеримой (Specific + Measurable + Achievable + Relevant):</p><pre><code>CapstoneSpec(
+  goal="Автоматизировать разбор входящих обращений поддержки",
+  metrics=[
+    Metric("время на обращение",     baseline=10.0, target=3.0,  unit="мин"),
+    Metric("стоимость на обращение", baseline=0.50, target=0.10, unit="$"),
+  ],
+  constraints=["PII не во внешние модели", "human review на эскалациях"],
+  budget_usd=200.0,
+)
+validate_spec → []          (готова: есть цель, измеримые метрики и бюджет)</code></pre><p>Теперь защита (12.3) считается сама: 10→3 мин это −70% времени, 0.50→0.10 это −80% стоимости. Пара чисел на каждую метрику превратила «вроде лучше» в проверяемый эффект.</p><p>Но вот <strong>честная граница валидатора</strong>. Он проверяет, что метрика <strong>измерима</strong> (два числа заданы), но не что цель <strong>реалистична и уместна</strong>:</p><ul><li><strong>Achievable</strong> — target=«качество 100%» пройдёт валидатор, но недостижим для фронтир-модели. Реалистичность цели проверяет человек, опираясь на бенчмарки и прошлые замеры.</li><li><strong>Relevant</strong> — можно набрать измеримых, но неважных метрик (например, «длина ответа»), а не тех, что бьют по реальной боли. Уместность метрики — тоже человек.</li></ul><p>Поэтому <code>validate_spec</code> — это <strong>ворота структуры</strong>, а не гарантия хорошей спеки: он не пустит очевидно неполную, но осмысленность цели и метрик всё равно за тобой.</p><h2>BUILD IT</h2><p><strong>Задание: собери спецификацию Capstone и валидатор измеримости.</strong> Только стандартная библиотека (<code>dataclasses</code>), без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/12.1-capstone-spec/</code>), а файлы урока клади в подпапку <code>code/</code> (как в 0.1). Нужен только <strong>Python 3</strong> (для теста ещё <code>pytest</code>).</blockquote><p>Создай файл <code>spec.py</code> с двумя dataclass'ами и тремя функциями:</p><ul><li><strong><code>Metric</code></strong> — поля <code>name</code>, <code>baseline=None</code>, <code>target=None</code>, <code>unit=""</code>.</li><li><strong><code>CapstoneSpec</code></strong> — поля <code>goal=""</code>, <code>metrics=[]</code>, <code>constraints=[]</code>, <code>budget_usd=None</code>.</li><li><strong><code>is_measurable(metric)</code></strong> — <code>True</code>, только если заданы и <code>baseline</code>, и <code>target</code> (не <code>None</code>).</li><li><strong><code>validate_spec(spec)</code></strong> — вернуть список проблем: <code>"нет цели"</code> (пустая <code>goal</code>), <code>"нет метрик"</code> (пустой список), <code>"ни одна метрика не измерима (нужны baseline и target)"</code> (метрики есть, но ни одна не measurable), <code>"не задан бюджет"</code> (<code>budget_usd is None</code>). Пустой список = спека готова.</li></ul><p><strong>Готово, когда</strong> все тесты в <code>test_spec.py</code> зелёные — они проверяют: полная спека проходит; пустая цель / нет бюджета / неизмеримая метрика ловятся; <code>is_measurable</code> верно различает пару чисел и одно.</p><pre><code>pytest code -q        # красное → реализуй spec.py → зелёное
+python code/spec.py   # демо: валидная спека → "нет — готова к сборке"</code></pre><p><strong>Подсказка.</strong> Списки в dataclass задавай через <code>field(default_factory=list)</code>, иначе Python ругнётся на mutable default. В <code>validate_spec</code> для метрик используй <code>any(is_measurable(m) for m in spec.metrics)</code>.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>Согласование спеки с реальной задачей (мульти-провайдер, применимо к любой модели):</p><ul><li><strong>Возьми свой процесс</strong> — разбор тикетов, подготовка отчётов, ответы клиентам. Зафиксируй <strong>baseline руками</strong>: сколько времени/денег он занимает сейчас (без этого «после» не с чем сравнить).</li><li><strong>Критерии успеха по Anthropic (SMART)</strong> — Specific, Measurable, Achievable, Relevant. Даже «размытое» (этика, безопасность) квантуется: не «безопасные ответы», а «&lt; 0.1% из 10 000 прогонов помечены фильтром токсичности».</li><li><strong>Проектируй eval заранее</strong> — как именно померишь качество (exact match / string match / LLM-судья), а не «на глаз потом». Автоматизируй грейдинг, где можно (это урок 2.5 про eval-harness).</li><li><strong>Согласуй ограничения</strong> — приватность (11.1), human-in-the-loop на критичном (7.3), бюджет и алерты (Фаза 9). Спека без ограничений и потолка расходов — риск в проде.</li></ul><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Проектная спецификация → <a href="#f-phases-12-capstone-12-process-selection-and-spec-outputs-capstone-spec-md"><code>outputs/capstone-spec.md</code></a></p><p>Заполненная спека твоего процесса: цель · метрики baseline/target · ограничения · бюджет. Прогони её через <code>validate_spec</code> — если список проблем пуст, спека готова. Это вход в сборку решения (12.2) и фундамент защиты с метриками «до/после» (12.3).</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Метрика без пары чисел.</strong> «Стало быстрее» без baseline и target — не эффект, а ощущение. Измеримость = baseline + target, иначе <code>validate_spec</code> заблокирует.</li><li><strong>Измеримо, но недостижимо.</strong> target=«100% качества» пройдёт валидатор, но нереалистичен. Achievable проверяет человек по бенчмаркам, не код.</li><li><strong>Измеримо, но неважно.</strong> Набрать удобных метрик (длина ответа) вместо тех, что бьют по боли. Relevance — тоже за человеком.</li><li><strong>Нет ограничений и бюджета.</strong> Спека без приватности/HITL/потолка расходов = мина в проде. Ограничения — часть ТЗ, а не «потом допишем».</li><li><strong>Выбрать критичный или редкий процесс.</strong> Первый Capstone — частый, болезненный, некритичный для жизни: его легко мерить и не страшно доверить ИИ на старте.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="12.1"></div><h2>Материалы</h2><ul><li><a href="https://platform.claude.com/docs/en/docs/build-with-claude/define-success" target="_blank" rel="noopener">Anthropic — Define success criteria &amp; build evaluations</a> — критерии успеха SMART, bad-vs-good примеры, дизайн и грейдинг eval.</li><li><a href="https://platform.claude.com/cookbook/misc-building-evals" target="_blank" rel="noopener">Anthropic — Evals cookbook</a> — код-примеры human/code/LLM-грейдинга качества.</li><li><a href="https://github.com/rohitg00/ai-engineering-from-scratch" target="_blank" rel="noopener">ai-engineering-from-scratch (rohitg00)</a> — образец каркаса «фазы → артефакты», вдохновивший формат Build It / Use It / Ship It.</li><li><a href="https://pair.withgoogle.com/guidebook/" target="_blank" rel="noopener">Google — People + AI Guidebook (PAIR)</a> — глава «User Needs + Success Definition»: как ставить цель и метрики успеха AI-продукта.</li><li><a href="https://www.microsoft.com/en-us/haxtoolkit/" target="_blank" rel="noopener">Microsoft — HAX Toolkit (Guidelines for Human-AI Interaction)</a> — 18 гайдлайнов + Workbook / Design Patterns для проектирования AI-фичи.</li><li><a href="https://info.deeplearning.ai/machine-learning-yearning-book" target="_blank" rel="noopener">Andrew Ng — Machine Learning Yearning</a> — single-number eval metric + optimizing/satisficing (budget/latency как satisficing) — ровно метрики, ограничения и бюджет.</li><li><a href="https://huyenchip.com/books/" target="_blank" rel="noopener">Chip Huyen — AI Engineering (2025)</a> — планирование AI-приложения: выбор модели, датасета, eval-бенчмарков и метрик под задачу.</li><li><a href="https://www.reforge.com/guides/write-a-prd-for-a-generative-ai-feature" target="_blank" rel="noopener">Reforge — Write a PRD for a Generative AI Feature</a> — спека AI-фичи: evaluation criteria вместо acceptance, tiered thresholds, cost economics.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-12-capstone-12-process-selection-and-spec-code-test-spec-py" open data-test="1"><summary><span class="fname">code/test_spec.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from spec import Metric, CapstoneSpec, is_measurable, validate_spec
+
+
+def _good_spec():
+    return CapstoneSpec(
+        goal="Автоматизировать разбор обращений",
+        metrics=[Metric("время", baseline=10.0, target=3.0, unit="мин")],
+        budget_usd=200.0,
+    )
+
+
+def test_complete_spec_passes():
+    assert validate_spec(_good_spec()) == []
+
+
+def test_missing_goal_flagged():
+    spec = _good_spec()
+    spec.goal = ""
+    assert "нет цели" in validate_spec(spec)
+
+
+def test_missing_budget_flagged():
+    spec = _good_spec()
+    spec.budget_usd = None
+    assert "не задан бюджет" in validate_spec(spec)
+
+
+def test_unmeasurable_metric_flagged():
+    spec = CapstoneSpec(goal="цель", metrics=[Metric("качество")], budget_usd=100.0)
+    assert any("измерим" in p for p in validate_spec(spec))
+
+
+def test_is_measurable():
+    assert is_measurable(Metric("m", baseline=1, target=2))
+    assert not is_measurable(Metric("m", baseline=1))
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-12-capstone-12-process-selection-and-spec-code-spec-py"><summary><span class="fname">code/spec.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Выбор процесса и спецификация — Build It для урока 12.1.
+
+Без зависимостей. Capstone начинается со спецификации: цель, измеримые метрики
+(с baseline и target), ограничения и бюджет. Валидатор проверяет, что спека
+полна и метрики реально измеримы — иначе «до/после» в защите не посчитать.
+"""
+from dataclasses import dataclass, field
+
+
+@dataclass
+class Metric:
+    name: str
+    baseline: float = None      # «до»
+    target: float = None        # цель
+    unit: str = ""
+
+
+@dataclass
+class CapstoneSpec:
+    goal: str = ""
+    metrics: list = field(default_factory=list)
+    constraints: list = field(default_factory=list)
+    budget_usd: float = None
+
+
+def is_measurable(metric):
+    """Метрика измерима, если заданы и baseline, и target."""
+    return metric.baseline is not None and metric.target is not None
+
+
+def validate_spec(spec):
+    """Список проблем спецификации (пустой = готова к сборке)."""
+    problems = []
+    if not spec.goal.strip():
+        problems.append("нет цели")
+    if not spec.metrics:
+        problems.append("нет метрик")
+    elif not any(is_measurable(m) for m in spec.metrics):
+        problems.append("ни одна метрика не измерима (нужны baseline и target)")
+    if spec.budget_usd is None:
+        problems.append("не задан бюджет")
+    return problems
+
+
+if __name__ == "__main__":
+    spec = CapstoneSpec(
+        goal="Автоматизировать разбор входящих обращений поддержки",
+        metrics=[
+            Metric("время на обращение", baseline=10.0, target=3.0, unit="мин"),
+            Metric("стоимость на обращение", baseline=0.50, target=0.10, unit="$"),
+        ],
+        constraints=["PII не во внешние модели", "human review на эскалациях"],
+        budget_usd=200.0,
+    )
+    print("Проблемы спеки:", validate_spec(spec) or "нет — готова к сборке")
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-12-capstone-12-process-selection-and-spec-outputs-capstone-spec-md" open><summary><span class="fname">outputs/capstone-spec.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: проектная спецификация Capstone
+
+Шаблон спеки (заполни под свой процесс). Валидатор — [`code/spec.py`](../code/spec.py).
+
+## 1. Процесс и цель
+
+- **Процесс:** _&lt;какой реальный процесс автоматизируем&gt;_ (пример: разбор входящих обращений поддержки)
+- **Цель:** _&lt;что должно стать лучше одним предложением&gt;_
+- **Почему он:** частый · болезненный · с измеримой метрикой · не критичный для жизни на старте
+
+## 2. Метрики (обязательно baseline + target)
+
+| Метрика | Baseline («до») | Target (цель) | Ед. | Как мерить |
+|---|---|---|---|---|
+| Время на единицу | 10 | 3 | мин | хронометраж |
+| Стоимость на единицу | 0.50 | 0.10 | $ | телеметрия (10.3) |
+| Качество | 70 | 88 | % | eval-harness (2.5) |
+
+## 3. Ограничения
+
+- [ ] Приватность: PII не во внешние модели (урок 11.1)
+- [ ] Human-in-the-loop на критичных/необратимых шагах (урок 7.3)
+- [ ] Безопасность инструментов и доступов (уроки 6.5, 11.x)
+
+## 4. Бюджет
+
+- **Потолок расходов:** _&lt;$ в месяц&gt;_ (FinOps, Фаза 9) · **алерт при:** _&lt;%&gt;_
+
+## Проверка готовности (код)
+
+```python
+from spec import CapstoneSpec, Metric, validate_spec
+spec = CapstoneSpec(goal="...", metrics=[Metric("время", 10, 3, "мин")], budget_usd=200)
+assert validate_spec(spec) == []      # измеримые метрики + бюджет на месте
+```
+
+Готовая спека → сборка решения (урок 12.2) → защита с метриками (урок 12.3).
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~10 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/prompt-injection-agent-security/"><small>← 11.5</small>Prompt injection и безопасность агентов</a><a href="../../lessons/building-the-solution/" style="text-align:right"><small>12.2 →</small>Сборка решения</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

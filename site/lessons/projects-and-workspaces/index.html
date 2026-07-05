@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>4.3 Проекты и рабочие пространства — AI Native</title>
+  <meta name="description" content="Проект = постоянная инструкция + база знаний: ассистент перестаёт начинать «с нуля».">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/projects-and-workspaces/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="4.3 Проекты и рабочие пространства — AI Native">
+  <meta property="og:description" content="Проект = постоянная инструкция + база знаний: ассистент перестаёт начинать «с нуля».">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/projects-and-workspaces/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="4.3">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 4.3 · Проекты и рабочие пространства</h1><p><strong>Фаза 4 — Скиллы, память и проекты</strong> · <strong>Результат фазы:</strong> Упаковывать способности в SKILL.md, хранить контекст в памяти и собирать рабочие проекты.</p><p><strong>Это сборка всей фазы.</strong> Скилл (4.1) дал умение, память (4.2) — биографию. Проект складывает их в одно <strong>рабочее пространство</strong> с постоянной ролью и базой знаний — ассистент перестаёт начинать каждый разговор «с нуля».</p><blockquote><strong>MOTTO.</strong> Проект = постоянная инструкция + база знаний: ассистент перестаёт начинать «с нуля».</blockquote><h2>PROBLEM</h2><p>Универсальный чат не знает твоего контекста. В каждом новом диалоге ты заново объясняешь роль («ты ассистент поддержки, отвечай кратко»), правила и подкладываешь одни и те же документы. Это утомительно и легко забыть кусок контекста — тогда ответ съезжает.</p><p>Хочется зафиксировать это <strong>один раз</strong>: роль и правила (system prompt) + набор документов (база знаний). Тогда во всех диалогах ассистент отвечает «как член твоей команды», заземляя ответы на твои материалы. По формулировке Anthropic, проектная база знаний помогает не начинать с нуля и даёт экспертные ответы в твоём контексте. Соберём такое пространство сами — и увидим, что внутри это просто склейка двух вещей плюс ретрив из Фазы 3.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Проект — это <strong>онбординг нового сотрудника</strong>, но не на один разговор, а навсегда. Ты один раз кладёшь на стол:</p><ul><li><strong>должностную инструкцию</strong> — кто он, как отвечает, каким тоном (system prompt);</li><li><strong>папку с документами команды</strong> — регламенты, факты, база знаний (knowledge base).</li></ul><p>Дальше на каждый вопрос «сотрудник» смотрит в инструкцию и достаёт из папки <strong>только относящиеся к вопросу</strong> страницы — не зачитывает всю папку вслух. Контекстное окно конечно (это мы поняли в 4.2), поэтому в промпт идёт system prompt + горсть релевантных кусков, а не весь архив.</p><h3>Как это работает</h3><pre><code>Project
+ ├─ system_prompt   постоянная роль и правила
+ ├─ knowledge[]     база знаний проекта (документы)
+ └─ build_context(query):
+        retrieve(query, k)  → топ-k релевантных кусков знаний
+        ↓
+        system_prompt  +  найденные куски  +  запрос  → промпт модели</code></pre><ul><li><code>retrieve(query, k)</code> — это ретривер из Фазы 3: считает совпадение слов запроса и документа, возвращает топ-<code>k</code>. Нерелевантное (совпадений 0) <strong>не возвращает</strong> — бережём окно.</li><li><code>build_context(query, k)</code> — склейка: постоянная инструкция + найденные куски + сам запрос. Это и есть «проект»: знания подмешиваются автоматически, объяснять контекст заново не нужно.</li></ul><p>Так фаза замыкается: <strong>скилл</strong> (способность) + <strong>память</strong> (что помним) + <strong>RAG</strong> (что нашли) живут в одном переиспользуемом рабочем пространстве.</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Посмотрим <code>retrieve</code> руками. База знаний из трёх документов, запрос <code>сколько дней на возврат</code> (<code>k=1</code>). Score = число совпавших слов:</p><pre><code>запрос: {сколько, дней, на, возврат}
+
+D1 "Возврат товара возможен в течение 14 дней."   ∩ = {возврат, дней}  → 2
+D2 "Гарантия на электронику — 12 месяцев."         ∩ = {на}            → 1
+D3 "Доставка по городу занимает 1-2 дня."          ∩ = {}              → 0</code></pre><p>Топ-1 → <strong>D1</strong> (score 2): именно про возврат. D3 с нулём в выдачу не попадает. А вот <strong>D2 набрал 1 балл из-за слова-связки <code>на</code></strong> — наглядный изъян лексического поиска: служебные слова создают ложные совпадения. С <code>k=1</code> это не мешает, но при больших <code>k</code> шумит — поэтому настоящие проекты ретривят эмбеддингами (урок 3.4), а не голым пересечением слов. <code>build_context</code> затем подставит D1 в шаблон между system prompt и запросом.</p><h2>BUILD IT</h2><p><strong>Задание: собери проект <code>Project</code></strong> — постоянная инструкция + база знаний + сборка контекста. Только стандартная библиотека (<code>re</code>, <code>collections.Counter</code>), без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/4.3-projects/</code>), а файлы урока клади в подпапку <code>code/</code> (как в 0.1). Нужен только <strong>Python 3</strong> (для теста ещё <code>pytest</code>).</blockquote><p>Создай файл <code>project.py</code> с классом <code>Project(name, system_prompt, knowledge=None)</code> и методами:</p><ul><li><strong><code>add_knowledge(doc)</code></strong> — добавить документ-строку в базу знаний.</li><li><strong><code>retrieve(query, k=3)</code></strong> — топ-<code>k</code> документов по совпадению слов с запросом. Посчитай overlap как пересечение слов (можно мультимножеством через <code>Counter</code>), документы с <code>overlap == 0</code> <strong>не включай</strong>, отсортируй по убыванию и верни список документов (без score).</li><li><strong><code>build_context(query, k=3)</code></strong> — собери промпт-строку: <code>system_prompt</code>, затем секция <code># База знаний</code> со списком найденных кусков (если пусто — пометка «нет релевантных знаний»), затем секция <code># Запрос</code> с самим запросом.</li></ul><p><strong>Готово, когда</strong> все тесты в <code>test_project.py</code> зелёные — они проверяют: в контекст попадают system prompt и запрос; подтягивается релевантный документ, а нерелевантный (<code>Гарантия</code>) — нет; <code>retrieve</code> уважает <code>k</code>; <code>add_knowledge</code> расширяет базу и новый документ находится.</p><pre><code>pytest code -q          # красное → реализуй Project → зелёное
+python code/project.py  # демо: контекст для «сколько дней на возврат?»</code></pre><p><strong>Подсказка.</strong> Слова — <code>re.findall(r"\w+", text.lower())</code>. Overlap мультимножеством: <code>q = Counter(tokens(query))</code>, <code>d = Counter(tokens(doc))</code>, <code>sum(min(q[w], d[w]) for w in q if w in d)</code>. Для <code>build_context</code> собери список <code>f"- {d}"</code> через <code>"\n".join(...)</code>.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>Те же «проекты» есть во всех платформах — постоянная инструкция + загруженные документы (мульти-провайдер):</p><ul><li><strong>Claude Projects</strong> — workspace с custom instructions и knowledge base; в окно 200K можно загрузить регламенты, кодовую базу, style guide, и Claude заземляет ответы на них без повторных объяснений (RAG по сути из коробки).</li><li><strong>Custom GPTs</strong> (OpenAI) — name + instructions + knowledge (файлы) + capabilities, собирается в визуальном билдере, можно опубликовать.</li><li><strong>Gemini Gems</strong> — кастомный ассистент с инструкциями и файлами знаний.</li></ul><p>Везде один рецепт: зафиксировать роль и материалы → получить ассистента под конкретную задачу. Разница — в объёме окна, ретриве под капотом и публикации/доступах.</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Настроенный ассистент с базой знаний → <a href="#f-phases-04-skills-memory-projects-04-projects-and-workspaces-outputs-assistant-project-md"><code>outputs/assistant-project.md</code></a></p><p>Рецепт сборки проекта: что класть в system prompt (роль, тон, правила, границы), как структурировать knowledge (короткие самодостаточные куски), как проверять качество ответов. Дальше — управление контекстом проекта при ограниченном бюджете (4.4) и превращение проекта в автономного агента (Фаза 7).</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Сваливать всю базу знаний в каждый промпт.</strong> Окно конечно. Подмешивай только релевантные куски (<code>retrieve</code>), а не весь архив — иначе дорого и модель хуже вспоминает важное (4.2).</li><li><strong>Раздувать system prompt.</strong> Это постоянная инструкция, она в каждом запросе. Держи роль/правила компактными; фактуру выноси в базу знаний, откуда она подтянется по запросу.</li><li><strong>Полагаться на пословное совпадение.</strong> Служебные слова (<code>на</code>, <code>и</code>, <code>в</code>) создают ложные совпадения, а синонимы и перефразировки теряются. Настоящие проекты ретривят эмбеддингами (3.4) — лексика лишь иллюстрация механизма.</li><li><strong>Класть в knowledge длинные простыни.</strong> Один документ = один самодостаточный факт/кусок. Так ретрив точнее и в окно влезает больше нужного.</li><li><strong>Путать проект и скилл.</strong> Скилл (4.1) — переносимое умение «как делать»; проект — рабочее пространство «с какой ролью и на каких данных». Они дополняют друг друга, а не заменяют.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="4.3"></div><p>Хочешь квиз по всей фазе — спроси агента: <code>/check-understanding 4</code>.</p><h2>Материалы</h2><ul><li><a href="https://www.anthropic.com/news/projects" target="_blank" rel="noopener">Claude — Projects</a> — workspace с инструкциями и базой знаний.</li><li><a href="https://help.openai.com/en/articles/8554397-creating-and-editing-gpts" target="_blank" rel="noopener">OpenAI — Creating and editing GPTs</a> — сборка Custom GPT (instructions + knowledge).</li><li><a href="https://blog.google/products/gemini/google-gems-tips/" target="_blank" rel="noopener">Google — Gems tips</a> — кастомные ассистенты Gemini.</li><li><a href="https://support.claude.com/en/articles/9517075-what-are-projects" target="_blank" rel="noopener">Anthropic — What are Projects?</a> — как устроен проект: knowledge base + custom instructions + авто-RAG на платных планах.</li><li><a href="https://openai.com/index/introducing-gpts/" target="_blank" rel="noopener">OpenAI — Introducing GPTs</a> — концепция кастомного ассистента (instructions + knowledge + tools) и GPT Store.</li><li><a href="https://support.google.com/gemini/answer/15236321" target="_blank" rel="noopener">Google — Get started with Gems</a> — официальный how-to: создать Gem с инструкциями и файлами-знаниями.</li><li><a href="https://melissaonwuka.medium.com/claude-projects-complete-guide-setup-tutorial-2025-3b9a60033b59" target="_blank" rel="noopener">Melissa Onwuka — Claude Projects: Complete Guide (2025, Medium)</a> — пошаговый практический разбор настройки проекта.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-04-skills-memory-projects-04-projects-and-workspaces-code-test-project-py" open data-test="1"><summary><span class="fname">code/test_project.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from project import Project
+
+KB = [
+    "Возврат товара возможен в течение 14 дней.",
+    "Гарантия на электронику составляет 12 месяцев.",
+    "Доставка по городу занимает 1-2 дня.",
+]
+
+
+def _proj():
+    return Project("support", "Ты ассистент поддержки.", KB)
+
+
+def test_context_includes_system_prompt_and_query():
+    ctx = _proj().build_context("вопрос про возврат")
+    assert "Ты ассистент поддержки." in ctx
+    assert "вопрос про возврат" in ctx
+
+
+def test_context_pulls_relevant_knowledge():
+    ctx = _proj().build_context("сколько дней на возврат?", k=1)
+    assert "Возврат" in ctx
+    assert "Гарантия" not in ctx          # нерелевантное не попало
+
+
+def test_retrieve_respects_k():
+    assert len(_proj().retrieve("товар гарантия доставка", k=2)) == 2
+
+
+def test_add_knowledge_grows_kb():
+    p = _proj()
+    p.add_knowledge("Промокоды действуют до конца месяца.")
+    ctx = p.build_context("есть ли промокоды?", k=1)
+    assert "Промокоды" in ctx
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-04-skills-memory-projects-04-projects-and-workspaces-code-project-py"><summary><span class="fname">code/project.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Проекты и рабочие пространства — Build It для урока 4.3.
+
+Без зависимостей. Проект = system prompt + база знаний (+ память). На запрос
+собирает контекст: системная инструкция + релевантные куски знаний. Это
+объединяет skills/memory/RAG в переиспользуемое рабочее пространство.
+"""
+import re
+from collections import Counter
+
+
+def _tokens(text):
+    return re.findall(r"\w+", text.lower())
+
+
+class Project:
+    """Рабочее пространство: постоянная инструкция + база знаний."""
+
+    def __init__(self, name, system_prompt, knowledge=None):
+        self.name = name
+        self.system_prompt = system_prompt
+        self.knowledge = list(knowledge or [])
+
+    def add_knowledge(self, doc):
+        self.knowledge.append(doc)
+
+    def retrieve(self, query, k=3):
+        """Топ-k документов базы знаний по совпадению слов с запросом."""
+        q = Counter(_tokens(query))
+        scored = []
+        for doc in self.knowledge:
+            d = Counter(_tokens(doc))
+            overlap = sum(min(q[w], d[w]) for w in q if w in d)
+            if overlap:
+                scored.append((overlap, doc))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [doc for _, doc in scored[:k]]
+
+    def build_context(self, query, k=3):
+        """Собрать промпт: system prompt + релевантные знания + запрос."""
+        docs = self.retrieve(query, k)
+        kb = "\n".join(f"- {d}" for d in docs) or "(нет релевантных знаний)"
+        return f"{self.system_prompt}\n\n# База знаний\n{kb}\n\n# Запрос\n{query}"
+
+
+if __name__ == "__main__":
+    proj = Project(
+        name="support-bot",
+        system_prompt="Ты ассистент поддержки. Отвечай кратко и по делу.",
+        knowledge=[
+            "Возврат возможен в течение 14 дней.",
+            "Гарантия на электронику — 12 месяцев.",
+            "Доставка по городу 1-2 дня.",
+        ],
+    )
+    print(proj.build_context("сколько дней на возврат?", k=1))
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-04-skills-memory-projects-04-projects-and-workspaces-outputs-assistant-project-md" open><summary><span class="fname">outputs/assistant-project.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: настроенный ассистент с базой знаний
+
+Рецепт сборки рабочего проекта (workspace) под конкретную роль. Код-прототип — [`code/project.py`](../code/project.py).
+
+## Конфигурация проекта
+
+```
+name:           support-assistant
+system_prompt:  Ты ассистент поддержки. Отвечай кратко, по делу,
+                только на основе базы знаний. Не знаешь — скажи «не знаю».
+knowledge:      [политика возврата, гарантия, доставка, FAQ, прайс]
+```
+
+## Что куда класть
+
+| Элемент | Назначение | Правило |
+|---|---|---|
+| **system prompt** | роль, тон, правила, границы | коротко и чётко; не дублировать знания |
+| **knowledge** | факты, документы, прайсы | справочные данные, не правила поведения |
+| **instructions** | формат ответа, что нельзя | поведение → сюда, не в knowledge |
+
+## Как собрать (через `project.py`)
+
+```python
+from project import Project
+proj = Project("support", SYSTEM_PROMPT, knowledge=docs)
+prompt = proj.build_context("сколько дней на возврат?", k=3)  # system + RAG + запрос
+# → отправить prompt в модель
+```
+
+## Платформы
+
+- **Claude Projects** — knowledge base + project instructions (RAG авто).
+- **Custom GPTs** — instructions + knowledge + capabilities.
+- **Gemini Gems** — инструкции + файлы знаний.
+
+## Правила
+
+- Знания — справка, **правила поведения — в инструкции** (частая ошибка: смешать).
+- В контекст подмешивай **только релевантное** (retrieve top-k), а не весь корпус (бюджет — урок 4.4).
+- Требуй ответ строго по базе знаний и проси «не знаю» при пробелах (урок 1.4).
+- Качество ответов меряй eval-harness (урок 2.5).
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/memory-short-and-long/"><small>← 4.2</small>Память: короткая и длинная</a><a href="../../lessons/context-engineering/" style="text-align:right"><small>4.4 →</small>Контекст-инжиниринг</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

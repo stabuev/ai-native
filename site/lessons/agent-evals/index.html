@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>7.5 Evals агентов — AI Native</title>
+  <meta name="description" content="Агента нельзя улучшать на глаз: нужен тест-сет, метрики и защита от регрессий.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/agent-evals/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="7.5 Evals агентов — AI Native">
+  <meta property="og:description" content="Агента нельзя улучшать на глаз: нужен тест-сет, метрики и защита от регрессий.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/agent-evals/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="7.5">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 7.5 · Evals агентов</h1><p><strong>Фаза 7 — Agent Engineering</strong> · <strong>Результат фазы:</strong> Собрать надёжного агента с памятью, планированием, human-in-the-loop и guardrails.</p><p><strong>Requires (только для USE IT):</strong> платный API-ключ или аккаунт eval-платформы (LangSmith и др.). BUILD IT работает офлайн, без ключей и без сети.</p><p><strong>Агент собран и подстрахован (7.1–7.4). Но стал ли он лучше после правки?</strong> На глаз этого не понять. Этот урок — про то, как измерять качество агента числом и не ломать его молча.</p><blockquote><strong>MOTTO.</strong> Агента нельзя улучшать на глаз: нужен тест-сет, метрики и защита от регрессий.</blockquote><h2>PROBLEM</h2><p>Ты поправил промпт или инструмент агента. На том примере, что смотрел, стало лучше — и ты выкатываешь. А на десяти других кейсах стало <strong>хуже</strong>, и ты этого не видишь: проверял-то один.</p><p>Это классическая ловушка «улучшения на глаз». Лекарство то же, что для промптов в 2.5, — <strong>eval-набор</strong>: фиксированный тест-сет <code>{input, expected}</code>, по которому любую версию агента можно прогнать и сравнить числом. Разница с 2.5 в том, что у агента оценивают не только итог, но и <strong>траекторию</strong> (какие инструменты звал, за сколько шагов). Соберём такой harness.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Eval-набор — это <strong>регрессионный тест для агента</strong>, как юнит-тесты для кода. Ты не «надеешься, что правка не сломала старое» — ты прогоняешь фиксированный набор задач с известными ответами и смотришь, какая доля решена. Поменял агента → прогнал набор → увидел число. Стало ниже базлайна — правка плохая, откатываешь.</p><p>Ключевое слово — <strong>фиксированный</strong>: набор не меняется между версиями, поэтому числа сравнимы. Это превращает «вроде получше» в «было 0.7, стало 0.9».</p><h3>Как это работает</h3><pre><code>тест-сет [{input, expected}, ...]
+        │ agent_fn (конкретная версия агента)
+   scorer: success / tool-correctness / число шагов
+        │ усреднили по кейсам → success_rate
+        ▼
+   compare_versions(...) · has_regression(baseline, candidate)</code></pre><ul><li><code>evaluate_agent(agent_fn, cases, scorer)</code> — прогнать агента по всем кейсам, посчитать <code>success_rate</code> и результат по каждому (<code>per_case</code>).</li><li><code>compare_versions(versions, cases)</code> — прогнать несколько версий и отсортировать по <code>success_rate</code>.</li><li><code>has_regression(baseline, candidate, cases)</code> — стал ли кандидат хуже базлайна (защита от регрессий перед выкладкой).</li></ul><p>Два режима в проде: <strong>offline-evals</strong> ловят регрессии до прода (как юнит-тесты на датасете), <strong>online-evals</strong> меряют дрейф качества на реальном трафике (когда меняются данные, а не код).</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Возьмём тест-сет из трёх арифметических задач и три «версии» агента:</p><pre><code>cases = [ {"2+2"→"4"}, {"3*3"→"9"}, {"10-7"→"3"} ]
+good   = считает правильно      broken = всегда "?"      half = всегда "4"</code></pre><p><code>evaluate_agent</code> прогоняет каждую версию:</p><pre><code>good:   "4"✓  "9"✓  "3"✓  → 3/3 = 1.0
+broken: "?"✗  "?"✗  "?"✗  → 0/3 = 0.0
+half:   "4"✓  "4"✗  "4"✗  → 1/3 = 0.333   (угадал только первый)</code></pre><p><code>compare_versions</code> сортирует: <code>good (1.0) &gt; half (0.333) &gt; broken (0.0)</code> — рейтинг версий числом. А <code>has_regression(good, broken)</code> сравнивает <code>0.0 &lt; 1.0</code> → <code>True</code>: кандидат хуже базлайна, такую правку в прод нельзя. Главное здесь — <code>half</code> выглядел бы «рабочим», если проверять только первый кейс (<code>2+2</code>); на полном наборе видно, что он решает лишь треть. Так eval ловит то, что глаз пропускает.</p><h2>BUILD IT</h2><p><strong>Задание: собери offline eval-harness агента</strong> — прогон по тест-сету, сравнение версий, детект регрессий. Только стандартная библиотека, без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/7.5-agent-evals/</code>), а файлы урока клади в подпапку <code>code/</code> (как в 0.1). Нужен только <strong>Python 3</strong> (для теста ещё <code>pytest</code>).</blockquote><p>Создай файл <code>agent_eval.py</code>:</p><ul><li><strong><code>task_success(result, expected)</code></strong> — <code>1.0</code>, если итог совпал с ожидаемым, иначе <code>0.0</code>.</li><li><strong><code>evaluate_agent(agent_fn, cases, scorer=task_success)</code></strong> — прогнать <code>agent_fn</code> по <code>cases</code> (<code>{input, expected}</code>); вернуть <code>{"success_rate": round(среднее, 3), "per_case": [...]}</code> (по каждому кейсу — input/output/score).</li><li><strong><code>compare_versions(versions, cases, scorer=task_success)</code></strong> — <code>versions</code> это <code>{name: agent_fn}</code>; вернуть список <code>(name, success_rate)</code>, отсортированный по убыванию.</li><li><strong><code>has_regression(baseline, candidate, cases, scorer=task_success)</code></strong> — <code>True</code>, если <code>success_rate</code> кандидата ниже базлайна.</li></ul><p><strong>Готово, когда</strong> все тесты в <code>test_agent_eval.py</code> зелёные — они проверяют: идеальный агент → 1.0; сломанный → 0.0 (и 3 записи в <code>per_case</code>); <code>compare_versions</code> ставит <code>good</code> первым, <code>broken</code> последним; <code>has_regression</code> ловит <code>good→broken</code> и не срабатывает на <code>good→good</code>.</p><pre><code>pytest code -q          # красное → реализуй harness → зелёное
+python code/agent_eval.py # демо: good=1.0, broken=0.0, регрессия детектится</code></pre><p><strong>Подсказка.</strong> <code>success_rate</code> — это <code>sum(scores) / len(cases)</code> (защити от пустого набора). <code>compare_versions</code> — <code>sorted(..., key=lambda x: x[1], reverse=True)</code>. <code>has_regression</code> — просто сравнение двух <code>success_rate</code>.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>Online-evals и регрессии в проде (мульти-провайдер):</p><ul><li><strong>LangSmith Evaluation</strong> — offline (на датасетах, как unit-тесты) + online (скоринг прод-трафика); оценка агентных траекторий и RAG-метрик; интеграция с pytest/CI.</li><li><strong>RAGAS</strong> — метрики для RAG/agentic без ручной разметки.</li><li><strong>Anthropic — empirical evaluations</strong> — как строить надёжные eval-наборы и грейдинг (в т.ч. LLM-as-judge из 2.5).</li><li>Встрой eval в CI: порог на <code>success_rate</code>, падение ниже базлайна — блок мерджа (ровно <code>has_regression</code>).</li></ul><h2>SHIP IT</h2><p><strong>Артефакт:</strong> <code>agent-eval</code> (skill) → <a href="#f-phases-07-agent-engineering-07-agent-evals-outputs-agent-eval-skill-md"><code>outputs/agent-eval/SKILL.md</code></a></p><p>Скилл оценки агента: подкладываешь тест-сет и версии — получаешь рейтинг и флаг регрессии. Зарегистрирован в <a href="#f-claude-skills-agent-eval-skill-md"><code>.claude/skills/agent-eval</code></a>. Связь с 2.5 (eval промптов), 7.4 (поломки), 10.4 (online-трейсинг). Дальше в фазе — realtime/голосовые агенты (7.6).</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Улучшать агента на глаз по одному примеру.</strong> Правка может поднять один кейс и уронить десять. Только прогон по фиксированному набору показывает реальный эффект.</li><li><strong>Менять тест-сет между версиями.</strong> Тогда числа несравнимы. Набор фиксируют; растёт он отдельно (новые кейсы), но сравнение версий — на одном и том же.</li><li><strong>Мерить только итог, игнорируя траекторию.</strong> Агент мог дать верный ответ, но 20 лишними шагами или не тем инструментом. Оценивай и success, и путь (шаги, tool-correctness).</li><li><strong>Нет автоматической защиты от регрессий.</strong> Без <code>has_regression</code> в CI плохая правка просто вмёрджится. Порог на success_rate — блок мерджа.</li><li><strong>Путать offline и online evals.</strong> Offline ловит регрессии кода до прода; online ловит дрейф качества на реальных данных. Нужны оба — это разные риски.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="7.5"></div><h2>Материалы</h2><ul><li><a href="https://docs.langchain.com/langsmith/evaluation" target="_blank" rel="noopener">LangSmith — Evaluation</a> — offline/online evals агентов.</li><li><a href="https://docs.ragas.io/en/stable/concepts/metrics/available_metrics/" target="_blank" rel="noopener">Ragas — метрики</a> — метрики для RAG и agentic.</li><li><a href="https://platform.claude.com/docs/en/docs/build-with-claude/define-success" target="_blank" rel="noopener">Anthropic — Create strong empirical evaluations</a> — критерии успеха и построение eval-наборов.</li><li><a href="https://arxiv.org/abs/2406.12045" target="_blank" rel="noopener">τ-bench (Sierra, 2024)</a> — eval агента в реалистичном Tool-Agent-User диалоге; метрика pass^k (надёжность на повторах).</li><li><a href="https://arxiv.org/abs/2311.12983" target="_blank" rel="noopener">GAIA (2023)</a> — бенчмарк общего ассистента: многошаговые реальные задачи (человек 92% vs GPT-4 15%).</li><li><a href="https://arxiv.org/abs/2310.06770" target="_blank" rel="noopener">SWE-bench (2023)</a> — eval коддинг-агентов на реальных GitHub issue (+ вариант Verified).</li><li><a href="https://arxiv.org/abs/2308.03688" target="_blank" rel="noopener">AgentBench (ICLR'24)</a> — 8 интерактивных сред, типовые причины провалов агентов.</li><li><a href="https://github.com/langfuse/langfuse" target="_blank" rel="noopener">Langfuse</a> — open-source трейсинг + evals + датасеты (online и offline, ловля регрессий).</li><li><a href="https://aws.amazon.com/blogs/machine-learning/evaluating-ai-agents-for-production-a-practical-guide-to-strands-evals/" target="_blank" rel="noopener">AWS — Evaluating AI agents for production (Strands Evals)</a> — CI/CD quality-gate, различие pass@k vs pass^k.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-07-agent-engineering-07-agent-evals-code-test-agent-eval-py" open data-test="1"><summary><span class="fname">code/test_agent_eval.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from agent_eval import evaluate_agent, compare_versions, has_regression
+
+CASES = [{"input": "2+2", "expected": "4"}, {"input": "3*3", "expected": "9"},
+         {"input": "10-7", "expected": "3"}]
+GOOD = lambda x: str(eval(x))
+BROKEN = lambda x: "?"
+HALF = lambda x: "4"            # угадывает только первый кейс
+
+
+def test_perfect_agent_scores_one():
+    assert evaluate_agent(GOOD, CASES)["success_rate"] == 1.0
+
+
+def test_broken_agent_scores_zero():
+    res = evaluate_agent(BROKEN, CASES)
+    assert res["success_rate"] == 0.0
+    assert len(res["per_case"]) == 3
+
+
+def test_compare_versions_ranks_best_first():
+    ranking = compare_versions({"good": GOOD, "broken": BROKEN, "half": HALF}, CASES)
+    assert ranking[0][0] == "good"
+    assert ranking[-1][0] == "broken"
+
+
+def test_regression_detection():
+    assert has_regression(GOOD, BROKEN, CASES) is True
+    assert has_regression(GOOD, GOOD, CASES) is False
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-07-agent-engineering-07-agent-evals-code-agent-eval-py"><summary><span class="fname">code/agent_eval.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Evals агентов: offline-harness на тест-сете — Build It 7.5.
+
+Без зависимостей. Агент нельзя «улучшать на глаз»: нужен фиксированный тест-сет и
+метрики (успех задачи, число шагов), чтобы ловить регрессии между версиями. Это
+eval-harness из 2.5, но для агента (по итогу/траектории). В USE IT — online-evals в проде.
+"""
+
+
+def task_success(result, expected):
+    """Базовая метрика: совпал ли итог с ожидаемым."""
+    return 1.0 if result == expected else 0.0
+
+
+def evaluate_agent(agent_fn, cases, scorer=task_success):
+    """Прогнать agent_fn по кейсам {input, expected}. → {success_rate, per_case}."""
+    per_case = []
+    for c in cases:
+        out = agent_fn(c["input"])
+        per_case.append({"input": c["input"], "output": out, "score": scorer(out, c["expected"])})
+    rate = sum(p["score"] for p in per_case) / len(cases) if cases else 0.0
+    return {"success_rate": round(rate, 3), "per_case": per_case}
+
+
+def compare_versions(versions, cases, scorer=task_success):
+    """versions: {name: agent_fn}. Рейтинг по success_rate (по убыванию)."""
+    scored = [(n, evaluate_agent(fn, cases, scorer)["success_rate"]) for n, fn in versions.items()]
+    return sorted(scored, key=lambda x: x[1], reverse=True)
+
+
+def has_regression(baseline, candidate, cases, scorer=task_success):
+    """True, если кандидат хуже базлайна на тест-сете (защита от регрессий)."""
+    b = evaluate_agent(baseline, cases, scorer)["success_rate"]
+    c = evaluate_agent(candidate, cases, scorer)["success_rate"]
+    return c &lt; b
+
+
+if __name__ == "__main__":
+    cases = [{"input": "2+2", "expected": "4"}, {"input": "3*3", "expected": "9"},
+             {"input": "10-7", "expected": "3"}]
+    good = lambda x: str(eval(x))                  # noqa: S307 — учебный stub-агент
+    broken = lambda x: "?"
+    print("good:", evaluate_agent(good, cases)["success_rate"])
+    print("broken:", evaluate_agent(broken, cases)["success_rate"])
+    print("регрессия good→broken:", has_regression(good, broken, cases))
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-07-agent-engineering-07-agent-evals-outputs-agent-eval-skill-md" open><summary><span class="fname">outputs/agent-eval/SKILL.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>---
+name: agent-eval
+description: "Оценка агента курса AI Native: прогон по тест-сету, метрики успеха, сравнение версий и детект регрессий. Триггеры: «/agent-eval», «оцени агента», «сравни версии агента», «есть ли регрессия», «прогони eval агента». Артефакт урока 7.5."
+---
+
+# agent-eval — оценка агента и защита от регрессий
+
+Превращает «вроде стало лучше» в число: фиксированный тест-сет + метрики → сравнение версий агента и блок регрессий.
+
+## Как пользоваться
+
+1. Собери тест-сет `cases = [{"input": ..., "expected": ...}, ...]` (реальные задачи + эталоны, включая граничные).
+2. Заведи версии как функции `versions = {"v1": agent_fn1, "v2": agent_fn2}` (в проде — вызов агента).
+3. Выбери метрику (`task_success` или своя: tool-correctness, число шагов).
+4. Прогон и сравнение:
+
+```bash
+python -c "import agent_eval as a; \
+print(a.compare_versions({'good': lambda x: str(eval(x)), 'bad': lambda x: '?'}, \
+[{'input':'2+2','expected':'4'}]))"
+```
+
+5. Покажи `success_rate`, рейтинг версий и `has_regression(baseline, candidate, cases)`.
+
+## Файлы
+
+- `agent_eval.py` — `evaluate_agent`, `compare_versions`, `has_regression`.
+
+## Когда применять
+
+Перед мерджем правки агента/промпта/инструмента — прогони eval, поставь порог в CI, блокируй регрессии. Online-evals в проде — LangSmith/Phoenix (урок 10.4).
+</code></pre></details><details class="filebox" id="f-phases-07-agent-engineering-07-agent-evals-outputs-agent-eval-agent-eval-py" open><summary><span class="fname">outputs/agent-eval/agent_eval.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Evals агентов: offline-harness на тест-сете — Build It 7.5.
+
+Без зависимостей. Агент нельзя «улучшать на глаз»: нужен фиксированный тест-сет и
+метрики (успех задачи, число шагов), чтобы ловить регрессии между версиями. Это
+eval-harness из 2.5, но для агента (по итогу/траектории). В USE IT — online-evals в проде.
+"""
+
+
+def task_success(result, expected):
+    """Базовая метрика: совпал ли итог с ожидаемым."""
+    return 1.0 if result == expected else 0.0
+
+
+def evaluate_agent(agent_fn, cases, scorer=task_success):
+    """Прогнать agent_fn по кейсам {input, expected}. → {success_rate, per_case}."""
+    per_case = []
+    for c in cases:
+        out = agent_fn(c["input"])
+        per_case.append({"input": c["input"], "output": out, "score": scorer(out, c["expected"])})
+    rate = sum(p["score"] for p in per_case) / len(cases) if cases else 0.0
+    return {"success_rate": round(rate, 3), "per_case": per_case}
+
+
+def compare_versions(versions, cases, scorer=task_success):
+    """versions: {name: agent_fn}. Рейтинг по success_rate (по убыванию)."""
+    scored = [(n, evaluate_agent(fn, cases, scorer)["success_rate"]) for n, fn in versions.items()]
+    return sorted(scored, key=lambda x: x[1], reverse=True)
+
+
+def has_regression(baseline, candidate, cases, scorer=task_success):
+    """True, если кандидат хуже базлайна на тест-сете (защита от регрессий)."""
+    b = evaluate_agent(baseline, cases, scorer)["success_rate"]
+    c = evaluate_agent(candidate, cases, scorer)["success_rate"]
+    return c &lt; b
+
+
+if __name__ == "__main__":
+    cases = [{"input": "2+2", "expected": "4"}, {"input": "3*3", "expected": "9"},
+             {"input": "10-7", "expected": "3"}]
+    good = lambda x: str(eval(x))                  # noqa: S307 — учебный stub-агент
+    broken = lambda x: "?"
+    print("good:", evaluate_agent(good, cases)["success_rate"])
+    print("broken:", evaluate_agent(broken, cases)["success_rate"])
+    print("регрессия good→broken:", has_regression(good, broken, cases))
+</code></pre></details><h3>Связанные файлы</h3><details class="filebox" id="f-claude-skills-agent-eval-skill-md" open><summary><span class="fname">.claude/skills/agent-eval/SKILL.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>---
+name: agent-eval
+description: "Оценка агента курса AI Native: прогон по тест-сету, метрики успеха, сравнение версий и детект регрессий. Триггеры: «/agent-eval», «оцени агента», «сравни версии агента», «есть ли регрессия», «прогони eval агента». Артефакт урока 7.5."
+---
+
+# agent-eval — оценка агента и защита от регрессий
+
+Превращает «вроде стало лучше» в число: фиксированный тест-сет + метрики → сравнение версий агента и блок регрессий.
+
+## Как пользоваться
+
+1. Собери тест-сет `cases = [{"input": ..., "expected": ...}, ...]` (реальные задачи + эталоны, включая граничные).
+2. Заведи версии как функции `versions = {"v1": agent_fn1, "v2": agent_fn2}` (в проде — вызов агента).
+3. Выбери метрику (`task_success` или своя: tool-correctness, число шагов).
+4. Прогон и сравнение:
+
+```bash
+python -c "import agent_eval as a; \
+print(a.compare_versions({'good': lambda x: str(eval(x)), 'bad': lambda x: '?'}, \
+[{'input':'2+2','expected':'4'}]))"
+```
+
+5. Покажи `success_rate`, рейтинг версий и `has_regression(baseline, candidate, cases)`.
+
+## Файлы
+
+- `agent_eval.py` — `evaluate_agent`, `compare_versions`, `has_regression`.
+
+## Когда применять
+
+Перед мерджем правки агента/промпта/инструмента — прогони eval, поставь порог в CI, блокируй регрессии. Online-evals в проде — LangSmith/Phoenix (урок 10.4).
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/where-agents-break/"><small>← 7.4</small>Где агенты ломаются</a><a href="../../lessons/realtime-voice-agents/" style="text-align:right"><small>7.6 →</small>Realtime и голосовые агенты</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

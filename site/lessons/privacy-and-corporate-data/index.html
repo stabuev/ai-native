@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>11.1 Конфиденциальность и корпоративные данные — AI Native</title>
+  <meta name="description" content="Прежде чем отдать текст модели — пойми, что в нём: PII, секреты, тайну отдавать нельзя.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/privacy-and-corporate-data/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="11.1 Конфиденциальность и корпоративные данные — AI Native">
+  <meta property="og:description" content="Прежде чем отдать текст модели — пойми, что в нём: PII, секреты, тайну отдавать нельзя.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/privacy-and-corporate-data/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="11.1">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 11.1 · Конфиденциальность и корпоративные данные</h1><p><strong>Фаза 11 — Этика, безопасность, governance</strong> · <strong>Результат фазы:</strong> Оценить риски, настроить приватность и написать политику использования ИИ.</p><p><strong>Это вход в Фазу 11 — ответственность.</strong> Мы научились строить, считать и выкатывать ИИ. Теперь — про то, что строить ИИ, который не навредит, не опция. И первый риск, с которым сталкивается любая команда, — утечка данных.</p><blockquote><strong>MOTTO.</strong> Прежде чем отдать текст модели — пойми, что в нём: PII, секреты, тайну отдавать нельзя.</blockquote><h2>PROBLEM</h2><p>Самый частый ИИ-инцидент в компании прозаичен: сотрудник вставил в чат клиентские PII, API-ключ или коммерческую тайну, чтобы «модель помогла». Раз отправил во внешнюю модель — <strong>контроль потерян</strong>: текст ушёл на чужие серверы, мог осесть в логах, ретеншене, а в неудачном случае — в обучении.</p><p>Полагаться на бдительность сотрудника нельзя. Нужен <strong>автоматический привратник</strong> перед отправкой: найти и замаскировать PII, классифицировать чувствительность текста и решить, можно ли вообще слать его в данный канал. Соберём такой классификатор.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Это <strong>досмотр на выходе из здания</strong>, а не доверие на слово. Каждый текст, уходящий наружу, проходит контроль: сканер ищет «запрещённое к выносу» (PII, секреты, карты), наклеивает на находки метку «замаскировано», а охрана по уровню секретности решает — выпустить через этот канал или нет. Публичную брошюру выносить можно; папку «совершенно секретно» — ни через какой внешний канал.</p><p>Ключевое правило: <strong>чем чувствительнее данные, тем строже канал</strong>. Не «удобно ли отправить», а «разрешено ли».</p><h3>Как это работает</h3><pre><code>текст → detect_pii (email / phone / card / secret)
+            │
+   classify_sensitivity: public &lt; internal &lt; confidential &lt; restricted
+            │
+   redact (маскировка)  +  can_send(level, порог) → да/нет</code></pre><ul><li><code>detect_pii(text)</code> — найти сущности по regex: email, телефон, номер карты, секрет (ключи <code>sk-…</code>, <code>AKIA…</code>).</li><li><code>classify_sensitivity(text)</code> — уровень по находкам: секрет/карта → <code>restricted</code>; email/телефон → <code>confidential</code>; маркеры «для служебного» → <code>internal</code>; иначе <code>public</code>.</li><li><code>redact(text)</code> — заменить находки плейсхолдерами (<code>[EMAIL]</code>, <code>[SECRET]</code>).</li><li><code>can_send(level, max_allowed)</code> — сравнить уровень с порогом канала: выше порога → нельзя.</li></ul><p>Порядок уровней — это упорядоченная шкала (<code>public &lt; internal &lt; confidential &lt; restricted</code>), и решение об отправке — простое сравнение индексов. Так «можно ли слать» становится детерминированным правилом, а не решением уставшего человека.</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Прогоним привратник на тексте <code>"Клиент Иван, почта ivan@mail.ru, тел +7 999 123 45 67, ключ sk-secret123token"</code>:</p><pre><code>1. detect_pii → [email: ivan@mail.ru, phone: +7 999 123 45 67, secret: sk-secret123token]
+2. classify_sensitivity → есть secret → "restricted"  (максимальный уровень)
+3. redact → "Клиент Иван, почта [EMAIL], тел [PHONE], ключ [SECRET]"
+4. can_send("restricted", порог "internal"):
+     ORDER.index("restricted")=3  &gt;  ORDER.index("internal")=1  → False</code></pre><p>Вывод: текст содержит секрет → уровень <code>restricted</code> → во внешнюю модель <strong>не отправляется</strong>. Обрати внимание на логику: <strong>наивысшая</strong> найденная сущность задаёт уровень всего текста (одного <code>sk-…</code>-ключа хватило, чтобы пометить весь фрагмент <code>restricted</code>), а решение <code>can_send</code> — это сравнение по шкале, а не «на глаз». Даже если бы текст всё же разрешили слать на пониженном уровне, в канал ушла бы <strong>замаскированная</strong> версия, без сырых PII. Поменяй regex на ML-детектор PII — контракт «найди → классифицируй → замаскируй → реши» не изменится.</p><h2>BUILD IT</h2><p><strong>Задание: собери привратник конфиденциальности</strong> — детектор PII, классификатор уровня, маскировку и решение об отправке. Только стандартная библиотека (<code>re</code>), без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/11.1-privacy/</code>), а файлы урока клади в подпапку <code>code/</code> (как в 0.1). Нужен только <strong>Python 3</strong> (для теста ещё <code>pytest</code>).</blockquote><p>Создай файл <code>data_classifier.py</code>:</p><ul><li>regex-паттерны <code>PATTERNS</code> (<code>email</code>, <code>phone</code>, <code>card</code>, <code>secret</code>) и шкалу <code>ORDER = ["public","internal","confidential","restricted"]</code>.</li><li><strong><code>detect_pii(text)</code></strong> — список <code>{type, value}</code> по всем паттернам.</li><li><strong><code>classify_sensitivity(text)</code></strong> — <code>restricted</code>, если найдены <code>secret</code>/<code>card</code>; <code>confidential</code>, если <code>email</code>/<code>phone</code>; <code>internal</code>, если есть маркеры («внутрен», «конфиденциаль», «для служебного»); иначе <code>public</code>.</li><li><strong><code>redact(text)</code></strong> — заменить найденное на <code>[EMAIL]</code>/<code>[PHONE]</code>/<code>[CARD]</code>/<code>[SECRET]</code>.</li><li><strong><code>can_send(level, max_allowed="internal")</code></strong> — <code>ORDER.index(level) &lt;= ORDER.index(max_allowed)</code>.</li></ul><p><strong>Готово, когда</strong> все тесты в <code>test_data_classifier.py</code> зелёные — они проверяют: детект email/phone/secret/card; уровни (секрет → restricted, почта → confidential, «для служебного» → internal, погода → public); <code>redact</code> убирает сырой PII и ставит <code>[EMAIL]</code>; <code>can_send</code> уважает порог (restricted → False).</p><pre><code>pytest code -q              # красное → реализуй привратник → зелёное
+python code/data_classifier.py # демо: текст с ключом → restricted, не отправляется</code></pre><p><strong>Подсказка.</strong> <code>classify_sensitivity</code> проверяет уровни <strong>от высшего к низшему</strong> (сначала secret/card, потом email/phone…) — высшая находка задаёт уровень. <code>redact</code> — <code>pat.sub(f"[{kind.upper()}]", text)</code> по каждому паттерну.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>Настройки приватности в инструментах (мульти-провайдер) — но сперва <strong>знай, что куда уходит</strong>:</p><ul><li><strong>Anthropic</strong> — на данных бизнеса (Claude for Work / Enterprise / API) Anthropic <strong>не обучает</strong> модели по умолчанию; у consumer-продуктов (Free/Pro/Max) обучение — по <strong>opt-in</strong> (с включённым улучшением данные хранятся обезличенно до 5 лет, иначе чат удаляется в течение 30 дней). Для enterprise доступен <strong>Zero Data Retention (ZDR)</strong>. Сверяйся с актуальными privacy-условиями — они различаются для consumer и commercial.</li><li><strong>OpenAI / Google</strong> — enterprise-режимы с изоляцией данных и отключением обучения.</li><li><strong>Data residency / суверенитет</strong> — важно, <strong>где физически лежат данные</strong>. Пример (дословно из privacy policy DeepSeek): «we directly collect, process and store your Personal Data in People's Republic of China» — для регулируемых данных (GDPR и т.п.) это может быть стоп-фактором.</li><li><strong>Open-weight как митигация</strong> — DeepSeek / Llama / Qwen под открытой лицензией можно <strong>запустить у себя</strong> (self-host), и данные не покидают периметр. Решает приватность ценой инфраструктуры (не цены инференса).</li><li><strong>Для своего пайплайна</strong> — классификация + redaction <strong>до</strong> отправки (как в Build It); чувствительное — только в одобренные каналы или в self-host.</li></ul><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Политика обработки данных → <a href="#f-phases-11-ethics-safety-governance-11-privacy-and-corporate-data-outputs-data-policy-md"><code>outputs/data-policy.md</code></a></p><p>Политика: уровни данных, что в какие модели можно, обязательная redaction, retention. Дальше: фактчекинг и борьба с галлюцинациями (11.2), реестр рисков (11.3), общая политика ИИ (11.4), защита агентов (11.5).</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Полагаться на бдительность сотрудника.</strong> Кто-нибудь вставит ключ или PII в чат. Нужен автоматический привратник (детект + redaction + правило отправки) до выхода данных наружу.</li><li><strong>Маскировать, но не классифицировать (или наоборот).</strong> Redaction убирает сырой PII, классификация решает, можно ли вообще слать. Нужны обе: замаскированный, но <code>restricted</code>-текст в публичный канал всё равно не должен уходить.</li><li><strong>Игнорировать data residency.</strong> «Не обучаются на данных» ≠ «данные в нужной юрисдикции». Где физически хранятся данные — отдельный вопрос (GDPR, госрегуляции); проверяй до интеграции.</li><li><strong>Путать consumer и commercial условия.</strong> У одного провайдера правила обучения/retention различаются для бесплатного чата и enterprise/API. Не переноси вывод с одного на другое — сверяйся с конкретными условиями.</li><li><strong>Считать redaction идеальной.</strong> Regex ловит типовые форматы, но пропустит нестандартный PII. Это первый барьер, не единственный; для чувствительного — одобренные каналы и self-host, а не только маскировка.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="11.1"></div><h2>Материалы</h2><ul><li><a href="https://privacy.claude.com/en/articles/10023548-how-long-do-you-store-my-data" target="_blank" rel="noopener">Anthropic — How long do you store my data</a> — retention и приватность.</li><li><a href="https://privacy.claude.com/en/collections/10663361-commercial-customers" target="_blank" rel="noopener">Anthropic — Commercial Customers (privacy)</a> — данные бизнеса не идут на обучение.</li><li><a href="https://www.anthropic.com/news/updates-to-our-consumer-terms" target="_blank" rel="noopener">Anthropic — Updates to Consumer Terms</a> — opt-in по использованию данных.</li><li><a href="https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html" target="_blank" rel="noopener">DeepSeek — Privacy Policy</a> — кейс data residency (хранение в КНР).</li><li><a href="https://openai.com/enterprise-privacy/" target="_blank" rel="noopener">OpenAI — Enterprise privacy</a> — не тренируют на business data по умолчанию, ZDR, EKM, BAA/HIPAA.</li><li><a href="https://workspace.google.com/security/ai-privacy/" target="_blank" rel="noopener">Google Workspace — Generative AI privacy &amp; security</a> — данные Workspace не идут на обучение вне домена; ISO 42001, DLP, data-regions.</li><li><a href="https://github.com/microsoft/presidio" target="_blank" rel="noopener">Microsoft Presidio</a> — open-source детект и анонимизация PII (analyzer/anonymizer: replace/mask/redact) — ровно Build It урока.</li><li><a href="https://genai.owasp.org/llmrisk/llm022025-sensitive-information-disclosure/" target="_blank" rel="noopener">OWASP — LLM02:2025 Sensitive Information Disclosure</a> — риск утечки PII/секретов через вывод; митигации (санитизация, least privilege). Кейс: утечка DeepSeek ClickHouse.</li><li><a href="https://www.nist.gov/privacy-framework" target="_blank" rel="noopener">NIST — Privacy Framework</a> — Identify-P / Govern-P / Control-P / Communicate-P / Protect-P; v1.1 покрывает AI-приватность.</li><li><a href="https://medium.com/data-science/building-a-customized-pii-anonymizer-with-microsoft-presidio-b5c2ddfe523b" target="_blank" rel="noopener">TDS — PII anonymization with Microsoft Presidio (Medium)</a> — практическая сборка кастомного анонимайзера.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-11-ethics-safety-governance-11-privacy-and-corporate-data-code-test-data-classifier-py" open data-test="1"><summary><span class="fname">code/test_data_classifier.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from data_classifier import detect_pii, classify_sensitivity, redact, can_send
+
+
+def test_detects_email_and_phone():
+    found = {f["type"] for f in detect_pii("пиши на a@b.com или +7 999 123 45 67")}
+    assert "email" in found
+    assert "phone" in found
+
+
+def test_detects_secret_and_card():
+    assert any(f["type"] == "secret" for f in detect_pii("ключ sk-abcd1234efgh"))
+    assert any(f["type"] == "card" for f in detect_pii("карта 4111 1111 1111 1111"))
+
+
+def test_classify_levels():
+    assert classify_sensitivity("ключ sk-abcd1234efgh") == "restricted"
+    assert classify_sensitivity("почта a@b.com") == "confidential"
+    assert classify_sensitivity("для служебного пользования") == "internal"
+    assert classify_sensitivity("обычный текст про погоду") == "public"
+
+
+def test_redact_masks_pii():
+    masked = redact("почта a@b.com")
+    assert "a@b.com" not in masked
+    assert "[EMAIL]" in masked
+
+
+def test_can_send_respects_threshold():
+    assert can_send("public") is True
+    assert can_send("restricted") is False           # порог по умолчанию internal
+    assert can_send("confidential", max_allowed="confidential") is True
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-11-ethics-safety-governance-11-privacy-and-corporate-data-code-data-classifier-py"><summary><span class="fname">code/data_classifier.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Конфиденциальность: классификация данных + PII — Build It для урока 11.1.
+
+Без зависимостей. Прежде чем отдать текст модели, надо понять, что в нём: PII,
+секреты, корпоративная тайна. Классифицируем чувствительность, находим и
+маскируем PII и решаем, можно ли отправлять во внешнюю модель.
+"""
+import re
+
+EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
+PHONE = re.compile(r"(?:\+7|8)[\s-]?\(?\d{3}\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}")
+CARD = re.compile(r"\b(?:\d[ -]?){13,16}\b")
+SECRET = re.compile(r"(?:sk-[A-Za-z0-9_-]{8,}|AKIA[0-9A-Z]{12,})")
+
+PATTERNS = {"email": EMAIL, "phone": PHONE, "card": CARD, "secret": SECRET}
+ORDER = ["public", "internal", "confidential", "restricted"]
+
+
+def detect_pii(text):
+    """Вернуть найденные PII/секреты: список {type, value}."""
+    found = []
+    for kind, pat in PATTERNS.items():
+        for m in pat.finditer(text):
+            found.append({"type": kind, "value": m.group()})
+    return found
+
+
+def classify_sensitivity(text):
+    """Уровень чувствительности по найденным сущностям/маркерам."""
+    kinds = {f["type"] for f in detect_pii(text)}
+    if {"secret", "card"} &amp; kinds:
+        return "restricted"
+    if {"email", "phone"} &amp; kinds:
+        return "confidential"
+    if re.search(r"внутрен|конфиденциаль|для служебного", text, re.IGNORECASE):
+        return "internal"
+    return "public"
+
+
+def redact(text):
+    """Замаскировать PII/секреты плейсхолдерами."""
+    for kind, pat in PATTERNS.items():
+        text = pat.sub(f"[{kind.upper()}]", text)
+    return text
+
+
+def can_send(level, max_allowed="internal"):
+    """Можно ли отдавать данные уровня level во внешнюю модель (порог max_allowed)."""
+    return ORDER.index(level) &lt;= ORDER.index(max_allowed)
+
+
+if __name__ == "__main__":
+    text = "Клиент Иван, почта ivan@mail.ru, тел +7 999 123 45 67, ключ sk-secret123token"
+    print("PII:", detect_pii(text))
+    print("Уровень:", classify_sensitivity(text))
+    print("Маска:", redact(text))
+    print("Можно во внешнюю модель?", can_send(classify_sensitivity(text)))
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-11-ethics-safety-governance-11-privacy-and-corporate-data-outputs-data-policy-md" open><summary><span class="fname">outputs/data-policy.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: политика обработки данных для ИИ
+
+Что и в какие модели можно отдавать. Привратник в коде — [`code/data_classifier.py`](../code/data_classifier.py).
+
+## Уровни данных и каналы
+
+| Уровень | Примеры | Куда можно |
+|---|---|---|
+| public | маркетинг, открытые доки | любые модели |
+| internal | внутренние заметки, процессы | enterprise/no-train режим |
+| confidential | PII (email/phone), переписка клиентов | только одобренный enterprise-канал, с redaction |
+| restricted | секреты, ключи, карты, тайна | НЕ отправлять во внешнюю модель |
+
+## Обязательные правила
+
+- [ ] **Redaction до отправки** — маскируй PII/секреты (`redact`) перед вызовом модели.
+- [ ] **Классифицируй вход** — `classify_sensitivity` + `can_send` как привратник в пайплайне.
+- [ ] **Enterprise-режим** — бизнес-данные только туда, где **нет обучения на них** (commercial terms / ZDR).
+- [ ] **Retention** — знай срок хранения у провайдера; для чувствительного — ZDR/30 дней.
+- [ ] **Без секретов в промптах** — ключи только из окружения (урок 0.2), не в тексте.
+- [ ] **Data residency** — знай юрисдикцию хранения (напр. hosted DeepSeek API → КНР, бан для регулируемых данных); сверяйся с GDPR/локальными требованиями.
+- [ ] **Open-weight self-host** — для самых чувствительных данных запускай open-weight модель (DeepSeek/Llama/Qwen) у себя: данные не покидают периметр.
+
+## Применение (код)
+
+```python
+from data_classifier import classify_sensitivity, redact, can_send
+level = classify_sensitivity(text)
+if not can_send(level, max_allowed="confidential"):
+    raise PermissionError(f"{level}: нельзя во внешнюю модель")
+payload = redact(text)
+```
+
+## Связи
+
+- Ключи и окружение → урок 0.2 · Что нельзя отдавать модели → урок 6.5
+- Политика ИИ целиком → урок 11.4 · GDPR/EU AI Act → уроки 11.3–11.4
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~3 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/observability-tracing/"><small>← 10.4</small>Observability и трейсинг агентов</a><a href="../../lessons/fact-checking-hallucinations/" style="text-align:right"><small>11.2 →</small>Фактчекинг и борьба с галлюцинациями</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

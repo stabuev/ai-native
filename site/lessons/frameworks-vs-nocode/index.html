@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>8.4 Оркестрация: фреймворки vs no-code — AI Native</title>
+  <meta name="description" content="Под капотом фреймворков и no-code — один и тот же граф: узлы, рёбра, состояние.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/frameworks-vs-nocode/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="8.4 Оркестрация: фреймворки vs no-code — AI Native">
+  <meta property="og:description" content="Под капотом фреймворков и no-code — один и тот же граф: узлы, рёбра, состояние.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/frameworks-vs-nocode/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="8.4">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 8.4 · Оркестрация: фреймворки vs no-code</h1><p><strong>Фаза 8 — Мульти-агенты и оркестрация</strong> · <strong>Результат фазы:</strong> Построить мульти-агентный процесс с оркестратором и передачей контекста.</p><p><strong>Requires (только для USE IT):</strong> аккаунт/инстанс инструмента (LangGraph/n8n/…). BUILD IT работает офлайн, без зависимостей и без сети.</p><p><strong>Это финал Фазы 8 — и развилка выбора.</strong> Свой оркестратор (8.1) понятен, но в проде берут готовое: код-фреймворк, no-code или gateway-платформу. Чтобы выбрать осознанно, а не «по хайпу», надо увидеть, что у всех внутри <strong>одно и то же</strong> — граф процесса.</p><blockquote><strong>MOTTO.</strong> Под капотом фреймворков и no-code — один и тот же граф: узлы, рёбра, состояние.</blockquote><h2>PROBLEM</h2><p>Перед тобой задача-процесс — несколько шагов с ветвлениями и, может, циклами. Вариантов реализации море: <strong>код-фреймворки</strong> (LangGraph, CrewAI, AutoGen), <strong>no-code/workflow</strong> (n8n), <strong>gateway-платформы</strong> (OpenClaw/Hermes из 4.5), или свой код. Легко взять не тот <strong>класс</strong> инструмента: затащить тяжёлый фреймворк туда, где хватило бы n8n, или наоборот — упереться в потолок no-code на сложной агентной логике.</p><p>Ключ к выбору — понять, что под капотом у всех <strong>граф</strong>: узлы-шаги, рёбра-переходы, общее состояние. Соберём этот движок сами (как мини-LangGraph) — и станет видно, что инструменты отличаются не сутью, а удобством и потолком.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Любой процесс — это <strong>блок-схема, ставшая исполняемой</strong>. Кружки (узлы) — шаги, стрелки (рёбра) — переходы между ними, в том числе развилки («если X — туда, иначе сюда») и циклы («повторяй, пока не готово»). По схеме течёт <strong>состояние</strong> — общие данные, которые каждый шаг читает и обновляет.</p><p>LangGraph, n8n-флоу и твой оркестратор из 8.1 — это всё один и тот же движок блок-схемы. Разница не в сути, а в обёртке: код-фреймворк даёт максимум контроля и циклы, no-code — визуальный редактор и готовые интеграции. Поняв граф, ты выбираешь инструмент под задачу, а не под моду.</p><h3>Как это работает</h3><pre><code>граф процесса = узлы (шаги) + рёбра (переходы, в т.ч. условные/циклы) + state
+   └─ это и есть «движок» LangGraph, n8n-флоу, своего оркестратора
+
+выбор класса инструмента:
+  from-scratch / SDK   контроль, нет лок-ина, надо писать всё
+  код-фреймворк        LangGraph (граф/циклы), CrewAI (роли), AutoGen (диалоги)
+  no-code / workflow   n8n (визуально, 400+ интеграций, AI-agent-ноды)
+  gateway-платформа    OpenClaw / Hermes (персональный агент, каналы) — 4.5</code></pre><ul><li><code>add_node(name, fn)</code> — шаг: функция над состоянием (<code>state -&gt; state</code>).</li><li><code>add_edge(src, dst)</code> — безусловный переход.</li><li><code>add_conditional(src, router)</code> — развилка: <code>router(state)</code> возвращает имя следующего узла (так делаются ветвления <strong>и</strong> циклы — ребро назад в тот же узел).</li><li><code>run(state, max_steps)</code> — гнать состояние от входа до <code>END</code>; <code>max_steps</code> — guard от бесконечного цикла (ровно как в 7.4).</li></ul><h2>РАЗБОР ПО ШАГАМ</h2><p>Соберём граф с <strong>циклом</strong>: узел <code>inc</code> увеличивает <code>n</code>, условие гонит обратно в <code>inc</code>, пока <code>n &lt; 3</code>, иначе в <code>done</code>.</p><pre><code>вход: inc;  state = {n: 0}
+
+шаг 1: node=inc → n=1; router: 1&lt;3 → "inc"        path=[inc]
+шаг 2: node=inc → n=2; router: 2&lt;3 → "inc"        path=[inc,inc]
+шаг 3: node=inc → n=3; router: 3&lt;3 ложь → "done"  path=[inc,inc,inc]
+шаг 4: node=done → status="готово"; edge done→END  path=[inc,inc,inc,done]
+node=END → стоп
+
+итог: state = {n:3, status:"готово"};  путь = [inc,inc,inc,done]</code></pre><p>Три механики в одном прогоне. <strong>Узел</strong> меняет состояние (<code>inc</code> растит <code>n</code>). <strong>Условное ребро</strong> делает и ветвление, и <strong>цикл</strong> — <code>router</code> вернул имя того же узла <code>inc</code>, и граф пошёл по кругу, пока условие не сменило маршрут. <strong>Guard</strong>: будь условие всегда <code>"inc"</code> (бесконечный цикл), <code>max_steps</code> оборвал бы прогон — без него граф зависнет (7.4). Это и есть ядро LangGraph; он добавляет поверх персистентность, инструменты и параллелизм, но движок — тот же.</p><h2>BUILD IT</h2><p><strong>Задание: собери мини-граф процесса</strong> (как LangGraph) — узлы, рёбра, условные ветвления и циклы поверх состояния. Только стандартная библиотека, без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/8.4-graph/</code>), а файлы урока клади в подпапку <code>code/</code> (как в 0.1). Нужен только <strong>Python 3</strong> (для теста ещё <code>pytest</code>).</blockquote><p>Создай файл <code>mini_graph.py</code>: константу <code>END = "__end__"</code> и класс <code>Graph</code>:</p><ul><li><strong><code>add_node(name, fn)</code></strong> — узел-функция <code>state -&gt; state</code>.</li><li><strong><code>set_entry(name)</code></strong> — стартовый узел.</li><li><strong><code>add_edge(src, dst)</code></strong> — безусловный переход.</li><li><strong><code>add_conditional(src, router)</code></strong> — <code>router(state)</code> возвращает имя следующего узла.</li><li><strong><code>run(state, max_steps=100)</code></strong> — от <code>entry</code>: на каждом шаге выполнить узел (<code>state = fn(state)</code>), затем выбрать следующий — <code>router</code> (если есть условное ребро), иначе <code>edge</code>, иначе <code>END</code>. Остановиться на <code>END</code> или по <code>max_steps</code>. Вернуть <code>(state, path)</code>.</li></ul><p><strong>Готово, когда</strong> все тесты в <code>test_mini_graph.py</code> зелёные — они проверяют: линейный граф (<code>a→b</code>); условное ветвление (<code>big</code>/<code>small</code> по <code>state</code>); цикл с выходом по условию (<code>inc</code> ×3); срабатывание <code>max_steps</code> на бесконечном цикле.</p><pre><code>pytest code -q           # красное → реализуй Graph → зелёное
+python code/mini_graph.py # демо: цикл inc до n=3, потом done</code></pre><p><strong>Подсказка.</strong> В <code>run</code> держи текущий <code>node</code> и список <code>path</code>. Порядок выбора следующего узла: сначала <code>self.cond.get(node)</code>, потом <code>self.edges.get(node)</code>, иначе <code>END</code>. <code>max_steps</code> — это просто верхняя граница цикла <code>for</code>.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>Тот же граф — в готовых инструментах (мульти-инструмент):</p><ul><li><strong>LangGraph</strong> — по доке, «low-level orchestration framework and runtime» для долгоживущих стейтовых агентов: граф узлов/рёбер над общим состоянием, циклы и условные переходы, <strong>durable execution</strong> (checkpointing — агент возобновляется после сбоя), human-in-the-loop, стриминг. Максимум контроля; в проде у Klarna, Uber, J.P. Morgan.</li><li><strong>CrewAI</strong> — оркестрация по ролям (researcher/analyst/writer), быстрый старт, но более «opinionated».</li><li><strong>n8n</strong> — визуальный workflow с AI-Agent-нодами (на базе LangChain), 400+ интеграций, MCP, human-in-the-loop; смешивает детерминированные шаги и ИИ.</li><li><strong>OpenClaw / Hermes</strong> — gateway-платформа: персональный агент с каналами и памятью (4.5).</li></ul><p><strong>Правило выбора:</strong> детерминированная автоматизация с парой ИИ-шагов → <strong>n8n</strong>; сложная агентная логика с циклами и состоянием → <strong>LangGraph/код</strong>; команда по ролям → <strong>CrewAI</strong>; персональный агент с каналами → <strong>OpenClaw/Hermes</strong>.</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Матрица «когда фреймворк, когда no-code» → <a href="#f-phases-08-multi-agent-orchestration-08-frameworks-vs-nocode-outputs-orchestration-matrix-md"><code>outputs/orchestration-matrix.md</code></a></p><p>Карта выбора (from-scratch ↔ SDK ↔ LangGraph/CrewAI/AutoGen ↔ OpenClaw/Hermes ↔ n8n): критерии, плюсы/минусы, когда что. Это <strong>завершает Фазу 8</strong> — у тебя мульти-агентный процесс с оркестратором, discovery, общим контекстом и осознанным выбором движка. Связь с 8.1 (оркестратор), 4.5 (платформы), 7.4 (лимиты/циклы).</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Выбирать инструмент по хайпу, а не по задаче.</strong> Под капотом у всех граф. Тяжёлый фреймворк на простую автоматизацию — оверкилл; no-code на сложную агентную логику — упрёшься в потолок.</li><li><strong>Тащить фреймворк туда, где хватает n8n.</strong> Детерминированный пайплайн с парой ИИ-шагов визуально собирается в no-code за час. Код-фреймворк тут — лишняя сложность.</li><li><strong>No-code на сложной агентной логике с циклами.</strong> Когда нужны состояние, циклы, ветвления и контроль — визуальный редактор мешает. Это территория LangGraph/кода.</li><li><strong>Граф без лимита шагов.</strong> Условные рёбра позволяют циклы — а цикл без выхода зависает. <code>max_steps</code> обязателен, как guardrail из 7.4.</li><li><strong>Считать фреймворк «магией».</strong> LangGraph/n8n — это узлы + рёбра + состояние, ровно как наш <code>Graph</code>. Понимаешь движок — отладишь зависание; не понимаешь — будешь гадать.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="8.4"></div><h2>Материалы</h2><ul><li><a href="https://docs.langchain.com/oss/python/langgraph/overview" target="_blank" rel="noopener">LangGraph — overview</a> — стейтовый граф агентов, low-level контроль.</li><li><a href="https://github.com/crewAIInc/crewAI" target="_blank" rel="noopener">crewAIInc/crewAI</a> — оркестрация по ролям.</li><li><a href="https://docs.n8n.io/advanced-ai/" target="_blank" rel="noopener">n8n — Advanced AI</a> — no-code workflow с AI-агентами.</li><li><a href="https://learn.microsoft.com/en-us/agent-framework/overview/" target="_blank" rel="noopener">Microsoft Agent Framework</a> — консолидация AutoGen + Semantic Kernel (окт. 2025): graph-workflows, .NET+Python, A2A/MCP/AG-UI.</li><li><a href="https://adk.dev/" target="_blank" rel="noopener">Google ADK (Agent Development Kit)</a> — code-first фреймворк агентов (апр. 2025): model-agnostic, мульти-агентные паттерны.</li><li><a href="https://github.com/langflow-ai/langflow" target="_blank" rel="noopener">Langflow</a> — визуальный low-code билдер агентов и RAG (строит и MCP-серверы) — альтернатива n8n.</li><li><a href="https://github.com/langgenius/dify" target="_blank" rel="noopener">Dify</a> — open-source low-code платформа: визуальный canvas для AI-workflow и агентов.</li><li><a href="https://developer.ibm.com/articles/awb-comparing-ai-agent-frameworks-crewai-langgraph-and-beeai/" target="_blank" rel="noopener">IBM — Comparing CrewAI, LangGraph, and BeeAI</a> — сравнение фреймворков для «матрицы выбора» из урока.</li><li><a href="https://medium.com/@atnoforgenai/10-ai-agent-frameworks-you-should-know-in-2026-langgraph-crewai-autogen-more-2e0be4055556" target="_blank" rel="noopener">10 AI Agent Frameworks You Should Know in 2026 (Medium)</a> — обзор ландшафта фреймворков.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-08-multi-agent-orchestration-08-frameworks-vs-nocode-code-test-mini-graph-py" open data-test="1"><summary><span class="fname">code/test_mini_graph.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from mini_graph import Graph, END
+
+
+def test_linear_graph():
+    g = Graph()
+    g.add_node("a", lambda s: {**s, "log": s["log"] + ["a"]})
+    g.add_node("b", lambda s: {**s, "log": s["log"] + ["b"]})
+    g.set_entry("a")
+    g.add_edge("a", "b")
+    g.add_edge("b", END)
+    state, path = g.run({"log": []})
+    assert path == ["a", "b"]
+    assert state["log"] == ["a", "b"]
+
+
+def test_conditional_branch():
+    g = Graph()
+    g.add_node("check", lambda s: s)
+    g.add_node("big", lambda s: {**s, "label": "big"})
+    g.add_node("small", lambda s: {**s, "label": "small"})
+    g.set_entry("check")
+    g.add_conditional("check", lambda s: "big" if s["x"] &gt; 10 else "small")
+    g.add_edge("big", END)
+    g.add_edge("small", END)
+    assert g.run({"x": 42})[0]["label"] == "big"
+    assert g.run({"x": 3})[0]["label"] == "small"
+
+
+def test_loop_with_exit():
+    g = Graph()
+    g.add_node("inc", lambda s: {**s, "n": s["n"] + 1})
+    g.set_entry("inc")
+    g.add_conditional("inc", lambda s: "inc" if s["n"] &lt; 3 else END)
+    state, path = g.run({"n": 0})
+    assert state["n"] == 3
+    assert path == ["inc", "inc", "inc"]
+
+
+def test_max_steps_guard():
+    g = Graph()
+    g.add_node("loop", lambda s: s)
+    g.set_entry("loop")
+    g.add_conditional("loop", lambda s: "loop")     # бесконечный цикл
+    _, path = g.run({}, max_steps=5)
+    assert len(path) == 5                            # лимит сработал
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-08-multi-agent-orchestration-08-frameworks-vs-nocode-code-mini-graph-py"><summary><span class="fname">code/mini_graph.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Оркестрация: мини-граф процесса (как LangGraph) — Build It 8.4.
+
+Без зависимостей. Фреймворки оркестрации (LangGraph и т.п.) — это граф: узлы-шаги,
+рёбра-переходы, условные ветвления и циклы поверх общего состояния. Собираем
+уменьшенную версию, чтобы понять, что no-code/фреймворк делают под капотом.
+В USE IT — тот же процесс в LangGraph / n8n.
+"""
+
+END = "__end__"
+
+
+class Graph:
+    """Граф процесса: узлы (fn над состоянием) + рёбра (обычные и условные)."""
+
+    def __init__(self):
+        self.nodes = {}
+        self.edges = {}        # node -&gt; next node
+        self.cond = {}         # node -&gt; router(state) -&gt; next node
+        self.entry = None
+
+    def add_node(self, name, fn):
+        self.nodes[name] = fn
+        return self
+
+    def set_entry(self, name):
+        self.entry = name
+        return self
+
+    def add_edge(self, src, dst):
+        self.edges[src] = dst
+        return self
+
+    def add_conditional(self, src, router):
+        self.cond[src] = router
+        return self
+
+    def run(self, state, max_steps=100):
+        """Прогнать состояние по графу от entry до END. Возвращает (state, путь)."""
+        node, path = self.entry, []
+        for _ in range(max_steps):
+            if node == END or node is None:
+                break
+            path.append(node)
+            state = self.nodes[node](state)
+            if node in self.cond:
+                node = self.cond[node](state)
+            elif node in self.edges:
+                node = self.edges[node]
+            else:
+                node = END
+        return state, path
+
+
+if __name__ == "__main__":
+    g = Graph()
+    g.add_node("inc", lambda s: {**s, "n": s["n"] + 1})
+    g.add_node("done", lambda s: {**s, "status": "готово"})
+    g.set_entry("inc")
+    # цикл: пока n &lt; 3 — обратно в inc, иначе в done
+    g.add_conditional("inc", lambda s: "inc" if s["n"] &lt; 3 else "done")
+    g.add_edge("done", END)
+    state, path = g.run({"n": 0})
+    print("итог:", state, "| путь:", path)
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-08-multi-agent-orchestration-08-frameworks-vs-nocode-outputs-orchestration-matrix-md" open><summary><span class="fname">outputs/orchestration-matrix.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: матрица «когда фреймворк, когда no-code»
+
+Карта выбора инструмента оркестрации. Ядро у всех одно — граф процесса (см. [`code/mini_graph.py`](../code/mini_graph.py)).
+
+## Классы инструментов
+
+| Класс | Примеры | Когда брать | Минусы |
+|---|---|---|---|
+| From-scratch / SDK | свой `orchestrator`/`mini_graph`, Claude/OpenAI Agent SDK | максимальный контроль, нет лок-ина, кастомная логика | всё пишешь сам |
+| Код-фреймворк (граф) | **LangGraph** | сложная агентная логика: циклы, ветвления, persistence, HITL | кривая входа |
+| Код-фреймворк (роли) | **CrewAI** | команда агентов по ролям, быстрый старт | «opinionated», труднее кастомизировать |
+| Код-фреймворк (диалоги) | **AutoGen** | мультиагентные «беседы» | свои абстракции |
+| No-code / workflow | **n8n** | детерминированная автоматизация + пара ИИ-шагов, 400+ интеграций | сложную агентную логику тянет хуже |
+| Gateway-платформа | **OpenClaw / Hermes** (4.5) | персональный агент, каналы, self-host | не для серверных пайплайнов |
+
+## Правило выбора
+
+```
+нужна автоматизация процессов с интеграциями и парой ИИ-шагов? → n8n (no-code)
+сложная агентная логика (циклы, состояние, HITL)?            → LangGraph / свой граф
+команда агентов по ролям?                                    → CrewAI
+персональный агент с мессенджерами, self-host?               → OpenClaw / Hermes
+максимальный контроль / встраивание в свой код?              → SDK / from-scratch
+```
+
+## Правила
+
+- **Под капотом — один граф** (узлы/рёбра/state). Сначала пойми механизм (8.1, mini_graph), потом выбирай обёртку.
+- **No-code ≠ слабее** — для интеграционных workflow n8n быстрее и надёжнее кода.
+- **Не тащи фреймворк ради двух шагов** — и не пиши свой граф там, где хватит n8n.
+- Лимиты/циклы и предохранители обязательны в любом инструменте (урок 7.4).
+- Стоимость растёт с числом агентов (4–15×) — считай (Ф9).
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/coordination-and-context/"><small>← 8.3</small>Координация и контекст</a><a href="../../lessons/pricing-2026/" style="text-align:right"><small>9.1 →</small>Цены 2026 и за что платишь</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

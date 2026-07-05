@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>3.2 Длинный контекст и работа с файлами — AI Native</title>
+  <meta name="description" content="Документ не влезает в окно — режь на части, сжимай каждую, своди вместе.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/long-context-and-files/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="3.2 Длинный контекст и работа с файлами — AI Native">
+  <meta property="og:description" content="Документ не влезает в окно — режь на части, сжимай каждую, своди вместе.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/long-context-and-files/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="3.2">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 3.2 · Длинный контекст и работа с файлами</h1><p><strong>Фаза 3 — Текст и документы</strong> · <strong>Результат фазы:</strong> Строить пайплайны резюмирования и редактуры; собрать базовый RAG над своим корпусом.</p><p><strong>Requires (только для USE IT):</strong> платный API-ключ одного из провайдеров. BUILD IT работает офлайн, без ключей и без сети.</p><p><strong>Этот урок — про то, как обрабатывать документы, которые не влезают в один запрос.</strong> Отчёт на 200 страниц не поместится в контекстное окно (урок 1.2), а если и поместится (1M токенов) — это дорого и качество в середине проседает. Решение — <strong>chunking + map-reduce</strong>: разрезать документ на куски, сжать каждый и свести результаты. Это же режет данные для RAG (урок 3.3).</p><blockquote><strong>MOTTO.</strong> Документ не влезает в окно — режь на части, сжимай каждую, своди вместе.</blockquote><h2>PROBLEM</h2><p>Длинный документ не помещается в контекстное окно, а класть «всё целиком» в окно на 1M токенов — дорого и ненадёжно: модель хуже видит то, что в <strong>середине</strong> длинного контекста. Значит, нужна стратегия: разбить документ на управляемые куски, обработать каждый по отдельности и собрать общий результат — масштабируемо и предсказуемо по цене.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Это как читать толстую книгу: целиком в голове не удержать, поэтому читаешь по главам, делаешь заметку по каждой, а потом пишешь резюме из заметок. Машинная версия того же — <strong>chunking</strong> (нарезать на куски) и <strong>map-reduce</strong> (сжать каждый кусок → свести вместе).</p><h3>Как это работает</h3><pre><code>длинный документ
+   │ chunking (перекрывающиеся куски)
+   ▼
+[chunk] [chunk] [chunk] ...
+   │ map: сжать каждый кусок
+   ▼
+[summary] [summary] [summary]
+   │ reduce: свести в один результат
+   ▼
+итоговое резюме</code></pre><ul><li><strong>Chunking.</strong> Режем текст на куски по <code>size</code> слов. Ключевая деталь — <strong>перекрытие</strong> (<code>overlap</code>): соседние чанки делят несколько слов на стыке, чтобы предложение или мысль, разорванные границей, не потерялись. Шаг между началами чанков = <code>size − overlap</code>. Стратегии бывают разные (по словам, по токенам, по структуре документа — см. сплиттеры LangChain); мы делаем простейшую, по словам.</li><li><strong>Map-reduce.</strong> <code>map</code> применяет операцию к каждому чанку (например, суммаризацию), <code>reduce</code> сводит результаты в один. Так обрабатывается документ <strong>любой</strong> длины: добавилось страниц — добавилось чанков, алгоритм тот же.</li></ul><p>Альтернатива chunking'у — <strong>длинное окно напрямую</strong> (загрузить файл целиком в 1M токенов у Claude/Gemini). Подходит для умеренных объёмов, но помни про позицию: по подсказкам Anthropic для длинного контекста данные кладут <strong>вверх</strong>, а вопрос — <strong>в конец</strong> (модель хуже работает с серединой длинного ввода). Когда документ реально большой или вызовов много — chunking + map-reduce дешевле и надёжнее.</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Нарежем 25 слов (<code>w1…w25</code>) с <code>size=10</code>, <code>overlap=3</code>. Шаг между чанками: <code>step = size − overlap = 10 − 3 = 7</code>. Начинаем с позиций 0, 7, 14, 21:</p><pre><code>chunk0:  w1  w2  w3  w4  w5  w6  w7  w8  w9  w10
+chunk1:  w8  w9  w10 w11 w12 w13 w14 w15 w16 w17
+chunk2:  w15 w16 w17 w18 w19 w20 w21 w22 w23 w24
+chunk3:  w22 w23 w24 w25</code></pre><p>Две вещи, которые проверяют тесты:</p><ul><li><strong>Перекрытие.</strong> Последние 3 слова <code>chunk0</code> (<code>w8 w9 w10</code>) — это первые 3 слова <code>chunk1</code>. Именно overlap не даёт «разрезать мысль» на границе.</li><li><strong>Ничего не потеряно.</strong> Объединение всех чанков покрывает <code>w1…w25</code> целиком; первый чанк начинается с <code>w1</code>, последний кончается на <code>w25</code>.</li></ul><p>Теперь <code>map_reduce</code>. Возьмём <code>map_fn = длина чанка в словах</code>, <code>reduce_fn = sum</code>. На нарезке <strong>без</strong> перекрытия (<code>overlap=0</code>) сумма длин = ровно 25 — слова не дублируются. С перекрытием сумма была бы больше: перекрытые слова считаются дважды (это плата за связность). В проде <code>map_fn</code> — это суммаризация куска моделью, а <code>reduce_fn</code> — сведение саммари в одно.</p><h2>BUILD IT</h2><p><strong>Задание: собери chunking с перекрытием и map-reduce</strong> — стандартная библиотека, без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/3.2-long-context/</code>), а файлы урока клади в подпапку <code>code/</code> (как в 0.1). Нужен только <strong>Python 3</strong>, всё офлайн (для теста ещё <code>pytest</code>).</blockquote><p>Реализуй две функции:</p><ul><li><strong><code>chunk_text(text, size=100, overlap=20)</code></strong> — режь текст на чанки по словам: <code>size</code> слов в чанке, <code>overlap</code> слов внахлёст. Проверь параметры: <code>size &gt; 0</code> и <code>overlap &lt; size</code>, иначе <code>raise ValueError</code>. Шаг = <code>size − overlap</code>; иди по словам с этим шагом, на каждой позиции бери срез <code>size</code> слов; останавливайся, когда чанк дотянулся до конца текста. Пустой текст → <code>[]</code>.</li><li><strong><code>map_reduce(chunks, map_fn, reduce_fn)</code></strong> — примени <code>map_fn</code> к каждому чанку, затем <code>reduce_fn</code> к списку результатов, верни итог.</li></ul><p><strong>Готово, когда</strong> тест <code>test_chunking.py</code> зелёный — он проверяет, что чанки не больше <code>size</code>, что покрыты все слова (первое <code>w1</code>, последнее <code>w25</code>), что соседние чанки перекрываются ровно на <code>overlap</code>, что неверные параметры дают <code>ValueError</code>, что <code>map_reduce</code> композирует и пустой текст даёт <code>[]</code>.</p><pre><code>pytest code -q            # красное → реализуй функции → зелёное
+python code/chunking.py   # демо: нарезка 25 слов + суммарная длина по чанкам</code></pre><p><strong>Подсказка.</strong> Шаг цикла — <code>range(0, len(words), size - overlap)</code>; на каждой итерации бери <code>words[start:start + size]</code> и прерывайся, когда <code>start + size &gt;= len(words)</code>.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>В проде <code>map_fn</code> — суммаризация куска моделью, <code>reduce_fn</code> — сведение саммари; либо грузишь файл целиком в длинное окно:</p><pre><code>chunks = chunk_text(big_doc, size=800, overlap=100)
+ask = lambda p: Anthropic().messages.create(model="claude-haiku-4-5", max_tokens=300,
+    messages=[{"role": "user", "content": p}]).content[0].text
+summarize = lambda c: ask(f"Сожми кусок:\n{c}")                       # map: сжать каждый кусок
+reduce_ = lambda parts: ask("Сведи саммари в одно:\n" + "\n".join(parts))  # reduce: свести вместе
+final = map_reduce(chunks, summarize, reduce_)</code></pre><p>Альтернатива для умеренных объёмов — длинный контекст напрямую: загрузка PDF/таблиц и окно до 1M токенов (Claude/Gemini), с подсказками из <a href="https://platform.claude.com/docs/en/docs/build-with-claude/prompt-engineering/long-context-tips" target="_blank" rel="noopener">long context tips</a>: данные — вверх, вопрос — в конец.</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Пайплайн обработки длинных документов → <a href="#f-phases-03-text-and-documents-03-long-context-and-files-outputs-long-doc-pipeline-md"><code>outputs/long-doc-pipeline.md</code></a></p><p>Рецепт «когда chunking+map-reduce, когда длинное окно» + параметры (size/overlap) под типы документов. Связка с RAG — урок 3.3, с бюджетом — урок 1.1.</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Резать без перекрытия.</strong> На стыке чанков легко разорвать предложение или мысль, и обе половины потеряют смысл. Небольшой <code>overlap</code> сохраняет связность (плата — повтор перекрытых слов).</li><li><strong>«Просто положу всё в окно на 1M».</strong> Дорого и середина теряется. Для больших документов или массовых прогонов chunking + map-reduce надёжнее и дешевле.</li><li><strong>Игнорировать позицию в длинном контексте.</strong> Если грузишь целиком — данные вверх, вопрос в конец; иначе модель хуже находит нужное в середине.</li><li><strong>Слишком мелкие или крупные чанки.</strong> Мелкие рвут контекст и плодят вызовы; крупные снова упираются в окно. Подбирай <code>size</code>/<code>overlap</code> под документ.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="3.2"></div><h2>Материалы</h2><ul><li><a href="https://platform.claude.com/docs/en/docs/build-with-claude/prompt-engineering/long-context-tips" target="_blank" rel="noopener">Anthropic — Long context prompting tips</a> — как работать с большим окном.</li><li><a href="https://docs.langchain.com/oss/python/integrations/splitters" target="_blank" rel="noopener">LangChain — Text splitters</a> — стратегии chunking (recursive, по токенам, по структуре).</li><li><a href="https://www.anthropic.com/research/prompting-long-context" target="_blank" rel="noopener">Anthropic — Prompting long context (research)</a> — почему позиция данных важна.</li><li><a href="https://arxiv.org/abs/2307.03172" target="_blank" rel="noopener">Liu et al., 2023 — Lost in the Middle</a> — seminal: модели хуже видят информацию в середине длинного контекста (почему chunking и позиция важны).</li><li><a href="https://www.anthropic.com/news/contextual-retrieval" target="_blank" rel="noopener">Anthropic — Contextual Retrieval (2024)</a> — приём: дописывать к каждому чанку поясняющий контекст перед эмбеддингом и BM25 (мост chunking → retrieval).</li><li><a href="https://www.trychroma.com/research/context-rot" target="_blank" rel="noopener">Chroma — Context Rot (2025)</a> — свежий эмпирический разбор: как деградирует качество с ростом числа токенов на входе.</li><li><a href="https://platform.claude.com/docs/en/build-with-claude/pdf-support" target="_blank" rel="noopener">Anthropic — PDF support</a> — работа с файлами: PDF (текст + таблицы и графики), Files API, чанкинг больших документов.</li><li><a href="https://arxiv.org/abs/2404.06654" target="_blank" rel="noopener">Hsieh et al., 2024 — RULER (NVIDIA)</a> — каноничный бенчмарк «заявленное окно ≠ эффективное»: почти все модели проходят needle-in-a-haystack, но сыпятся на задачах сложнее с ростом длины.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-03-text-and-documents-03-long-context-and-files-code-test-chunking-py" open data-test="1"><summary><span class="fname">code/test_chunking.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>import pytest
+from chunking import chunk_text, map_reduce
+
+TEXT = " ".join(f"w{i}" for i in range(1, 26))   # w1..w25, 25 слов
+
+
+def test_chunks_respect_size():
+    chunks = chunk_text(TEXT, size=10, overlap=3)
+    assert all(len(c.split()) &lt;= 10 for c in chunks)
+
+
+def test_chunks_cover_all_words():
+    chunks = chunk_text(TEXT, size=10, overlap=3)
+    seen = set()
+    for c in chunks:
+        seen.update(c.split())
+    assert seen == set(TEXT.split())          # ни одно слово не потеряно
+    assert chunks[0].split()[0] == "w1"
+    assert chunks[-1].split()[-1] == "w25"
+
+
+def test_overlap_between_consecutive_chunks():
+    chunks = chunk_text(TEXT, size=10, overlap=3)
+    first, second = chunks[0].split(), chunks[1].split()
+    assert first[-3:] == second[:3]           # последние 3 = первые 3 следующего
+
+
+def test_invalid_params_raise():
+    with pytest.raises(ValueError):
+        chunk_text(TEXT, size=0)
+    with pytest.raises(ValueError):
+        chunk_text(TEXT, size=5, overlap=5)
+
+
+def test_map_reduce_composes():
+    chunks = chunk_text(TEXT, size=10, overlap=0)
+    total = map_reduce(chunks, lambda c: len(c.split()), sum)
+    assert total == 25                        # без перекрытия слова не дублируются
+
+
+def test_empty_text():
+    assert chunk_text("", size=10, overlap=2) == []
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-03-text-and-documents-03-long-context-and-files-code-chunking-py"><summary><span class="fname">code/chunking.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Длинный контекст: chunking + map-reduce — Build It для урока 3.2.
+
+Без зависимостей. Длинный документ не влезает в контекстное окно (урок 1.2):
+режем его на перекрывающиеся чанки, обрабатываем каждый (map) и сводим
+результаты (reduce). Перекрытие сохраняет связность на стыках.
+"""
+
+
+def chunk_text(text, size=100, overlap=20):
+    """Резать текст на чанки по словам: `size` слов, `overlap` слов внахлёст."""
+    if size &lt;= 0:
+        raise ValueError("size должен быть &gt; 0")
+    if overlap &gt;= size:
+        raise ValueError("overlap должен быть &lt; size")
+    words = text.split()
+    if not words:
+        return []
+    step = size - overlap
+    chunks = []
+    for start in range(0, len(words), step):
+        chunks.append(" ".join(words[start:start + size]))
+        if start + size &gt;= len(words):
+            break
+    return chunks
+
+
+def map_reduce(chunks, map_fn, reduce_fn):
+    """Применить map_fn к каждому чанку, затем reduce_fn к списку результатов.
+
+    Это паттерн map-reduce суммаризации: сжать части, потом свести их вместе.
+    """
+    mapped = [map_fn(c) for c in chunks]
+    return reduce_fn(mapped)
+
+
+if __name__ == "__main__":
+    text = " ".join(f"слово{i}" for i in range(1, 26))   # 25 слов
+    chunks = chunk_text(text, size=10, overlap=3)
+    print(f"{len(chunks)} чанк(ов):")
+    for c in chunks:
+        print("  ", c)
+    # map: длина чанка; reduce: суммарно слов (с учётом перекрытий)
+    total = map_reduce(chunks, lambda c: len(c.split()), sum)
+    print("Слов суммарно по чанкам (с перекрытием):", total)
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-03-text-and-documents-03-long-context-and-files-outputs-long-doc-pipeline-md" open><summary><span class="fname">outputs/long-doc-pipeline.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: пайплайн обработки длинных документов
+
+Рецепт «как обработать документ, который не влезает (или дорого влезает) в окно». Код — в [`code/chunking.py`](../code/chunking.py).
+
+## Развилка: какой путь выбрать
+
+```
+документ помещается в окно с запасом?
+  ├─ да, и он небольшой      → одним промптом
+  ├─ да, но крупный (≤1M)    → длинный контекст напрямую (данные вверх, вопрос в конец)
+  └─ нет / дорого / их много → chunking + map-reduce  ИЛИ  RAG (урок 3.3)
+```
+
+## Map-reduce суммаризация
+
+```python
+from chunking import chunk_text, map_reduce
+chunks = chunk_text(doc, size=800, overlap=100)
+summary = map_reduce(chunks,
+    map_fn=lambda c: summarize_with_model(c),       # сжать кусок
+    reduce_fn=lambda parts: summarize_with_model("\n".join(parts)))  # свести
+```
+
+## Параметры под тип документа
+
+| Документ | size (слов) | overlap | Стратегия |
+|---|---|---|---|
+| Статья/письмо | — | — | один промпт |
+| Отчёт (десятки стр.) | 600–1000 | 80–120 | map-reduce |
+| Книга/множество файлов | 400–800 | 50–100 | RAG (retrieval, урок 3.3) |
+| Таблицы/структура | по секциям | по строкам-заголовкам | structure-aware split |
+
+## Правила
+
+- **Overlap обязателен** — иначе теряется смысл на стыках кусков.
+- **Считай бюджет** заранее (`prompt-token-budgeter`, урок 1.1): вход + ответ ≤ окно.
+- **Длинное окно ≠ бесплатно** — за токены платишь, «середина» хуже вспоминается; данные клади вверх, вопрос — в конец.
+- **Много документов и вопросы по ним** → не суммаризация, а RAG (уроки 3.3–3.4).
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/summarization-editing-tone/"><small>← 3.1</small>Резюмирование, редактура, тон</a><a href="../../lessons/rag-basics-retrieval/" style="text-align:right"><small>3.3 →</small>Основы RAG: retrieval</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

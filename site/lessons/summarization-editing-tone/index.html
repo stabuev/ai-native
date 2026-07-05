@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>3.1 Резюмирование, редактура, тон — AI Native</title>
+  <meta name="description" content="Текст обрабатывают конвейером: сжать → почистить → задать тон.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/summarization-editing-tone/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="3.1 Резюмирование, редактура, тон — AI Native">
+  <meta property="og:description" content="Текст обрабатывают конвейером: сжать → почистить → задать тон.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/summarization-editing-tone/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="3.1">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 3.1 · Резюмирование, редактура, тон</h1><p><strong>Фаза 3 — Текст и документы</strong> · <strong>Результат фазы:</strong> Строить пайплайны резюмирования и редактуры; собрать базовый RAG над своим корпусом.</p><p><strong>Requires (только для USE IT):</strong> платный API-ключ одного из провайдеров. BUILD IT работает офлайн, без ключей и без сети.</p><p><strong>Фаза 3 — про работу с текстом и документами, и начинается она с редакторского конвейера.</strong> Большая часть рабочих задач — это текст: письма, отчёты, переписка. Здесь мы строим пайплайн «сжать → почистить → задать тон», где каждая стадия — отдельный шаг с контрактом «текст → текст». Это прямое применение декомпозиции из урока 2.3 к тексту, а артефакт — переиспользуемый скилл <code>editor</code>.</p><blockquote><strong>MOTTO.</strong> Текст обрабатывают конвейером: сжать → почистить → задать тон.</blockquote><h2>PROBLEM</h2><p>«Сделай покороче и поприличнее» одним махом ненадёжно: то смысл потеряется при сжатии, то тон уедет не туда, и непонятно, какая часть виновата. На длинных письмах и отчётах это особенно больно. Нужен <strong>конвейер</strong> с раздельными стадиями, которые можно настраивать, менять и проверять по отдельности — а не один расплывчатый запрос.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Текст обрабатывают как на сборочной линии: каждая стадия делает одно понятное преобразование и передаёт результат дальше. У всех стадий один контракт — <strong>«текст на входе, текст на выходе»</strong>, поэтому их легко переставлять, заменять и оценивать. Один мегазапрос «улучши всё» такого контроля не даёт.</p><h3>Как это работает</h3><pre><code>сырой текст → [черновик/резюме] → [редактура] → [тон] → готово
+                 что важно            убрать лишнее   под аудиторию</code></pre><p>Три стадии конвейера:</p><ul><li><strong>Резюме.</strong> Сжать до главного. Тут важно различать два подхода:</li><li><strong>Extractive</strong> (наш офлайн-билд) — выбрать самые важные <strong>существующие</strong> предложения, ничего не переписывая. Важность оцениваем по частоте значимых слов: предложение из частых слов темы весит больше. Прозрачно и дёшево, но «рвано».</li><li><strong>Abstractive</strong> (то, что делает LLM в USE IT) — пересказать смысл <strong>своими словами</strong>. Глаже и человечнее, но дороже и может «досочинить» (привет, галлюцинации из 1.4).</li><li><strong>Редактура (<code>tighten</code>).</strong> Убрать слова-филлеры («очень», «просто», «буквально») и лишние пробелы — текст становится плотнее без потери смысла.</li><li><strong>Тон (<code>set_tone</code>).</strong> Подогнать под аудиторию: формальный/неформальный. В офлайн-билде это словарь замен-маркеров (<code>привет → Здравствуйте</code>), в проде — инструкция модели «перепиши в деловом тоне».</li></ul><p>Почему именно конвейер, а не один промпт: каждую стадию можно <strong>менять и измерять независимо</strong> (eval из урока 2.5 — на каждую стадию свой набор кейсов), а контракт «текст → текст» позволяет заменить офлайн-функцию на вызов модели, не трогая остальной пайплайн.</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Прогоним конвейер руками на тексте:</p><pre><code>Кошки любят рыбу. Кошки очень любят свежую рыбу. Погода сегодня внезапно испортилась.</code></pre><p><strong>Шаг 1 — <code>summarize_extractive(text, 1)</code>.</strong> Считаем частоту значимых слов (длиннее 3 букв) по всему тексту: <code>кошки</code>×2, <code>любят</code>×2, <code>рыбу</code>×2, остальные по 1. Оцениваем каждое предложение суммой частот его слов:</p><pre><code>"Кошки любят рыбу."                  → 2+2+2 = 6
+"Кошки очень любят свежую рыбу."     → 2+1+2+1+2 = 8   ← максимум
+"Погода сегодня внезапно испортилась." → 1+1+1+1 = 4</code></pre><p>Берём одно предложение с максимальным score → <strong>«Кошки очень любят свежую рыбу.»</strong> (редкое предложение про погоду отброшено).</p><p><strong>Шаг 2 — <code>tighten</code>.</strong> Убираем филлер <code>очень</code> и схлопываем пробелы → <strong>«Кошки любят свежую рыбу.»</strong></p><p><strong>Шаг 3 — <code>set_tone(…, "formal")</code>.</strong> В тексте нет маркеров из словаря (<code>привет</code>/<code>пока</code>/<code>спасибо</code>), поэтому он не меняется → <strong>«Кошки любят свежую рыбу.»</strong></p><p>Итог конвейера — <code>"Кошки любят свежую рыбу."</code>. Каждый шаг видно отдельно: если результат не нравится, понятно, какую стадию крутить.</p><h2>BUILD IT</h2><p><strong>Задание: собери редакторский конвейер</strong> — стандартная библиотека (<code>re</code>, <code>collections</code>), без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/3.1-editing-pipeline/</code>), а файлы урока клади в подпапку <code>code/</code> (как в 0.1). Нужен только <strong>Python 3</strong>, всё офлайн (для теста ещё <code>pytest</code>).</blockquote><p>Данные бери готовыми (филлеры и словарь тонов):</p><pre><code>FILLER_WORDS = {"очень", "просто", "буквально", "реально", "вообще", "типа"}
+TONE = {
+    "formal": {"привет": "Здравствуйте", "пока": "До свидания", "спасибо": "Благодарю"},
+    "casual": {"здравствуйте": "привет", "благодарю": "спасибо"},
+}</code></pre><p>Реализуй стадии (все с контрактом «строка → строка», кроме <code>split_sentences</code>):</p><ul><li><strong><code>split_sentences(text)</code></strong> — разбей на предложения (по <code>.!?</code>), верни непустые, обрезанные по краям.</li><li><strong><code>summarize_extractive(text, n=2)</code></strong> — extractive-резюме: если предложений ≤ <code>n</code>, верни все; иначе посчитай частоты значимых слов (длиннее 3 букв) по всему тексту, оцени каждое предложение суммой частот его слов, возьми <code>n</code> лучших и верни <strong>в исходном порядке</strong>.</li><li><strong><code>tighten(text)</code></strong> — убери слова из <code>FILLER_WORDS</code> (сравнивай без пунктуации по краям, регистронезависимо) и схлопни пробелы.</li><li><strong><code>set_tone(text, tone)</code></strong> — замени маркеры по словарю <code>TONE[tone]</code> (регистронезависимо).</li><li><strong><code>run_pipeline(text, stages)</code></strong> — прогони текст через список стадий (callable <code>str -&gt; str</code>).</li></ul><p><strong>Готово, когда</strong> тест <code>test_editing_pipeline.py</code> зелёный — он проверяет, что резюме короче и держит тему (а редкое предложение отброшено), что мало предложений возвращаются целиком, что <code>tighten</code> убирает филлеры и пробелы, что <code>set_tone</code> меняет маркеры, и что <code>run_pipeline</code> композирует стадии.</p><pre><code>pytest code -q                  # красное → реализуй стадии → зелёное
+python code/editing_pipeline.py # демо: исходник → итог конвейера</code></pre><p><strong>Подсказка.</strong> В <code>summarize_extractive</code> держи частоты в <code>Counter</code>, а функцию <code>score(s)</code> считай как сумму <code>freq[w]</code> по словам предложения (короткие слова дадут 0). Верни выбранные индексы, отсортированные по возрастанию, — так сохранится исходный порядок.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>Те же стадии — промптами к модели на реальных документах и переписке (в проде резюме и тон делаются <strong>abstractive</strong>, своими словами). Мульти-провайдер:</p><pre><code>def stage(instruction, text, model="claude-sonnet-4-6"):
+    p = f"{instruction}\n\nТекст:\n{text}"
+    return Anthropic().messages.create(model=model, max_tokens=600,
+        messages=[{"role": "user", "content": p}]).content[0].text
+    # OpenAI:  OpenAI().responses.create(model="gpt-5.x", input=p).output_text
+    # Google:  genai.Client().models.generate_content(model="gemini-2.x-flash", contents=p).text
+
+draft = stage("Сожми в 3 пункта", document)
+edited = stage("Сделай короче и яснее, убери воду", draft)
+final = stage("Перепиши в деловом тоне", edited)</code></pre><p>Контракт «текст → текст» тот же, что в Build It, — поэтому стадии собираются в тот же <code>run_pipeline</code>, только функции теперь зовут модель. Какая стадия/модель лучше — меряй harness'ом из урока 2.5.</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Редакторский skill → <a href="#f-phases-03-text-and-documents-03-summarization-editing-tone-outputs-editor-skill-md"><code>outputs/editor/</code></a></p><p>Скилл <code>editor</code> (черновик → редактура → тон) с настраиваемыми стадиями; зарегистрирован в <a href="#f-claude-skills-editor-skill-md"><code>.claude/skills/editor</code></a>. Дальше масштабируем на длинные документы — урок 3.2.</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Один мегазапрос «улучши всё».</strong> Сжатие, чистку и тон лучше делать раздельными стадиями — иначе непонятно, что сломало результат, и нечего настраивать по отдельности.</li><li><strong>Путать extractive и abstractive.</strong> Extractive выбирает готовые предложения (ничего не выдумает, но «рвано»); abstractive переписывает (гладко, но может досочинить). Под факты — следи за abstractive (фактчекинг из 1.4).</li><li><strong>Агрессивная чистка.</strong> Срезать «воду» полезно, но удаление слов может менять смысл и тон — проверяй результат, особенно на коротких текстах.</li><li><strong>Тон важнее смысла.</strong> Сначала верное содержание (резюме + редактура), потом тон. Красиво, но неверно — хуже, чем сухо, но верно.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="3.1"></div><h2>Материалы</h2><ul><li><a href="https://platform.claude.com/docs/en/docs/build-with-claude/prompt-engineering/claude-4-best-practices" target="_blank" rel="noopener">Anthropic — Prompting best practices</a> — приёмы для качественных текстовых задач.</li><li><a href="https://platform.claude.com/docs/en/docs/build-with-claude/prompt-engineering/overview" target="_blank" rel="noopener">Anthropic — Prompt engineering overview</a> — обзор техник.</li><li><a href="https://github.com/anthropics/prompt-eng-interactive-tutorial" target="_blank" rel="noopener">anthropics/prompt-eng-interactive-tutorial</a> — практика на примерах.</li><li><a href="https://arxiv.org/abs/2009.01325" target="_blank" rel="noopener">Stiennon et al., 2020 — Learning to Summarize from Human Feedback</a> — seminal: качество суммаризации по человеческим предпочтениям (корни RLHF), почему ROUGE — плохой прокси.</li><li><a href="https://arxiv.org/abs/2309.04269" target="_blank" rel="noopener">Adams et al., 2023 — Chain of Density</a> — итеративно уплотнять саммари сущностями без роста длины; люди предпочитают такие.</li><li><a href="https://github.com/anthropics/claude-cookbooks/blob/main/capabilities/summarization/guide.ipynb" target="_blank" rel="noopener">Anthropic — Summarization cookbook guide</a> — guided/meta-суммаризация, чанкинг длинных документов, оценка качества.</li><li><a href="https://arxiv.org/abs/2109.03910" target="_blank" rel="noopener">Reif et al., 2021 (Google) — A Recipe for Arbitrary Text Style Transfer</a> — классика: стиль и тон как задача переписывания по инструкции («make this melodramatic»).</li><li><a href="https://arxiv.org/abs/2305.09857" target="_blank" rel="noopener">Raheja et al., 2023 — CoEdIT</a> — instruction-based редактура: «сделай проще», «нейтральнее по тону»; SOTA-редактор.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-03-text-and-documents-03-summarization-editing-tone-code-test-editing-pipeline-py" open data-test="1"><summary><span class="fname">code/test_editing_pipeline.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from editing_pipeline import (split_sentences, summarize_extractive, tighten,
+                              set_tone, run_pipeline)
+
+DOC = ("Кошки любят рыбу. Кошки очень любят свежую рыбу. "
+       "Погода сегодня внезапно испортилась.")
+
+
+def test_summary_is_shorter_and_keeps_topic():
+    s = summarize_extractive(DOC, n=1)
+    assert len(split_sentences(s)) == 1
+    assert "рыбу" in s.lower()           # частая тема осталась
+    assert "погода" not in s.lower()     # редкое предложение отброшено
+    assert len(s) &lt; len(DOC)
+
+
+def test_summary_returns_all_if_few_sentences():
+    short = "Одно предложение."
+    assert summarize_extractive(short, n=3) == "Одно предложение."
+
+
+def test_tighten_removes_filler_and_spaces():
+    assert tighten("это  очень   просто хороший текст") == "это хороший текст"
+
+
+def test_set_tone_swaps_markers():
+    assert "Здравствуйте" in set_tone("привет, как дела", "formal")
+
+
+def test_pipeline_composes_stages():
+    out = run_pipeline("привет очень всем", [tighten, lambda t: set_tone(t, "formal")])
+    assert out == "Здравствуйте всем"
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-03-text-and-documents-03-summarization-editing-tone-code-editing-pipeline-py"><summary><span class="fname">code/editing_pipeline.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Резюмирование, редактура, тон: текстовый пайплайн — Build It для урока 3.1.
+
+Без зависимостей. Пайплайн «черновик → редактура → тон»: extractive-резюме
+(частотная оценка предложений), чистка (filler-слова и пробелы), смена тона
+(словарь маркеров). Стадии — детерминированные функции (офлайн); в USE IT
+каждую стадию играет модель.
+"""
+import re
+from collections import Counter
+
+_SENT = re.compile(r"[^.!?]+[.!?]?")
+FILLER_WORDS = {"очень", "просто", "буквально", "реально", "вообще", "типа"}
+
+
+def split_sentences(text):
+    return [s.strip() for s in _SENT.findall(text) if s.strip()]
+
+
+def summarize_extractive(text, n=2):
+    """Черновик: n самых «важных» предложений по частоте значимых слов."""
+    sents = split_sentences(text)
+    if len(sents) &lt;= n:
+        return " ".join(sents)
+    words = re.findall(r"\w+", text.lower())
+    freq = Counter(w for w in words if len(w) &gt; 3)
+
+    def score(s):
+        return sum(freq[w] for w in re.findall(r"\w+", s.lower()))
+
+    top = sorted(range(len(sents)), key=lambda i: score(sents[i]), reverse=True)[:n]
+    return " ".join(sents[i] for i in sorted(top))      # в исходном порядке
+
+
+def tighten(text):
+    """Редактура: убрать слова-филлеры и схлопнуть пробелы."""
+    kept = [w for w in text.split() if w.lower().strip(",.!?") not in FILLER_WORDS]
+    return re.sub(r"\s+", " ", " ".join(kept)).strip()
+
+
+TONE = {
+    "formal": {"привет": "Здравствуйте", "пока": "До свидания", "спасибо": "Благодарю"},
+    "casual": {"здравствуйте": "привет", "благодарю": "спасибо"},
+}
+
+
+def set_tone(text, tone):
+    """Тон: заменить маркеры по словарю выбранного тона."""
+    for src, dst in TONE.get(tone, {}).items():
+        text = re.sub(src, dst, text, flags=re.IGNORECASE)
+    return text
+
+
+def run_pipeline(text, stages):
+    """Прогнать текст через список стадий (callable: str -&gt; str)."""
+    for fn in stages:
+        text = fn(text)
+    return text
+
+
+if __name__ == "__main__":
+    doc = ("Кошки любят рыбу. Кошки очень любят свежую рыбу. "
+           "Погода сегодня внезапно испортилась.")
+    pipeline = [lambda t: summarize_extractive(t, 1), tighten,
+                lambda t: set_tone(t, "formal")]
+    print("Исходник:", doc)
+    print("Итог    :", run_pipeline(doc, pipeline))
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-03-text-and-documents-03-summarization-editing-tone-outputs-editor-skill-md" open><summary><span class="fname">outputs/editor/SKILL.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>---
+name: editor
+description: "Редакторский конвейер курса AI Native: резюмирование, чистка и смена тона текста по стадиям. Триггеры: «/editor», «сократи текст», «отредактируй», «сделай в деловом тоне», «сделай резюме», обработка письма/отчёта. Артефакт урока 3.1."
+---
+
+# editor — конвейер «черновик → редактура → тон»
+
+Обрабатывает текст стадиями, каждую можно настроить и оценить отдельно.
+
+## Как пользоваться
+
+1. **Черновик/резюме** — сжать до главного (extractive или промптом «сожми в N пунктов»).
+2. **Редактура** — убрать воду, филлеры, повторы; короче и яснее.
+3. **Тон** — привести под аудиторию (деловой / нейтральный / дружелюбный).
+
+Офлайн-движок для прототипа:
+
+```bash
+python -c "import editing_pipeline as e; \
+print(e.run_pipeline('привет очень всем', [e.tighten, lambda t: e.set_tone(t,'formal')]))"
+```
+
+В проде каждую стадию заменяет вызов модели (`stage(instruction, text)`), а `run_pipeline` собирает их в цепочку.
+
+## Файлы
+
+- `editing_pipeline.py` — `summarize_extractive`, `tighten`, `set_tone`, `run_pipeline`.
+
+## Правила
+
+- Стадии независимы — меняй и оценивай по одной (eval-harness, урок 2.5).
+- Для длинных документов сначала chunking + map-reduce (урок 3.2), потом редактура.
+</code></pre></details><details class="filebox" id="f-phases-03-text-and-documents-03-summarization-editing-tone-outputs-editor-editing-pipeline-py" open><summary><span class="fname">outputs/editor/editing_pipeline.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Резюмирование, редактура, тон: текстовый пайплайн — Build It для урока 3.1.
+
+Без зависимостей. Пайплайн «черновик → редактура → тон»: extractive-резюме
+(частотная оценка предложений), чистка (filler-слова и пробелы), смена тона
+(словарь маркеров). Стадии — детерминированные функции (офлайн); в USE IT
+каждую стадию играет модель.
+"""
+import re
+from collections import Counter
+
+_SENT = re.compile(r"[^.!?]+[.!?]?")
+FILLER_WORDS = {"очень", "просто", "буквально", "реально", "вообще", "типа"}
+
+
+def split_sentences(text):
+    return [s.strip() for s in _SENT.findall(text) if s.strip()]
+
+
+def summarize_extractive(text, n=2):
+    """Черновик: n самых «важных» предложений по частоте значимых слов."""
+    sents = split_sentences(text)
+    if len(sents) &lt;= n:
+        return " ".join(sents)
+    words = re.findall(r"\w+", text.lower())
+    freq = Counter(w for w in words if len(w) &gt; 3)
+
+    def score(s):
+        return sum(freq[w] for w in re.findall(r"\w+", s.lower()))
+
+    top = sorted(range(len(sents)), key=lambda i: score(sents[i]), reverse=True)[:n]
+    return " ".join(sents[i] for i in sorted(top))      # в исходном порядке
+
+
+def tighten(text):
+    """Редактура: убрать слова-филлеры и схлопнуть пробелы."""
+    kept = [w for w in text.split() if w.lower().strip(",.!?") not in FILLER_WORDS]
+    return re.sub(r"\s+", " ", " ".join(kept)).strip()
+
+
+TONE = {
+    "formal": {"привет": "Здравствуйте", "пока": "До свидания", "спасибо": "Благодарю"},
+    "casual": {"здравствуйте": "привет", "благодарю": "спасибо"},
+}
+
+
+def set_tone(text, tone):
+    """Тон: заменить маркеры по словарю выбранного тона."""
+    for src, dst in TONE.get(tone, {}).items():
+        text = re.sub(src, dst, text, flags=re.IGNORECASE)
+    return text
+
+
+def run_pipeline(text, stages):
+    """Прогнать текст через список стадий (callable: str -&gt; str)."""
+    for fn in stages:
+        text = fn(text)
+    return text
+
+
+if __name__ == "__main__":
+    doc = ("Кошки любят рыбу. Кошки очень любят свежую рыбу. "
+           "Погода сегодня внезапно испортилась.")
+    pipeline = [lambda t: summarize_extractive(t, 1), tighten,
+                lambda t: set_tone(t, "formal")]
+    print("Исходник:", doc)
+    print("Итог    :", run_pipeline(doc, pipeline))
+</code></pre></details><h3>Связанные файлы</h3><details class="filebox" id="f-claude-skills-editor-skill-md" open><summary><span class="fname">.claude/skills/editor/SKILL.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>---
+name: editor
+description: "Редакторский конвейер курса AI Native: резюмирование, чистка и смена тона текста по стадиям. Триггеры: «/editor», «сократи текст», «отредактируй», «сделай в деловом тоне», «сделай резюме», обработка письма/отчёта. Артефакт урока 3.1."
+---
+
+# editor — конвейер «черновик → редактура → тон»
+
+Обрабатывает текст стадиями, каждую можно настроить и оценить отдельно.
+
+## Как пользоваться
+
+1. **Черновик/резюме** — сжать до главного (extractive или промптом «сожми в N пунктов»).
+2. **Редактура** — убрать воду, филлеры, повторы; короче и яснее.
+3. **Тон** — привести под аудиторию (деловой / нейтральный / дружелюбный).
+
+Офлайн-движок для прототипа:
+
+```bash
+python -c "import editing_pipeline as e; \
+print(e.run_pipeline('привет очень всем', [e.tighten, lambda t: e.set_tone(t,'formal')]))"
+```
+
+В проде каждую стадию заменяет вызов модели (`stage(instruction, text)`), а `run_pipeline` собирает их в цепочку.
+
+## Файлы
+
+- `editing_pipeline.py` — `summarize_extractive`, `tighten`, `set_tone`, `run_pipeline`.
+
+## Правила
+
+- Стадии независимы — меняй и оценивай по одной (eval-harness, урок 2.5).
+- Для длинных документов сначала chunking + map-reduce (урок 3.2), потом редактура.
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/prompt-evaluation/"><small>← 2.5</small>Оценка качества промптов</a><a href="../../lessons/long-context-and-files/" style="text-align:right"><small>3.2 →</small>Длинный контекст и работа с файлами</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

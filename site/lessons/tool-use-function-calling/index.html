@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>6.1 Tool use / function calling изнутри — AI Native</title>
+  <meta name="description" content="Модель не вызывает функции сама — она просит вызвать; протокол — это схемы, toolcall и toolresult.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/tool-use-function-calling/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="6.1 Tool use / function calling изнутри — AI Native">
+  <meta property="og:description" content="Модель не вызывает функции сама — она просит вызвать; протокол — это схемы, toolcall и toolresult.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/tool-use-function-calling/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="6.1">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 6.1 · Tool use / function calling изнутри</h1><p><strong>Фаза 6 — Инструменты и протоколы (MCP)</strong> · <strong>Результат фазы:</strong> Объяснить tool use изнутри и поднять собственный MCP-сервер с контролем доступа.</p><p><strong>Requires (только для USE IT):</strong> платный API-ключ одного из провайдеров. BUILD IT работает офлайн, без ключей и без сети.</p><p><strong>Это вход в Фазу 6 — как ИИ дотягивается до реального мира.</strong> Вся фаза про инструменты и протокол MCP, но в основе лежит один механизм, который мы разберём здесь до винтика: <strong>tool use</strong>. Без него модель умеет только говорить; с ним — действовать.</p><blockquote><strong>MOTTO.</strong> Модель не вызывает функции сама — она просит вызвать; протокол — это схемы, tool_call и tool_result.</blockquote><h2>PROBLEM</h2><p>«Модель сходила в базу и посчитала остаток» — звучит так, будто LLM исполняет код. Это не так, и непонимание здесь стоит дорого: нельзя ни отладить tool use, ни безопасно подключить инструменты.</p><p>На самом деле модель <strong>не исполняет ничего</strong>. Она лишь возвращает структурированный запрос: «вызови инструмент <code>get_balance</code> с аргументами <code>{...}</code>» (это <strong>tool_call</strong>). Дальше код исполняешь <strong>ты</strong>, а результат (<strong>tool_result</strong>) кладёшь обратно в диалог — и модель продолжает с учётом результата. Модель — это мозг, который просит; руки — твой код. Соберём этот цикл с нуля и увидим, что «агентность» начинается именно здесь.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Представь модель как <strong>диспетчера по рации</strong>, у которого связаны руки. Он знает, какие бригады есть на линии и что каждая умеет (список со схемами), и может только <strong>отдать команду по рации</strong>: «бригада <code>add</code>, посчитайте 2 + 3». Сам он гайки не крутит. Команду выполняет реальная бригада (твой код), докладывает результат по рации — и диспетчер решает, что дальше: дать новую команду или объявить, что работа закончена.</p><p>Ключевой сдвиг в голове: модель не «имеет доступ» к базе или калькулятору. Она лишь <strong>называет инструмент и аргументы</strong>, а контроль и исполнение целиком на твоей стороне — отсюда и безопасность, и отладка.</p><h3>Как это работает</h3><p>Протокол стоит на трёх китах:</p><ul><li><strong>Схема</strong> — что за инструмент: имя, описание (по нему модель решает, когда звать) и JSON-схема аргументов (типы, обязательные поля).</li><li><strong>tool_call</strong> — запрос модели: <code>{name, arguments}</code>. Это намерение, а не действие.</li><li><strong>tool_result</strong> — ответ твоего кода, который возвращается модели.</li></ul><pre><code>схемы инструментов → модель → tool_call(name, args)
+                                   │ твой диспетчер: валидирует по схеме, исполняет
+                                   ▼
+                              tool_result ──► модель ──► (ещё вызов | финал)</code></pre><p>Цикл крутится, пока модель не вернёт финальный ответ вместо нового вызова. Четыре детали в коде:</p><ul><li><code>validate_args(args, schema)</code> — проверить аргументы tool_call по схеме (обязательные поля, типы) <strong>до</strong> исполнения.</li><li><code>dispatch(tool_call, registry)</code> — найти инструмент в реестре, провалидировать, исполнить.</li><li><code>run(model_fn, registry)</code> — гонять <code>model_fn</code> в цикле: пришёл <code>tool_call</code> → исполнить → дописать результат в историю → снова к модели; пришёл <code>final</code> → вернуть ответ.</li><li>лимит шагов (<code>max_steps</code>) — страховка от бесконечного цикла.</li></ul><p>Это фундамент, на котором стоит MCP (6.2+): MCP лишь стандартизирует, <strong>как</strong> схемы и вызовы передаются между процессами.</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Прогоним цикл <code>run</code> с инструментом <code>add</code> и детерминированной «моделью» (stub вместо LLM):</p><pre><code>шаг 1: history пуст → модель просит tool_call {name: "add", arguments: {a: 2, b: 3}}
+         dispatch: validate_args({a:2,b:3}, schema) → []  (ок)
+                   add(a=2, b=3) → 5
+         history = [{call: add{2,3}, result: 5}]
+шаг 2: history не пуст → модель смотрит результат и возвращает {type: "final", answer: 5}
+         run возвращает 5</code></pre><p>Видно: модель не складывала 2 и 3 — она <strong>попросила</strong> инструмент, число посчитал твой <code>add</code>, и только увидев <code>tool_result = 5</code>, модель завершила работу. Теперь сломаем аргументы: на <code>{a: 1}</code> (нет <code>b</code>) <code>validate_args</code> вернёт «нет обязательного аргумента: b», а на <code>{a: "x", b: 2}</code> — «a: ожидался number». Невалидный tool_call не доходит до исполнения — диспетчер режет его на входе. Поменяй stub на настоящую LLM — протокол не изменится ни на байт.</p><h2>BUILD IT</h2><p><strong>Задание: собери цикл function-calling с нуля</strong> — инструмент со схемой, валидацию, диспетчер и tool-use-цикл. Только стандартная библиотека, без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/6.1-tool-use/</code>), а файлы урока клади в подпапку <code>code/</code> (как в 0.1). Нужен только <strong>Python 3</strong> (для теста ещё <code>pytest</code>).</blockquote><p>Создай файл <code>function_calling.py</code>:</p><ul><li><strong><code>Tool(name, description, schema, fn)</code></strong> — dataclass инструмента (<code>schema</code> это <code>{"properties": {...}, "required": [...]}</code>, <code>fn</code> — функция-исполнитель).</li><li><strong><code>validate_args(args, schema)</code></strong> — вернуть список ошибок: для каждого поля из <code>required</code>, которого нет в <code>args</code> — «нет обязательного аргумента»; для переданных полей с несовпадающим типом (<code>string</code>→<code>str</code>, <code>number</code>→<code>int/float</code>, и т.п.) — «ожидался &lt;тип&gt;». Пусто = валидно.</li><li><strong><code>dispatch(tool_call, registry)</code></strong> — <code>tool_call</code> это <code>{name, arguments}</code>. Если инструмента нет в <code>registry</code> → <code>raise ToolError</code>; если <code>validate_args</code> непуст → <code>raise ToolError</code>; иначе исполнить <code>fn(**arguments)</code>.</li><li><strong><code>run(model_fn, registry, max_steps=5)</code></strong> — цикл: вызвать <code>model_fn(history)</code>; если вернулся <code>{"type": "final"}</code> → вернуть <code>answer</code> и <code>history</code>; если <code>tool_call</code> → <code>dispatch</code>, дописать <code>{call, result}</code> в <code>history</code>. Превысили <code>max_steps</code> → <code>raise ToolError</code>.</li></ul><p><strong>Готово, когда</strong> все тесты в <code>test_function_calling.py</code> зелёные — они проверяют: <code>validate_args</code> ловит пропуск и неверный тип; <code>dispatch</code> исполняет <code>add</code> (=5), падает на неизвестном инструменте и невалидных аргументах; <code>run</code> использует <code>tool_result</code> для финала.</p><pre><code>pytest code -q                 # красное → реализуй цикл → зелёное
+python code/function_calling.py # демо: модель просит add(2,3) → твой код считает 5 → финал</code></pre><p><strong>Подсказка.</strong> Типы держи в словаре <code>{"string": str, "number": (int, float), ...}</code> и проверяй <code>isinstance</code>. В <code>run</code> именно <strong>результат</strong> инструмента дописывается в историю — со следующего шага модель его «видит».</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>Тот же протокол — через API провайдера; меняется синтаксис, не цикл (мульти-провайдер):</p><pre><code>tools = [{"name": "add", "description": "сложить два числа",
+          "input_schema": {"type": "object",
+            "properties": {"a": {"type": "number"}, "b": {"type": "number"}},
+            "required": ["a", "b"]}}]
+# Anthropic: messages.create(model="claude-sonnet-4-6", tools=tools)
+#            → блок tool_use → выполнить у себя → вернуть tool_result
+# OpenAI:    responses.create(..., tools=[{"type": "function", ...}]) → tool call → role:"tool"
+# Google:    function_declarations в config → functionCall → functionResponse</code></pre><p>Везде один цикл: схема → запрос модели (<code>tool_use</code>/<code>tool call</code>) → <strong>твой</strong> код исполняет → результат назад → модель продолжает. Различается только обёртка полей.</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Описание набора инструментов (схемы) → <a href="#f-phases-06-tools-and-protocols-mcp-06-tool-use-function-calling-outputs-tool-schemas-md"><code>outputs/tool-schemas.md</code></a></p><p>Готовые JSON-схемы для типового тулсета (read / search / calc) + правила описания: говорящее имя, описание-триггер (по нему модель выбирает инструмент — как <code>description</code> скилла в 4.1), строгие типы и <code>required</code>. Дальше: стандартизуем доступ к инструментам через протокол MCP (6.2).</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Думать, что модель исполняет код.</strong> Она возвращает только <code>tool_call</code> (намерение). Исполняет и контролирует — твой код. Это и линия безопасности, и точка отладки.</li><li><strong>Не валидировать аргументы перед исполнением.</strong> Модель может прислать неполный или кривой по типам tool_call. Проверяй по схеме до запуска (как <code>dispatch</code>), иначе инструмент упадёт или сделает не то.</li><li><strong>Слабое описание инструмента.</strong> Модель выбирает инструмент по <code>name</code>/<code>description</code>. Размытое описание → не вызовет или вызовет не тот. Описывай «что делает и когда применять» с типами аргументов.</li><li><strong>Забыть лимит шагов.</strong> Без <code>max_steps</code> модель может зациклиться на вызовах. Ставь предел и обрабатывай его.</li><li><strong>Не возвращать tool_result в историю.</strong> Если результат не дописать в диалог, модель его «не увидит» и будет звать инструмент снова или галлюцинировать ответ.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="6.1"></div><h2>Материалы</h2><ul><li><a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview" target="_blank" rel="noopener">Anthropic — Tool use</a> — tool use в Claude изнутри (tool_use / tool_result).</li><li><a href="https://platform.openai.com/docs/guides/function-calling" target="_blank" rel="noopener">OpenAI — Function calling</a> — схемы и цикл tool calling.</li><li><a href="https://json-schema.org/" target="_blank" rel="noopener">JSON Schema</a> — как описывать параметры инструментов.</li><li><a href="https://arxiv.org/abs/2302.04363" target="_blank" rel="noopener">Schick et al., 2023 — Toolformer</a> — seminal: модель сама учится звать инструменты/API и когда это делать.</li><li><a href="https://arxiv.org/abs/2305.15334" target="_blank" rel="noopener">Patil et al., 2023 — Gorilla</a> — LLM, вызывающий тысячи API (пионер надёжного function-calling).</li><li><a href="https://gorilla.cs.berkeley.edu/leaderboard.html" target="_blank" rel="noopener">Berkeley Function-Calling Leaderboard (BFCL V4)</a> — как модели реально справляются с tool-calling (актуальный eval).</li><li><a href="https://ai.google.dev/gemini-api/docs/function-calling" target="_blank" rel="noopener">Google Gemini — Function calling</a> — мульти-провайдер (в дополнение к Anthropic и OpenAI).</li><li><a href="https://llmagents-learning.org/sp25" target="_blank" rel="noopener">UC Berkeley — Advanced LLM Agents MOOC</a> — открытый курс (Dawn Song), лекции по tool use / function calling на YouTube.</li><li><a href="https://medium.com/@jamestang/llm-function-calling-explained-a-deep-dive-into-the-request-and-response-payloads-894800fcad75" target="_blank" rel="noopener">James Tang — LLM Function Calling Explained: Request/Response Payloads (Medium)</a> — разбор именно <code>tool_use</code> / <code>tool_result</code> пейлоадов.</li><li><a href="https://martinfowler.com/articles/function-call-LLM.html" target="_blank" rel="noopener">Martin Fowler — Function calling using LLMs</a> — авторитетный разбор с построением агента-примера.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-06-tools-and-protocols-mcp-06-tool-use-function-calling-code-test-function-calling-py" open data-test="1"><summary><span class="fname">code/test_function_calling.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>import pytest
+from function_calling import validate_args, dispatch, run, ToolError, REGISTRY, _demo_model
+
+SCHEMA = {"properties": {"a": {"type": "number"}, "b": {"type": "number"}}, "required": ["a", "b"]}
+
+
+def test_validate_args_missing_and_type():
+    assert "нет обязательного аргумента: b" in validate_args({"a": 1}, SCHEMA)
+    assert any("ожидался number" in e for e in validate_args({"a": "x", "b": 2}, SCHEMA))
+    assert validate_args({"a": 1, "b": 2}, SCHEMA) == []
+
+
+def test_dispatch_executes_tool():
+    assert dispatch({"name": "add", "arguments": {"a": 2, "b": 3}}, REGISTRY) == 5
+
+
+def test_dispatch_unknown_tool_raises():
+    with pytest.raises(ToolError):
+        dispatch({"name": "nope", "arguments": {}}, REGISTRY)
+
+
+def test_dispatch_invalid_args_raises():
+    with pytest.raises(ToolError):
+        dispatch({"name": "add", "arguments": {"a": 1}}, REGISTRY)   # нет b
+
+
+def test_run_loop_uses_tool_result_for_final():
+    answer, history = run(_demo_model, REGISTRY)
+    assert answer == 5
+    assert len(history) == 1
+    assert history[0]["call"]["name"] == "add"
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-06-tools-and-protocols-mcp-06-tool-use-function-calling-code-function-calling-py"><summary><span class="fname">code/function_calling.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Tool use / function calling изнутри — Build It для урока 6.1.
+
+Без зависимостей. Показывает протокол tool use: у инструмента есть JSON-схема,
+модель возвращает tool_call (имя + аргументы), диспетчер валидирует аргументы по
+схеме и исполняет, результат (tool_result) возвращается модели — и так до финала.
+Модель здесь детерминированная (stub), чтобы урок шёл офлайн.
+"""
+from dataclasses import dataclass
+from typing import Callable
+
+_TYPES = {"string": str, "number": (int, float), "integer": int,
+          "boolean": bool, "array": list, "object": dict}
+
+
+@dataclass
+class Tool:
+    name: str
+    description: str
+    schema: dict          # {"properties": {...}, "required": [...]}
+    fn: Callable
+
+
+def validate_args(args, schema):
+    """Проверить аргументы по мини JSON-схеме. Список ошибок (пустой = ок)."""
+    errors = []
+    for req in schema.get("required", []):
+        if req not in args:
+            errors.append(f"нет обязательного аргумента: {req}")
+    props = schema.get("properties", {})
+    for key, val in args.items():
+        t = props.get(key, {}).get("type")
+        if t and not isinstance(val, _TYPES.get(t, object)):
+            errors.append(f"{key}: ожидался {t}")
+    return errors
+
+
+class ToolError(Exception):
+    pass
+
+
+def dispatch(tool_call, registry):
+    """tool_call = {name, arguments}. Валидирует по схеме и исполняет инструмент."""
+    name = tool_call["name"]
+    args = tool_call.get("arguments", {})
+    if name not in registry:
+        raise ToolError(f"неизвестный инструмент: {name}")
+    errs = validate_args(args, registry[name].schema)
+    if errs:
+        raise ToolError(f"невалидные аргументы: {errs}")
+    return registry[name].fn(**args)
+
+
+def run(model_fn, registry, max_steps=5):
+    """Цикл tool use: model_fn -&gt; tool_call | final; tool_result возвращается в историю."""
+    history = []
+    for _ in range(max_steps):
+        step = model_fn(history)
+        if step.get("type") == "final":
+            return step["answer"], history
+        result = dispatch(step["tool_call"], registry)
+        history.append({"call": step["tool_call"], "result": result})
+    raise ToolError("нет финала за max_steps")
+
+
+# --- демо: инструмент + детерминированная «модель» ---
+def _add(a, b):
+    return a + b
+
+
+REGISTRY = {
+    "add": Tool("add", "сложить два числа",
+                {"properties": {"a": {"type": "number"}, "b": {"type": "number"}},
+                 "required": ["a", "b"]}, _add),
+}
+
+
+def _demo_model(history):
+    if not history:
+        return {"type": "tool_call", "tool_call": {"name": "add", "arguments": {"a": 2, "b": 3}}}
+    return {"type": "final", "answer": history[-1]["result"]}
+
+
+if __name__ == "__main__":
+    answer, history = run(_demo_model, REGISTRY)
+    print("История:", history)
+    print("Ответ:", answer)
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-06-tools-and-protocols-mcp-06-tool-use-function-calling-outputs-tool-schemas-md" open><summary><span class="fname">outputs/tool-schemas.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: описание набора инструментов (схемы)
+
+Готовые JSON-схемы для типового тулсета + правила их описания. Цикл вызова — [`code/function_calling.py`](../code/function_calling.py).
+
+## Схемы инструментов
+
+```json
+[
+  {
+    "name": "search_docs",
+    "description": "Найти релевантные документы в базе знаний по запросу",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "query": {"type": "string", "description": "поисковый запрос"},
+        "k": {"type": "integer", "description": "сколько вернуть", "default": 3}
+      },
+      "required": ["query"]
+    }
+  },
+  {
+    "name": "get_metric",
+    "description": "Получить значение бизнес-метрики за период",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "metric": {"type": "string", "enum": ["revenue", "orders", "avg_check"]},
+        "period": {"type": "string", "description": "напр. 2026-Q2"}
+      },
+      "required": ["metric", "period"]
+    }
+  }
+]
+```
+
+## Правила описания инструментов
+
+- **name** — короткий, глагол+объект (`search_docs`, не `tool1`).
+- **description** — что делает И когда применять (это «триггер» выбора, как у скиллов 4.1).
+- **строгие типы** — `enum` для фиксированных значений, `required` для обязательных.
+- **минимум инструментов в контексте** — 3–5 ключевых всегда, остальное по запросу (context engineering, урок 4.4).
+- **идемпотентность и безопасность** — отдельный флаг для write-инструментов (урок 6.5).
+
+## Где задаётся у провайдеров
+
+- Anthropic: `tools=[{name, description, input_schema}]`
+- OpenAI: `tools=[{"type":"function","function":{name, description, parameters}}]`
+- Google: `function_declarations`
+- MCP: `tools/list` отдаёт `inputSchema` (урок 6.3) — один набор для всех клиентов.
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/validation-anomalies-reports/"><small>← 5.5</small>Валидация, аномалии, автоотчёты</a><a href="../../lessons/mcp-architecture/" style="text-align:right"><small>6.2 →</small>Архитектура MCP</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

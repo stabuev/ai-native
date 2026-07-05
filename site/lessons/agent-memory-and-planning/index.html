@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>7.2 Память и планирование агента — AI Native</title>
+  <meta name="description" content="Надёжный агент не импровизирует на каждом шаге: он строит план и несёт состояние в памяти.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/agent-memory-and-planning/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="7.2 Память и планирование агента — AI Native">
+  <meta property="og:description" content="Надёжный агент не импровизирует на каждом шаге: он строит план и несёт состояние в памяти.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/agent-memory-and-planning/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="7.2">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 7.2 · Память и планирование агента</h1><p><strong>Фаза 7 — Agent Engineering</strong> · <strong>Результат фазы:</strong> Собрать надёжного агента с памятью, планированием, human-in-the-loop и guardrails.</p><p><strong>Requires (только для USE IT):</strong> платный API-ключ одного из провайдеров. BUILD IT работает офлайн, без ключей и без сети.</p><p><strong>Голый цикл из 7.1 умеет действовать, но не умеет вести длинную задачу.</strong> Добавим ему две вещи, которые делают агента надёжным: <strong>план</strong> (разбить цель на шаги) и <strong>память</strong> (нести состояние между шагами). Обе детали мы уже видели по отдельности — теперь соединим в агенте.</p><blockquote><strong>MOTTO.</strong> Надёжный агент не импровизирует на каждом шаге: он строит план и несёт состояние в памяти.</blockquote><h2>PROBLEM</h2><p>Цикл reason→act→observe (7.1) хорош для простого. Но на многошаговой задаче чистая импровизация «решаю на ходу, что делать дальше» спотыкается: агент забывает промежуточные результаты, теряет нить, повторяет уже сделанное.</p><p>Не хватает ровно двух вещей, и обе знакомы:</p><ul><li><strong>План</strong> — заранее разбить цель на упорядоченные шаги (это prompt chaining из 2.3, но внутри агента).</li><li><strong>Память</strong> — носить состояние между шагами, чтобы шаг N видел результат шага N−1 (это рабочая память из 4.2).</li></ul><p>Соединим их поверх цикла из 7.1 — и хаотичная импровизация превратится в управляемый процесс.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Сравни двух исполнителей. Первый делает задачу «по наитию»: сделал шаг, забыл, что делал, думает заново — и легко сбивается на длинной цепочке. Второй сначала <strong>набросал план</strong> на бумаге, а по ходу <strong>ведёт записи</strong> (что уже посчитано). Второй надёжнее именно потому, что не держит всё в голове: план задаёт маршрут, записи хранят состояние.</p><p>Агент с памятью и планом — это второй исполнитель. <code>plan</code> рисует маршрут из цели, <code>Memory</code> — это блокнот, куда каждый шаг пишет результат и откуда следующий его читает.</p><h3>Как это работает</h3><pre><code>цель → plan() → [шаг1, шаг2, шаг3]
+                   │ каждый шаг:
+                   │   recall(value)  ← читаем прошлое значение из памяти
+                   │   tool(...)      ← действуем
+                   │   remember(value)→ пишем новое значение в память
+                   ▼
+              итог + память (все промежуточные шаги) + трейс</code></pre><ul><li><code>Memory</code> — <code>remember(key, value)</code> / <code>recall(key)</code>: рабочая память «ключ → значение».</li><li><code>plan(goal)</code> — декомпозиция: цель <code>{start, ops}</code> → список упорядоченных шагов.</li><li><code>run(goal)</code> — исполнить план, <strong>неся состояние через память</strong>: положить <code>value = start</code>, на каждом шаге прочитать <code>value</code>, применить инструмент, записать новый <code>value</code> (и сохранить <code>step_i</code> для истории). Вернуть <code>(итог, память, трейс)</code>.</li></ul><p>Ключевая разница с 7.1: там состояние жило неявно в <code>history</code>, здесь оно <strong>явно</strong> в памяти под именами (<code>value</code>, <code>step_0</code>, …). Это делает процесс прозрачным и переиспользуемым — и масштабируется на настоящую долговременную память (4.2).</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Прогоним <code>run</code> на цели <code>(2 + 3) * 4 - 1</code> = <code>{start: 2, ops: [(add,3), (mul,4), (sub,1)]}</code>:</p><pre><code>plan(goal) → [ {op:add, operand:3}, {op:mul, operand:4}, {op:sub, operand:1} ]
+remember("value", 2)
+
+шаг 0: recall("value")=2 → add(2,3)=5  → remember value=5,  step_0=5
+шаг 1: recall("value")=5 → mul(5,4)=20 → remember value=20, step_1=20
+шаг 2: recall("value")=20→ sub(20,1)=19→ remember value=19, step_2=19
+
+итог = recall("value") = 19
+память = {value: 19, step_0: 5, step_1: 20, step_2: 19}</code></pre><p>Видно две роли. <strong>План</strong> задал, что и в каком порядке делать (три шага из <code>ops</code>). <strong>Память</strong> связала шаги: каждый читает <code>value</code> предыдущего и пишет свой. В отличие от 7.1, в памяти остаются <strong>все</strong> промежуточные результаты (<code>step_0..step_2</code>) — это трейс для отладки и основа для возврата к прошлому шагу. Поменяй <code>plan</code> на LLM-планировщик — каркас «recall → tool → remember» не изменится.</p><h2>BUILD IT</h2><p><strong>Задание: собери агента с планом и памятью</strong> поверх идеи цикла из 7.1. Только стандартная библиотека, без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/7.2-planner-agent/</code>), а файлы урока клади в подпапку <code>code/</code> (как в 0.1). Нужен только <strong>Python 3</strong> (для теста ещё <code>pytest</code>).</blockquote><p>Создай файл <code>planner_agent.py</code>:</p><ul><li><strong><code>Memory</code></strong> — класс с <code>store = {}</code>, методами <code>remember(key, value)</code> и <code>recall(key, default=None)</code>.</li><li><strong><code>TOOLS</code></strong> — <code>{"add", "sub", "mul"}</code> (функции двух аргументов).</li><li><strong><code>plan(goal)</code></strong> — вернуть список шагов <code>{"op", "operand"}</code> из <code>goal["ops"]</code>.</li><li><strong><code>run(goal, memory=None)</code></strong> — создать память (если не передана), положить <code>value = goal["start"]</code>; для каждого шага плана: <code>recall("value")</code> → применить инструмент → <code>remember("value", result)</code> и <code>remember(f"step_{i}", result)</code>; копить трейс. Вернуть <code>(итог, memory, trace)</code>.</li></ul><p><strong>Готово, когда</strong> все тесты в <code>test_planner_agent.py</code> зелёные — они проверяют: <code>plan</code> даёт 3 шага; <code>run</code> считает 19 через память (трейс из 3 шагов, итоговое <code>value</code> = 19); в памяти лежат промежуточные <code>step_0</code> = 5, <code>step_1</code> = 20; <code>Memory.remember</code>/<code>recall</code> работают (с дефолтом).</p><pre><code>pytest code -q             # красное → реализуй Memory/plan/run → зелёное
+python code/planner_agent.py # демо: (2+3)*4-1 = 19, видны шаги и память</code></pre><p><strong>Подсказка.</strong> Индекс шага бери из <code>enumerate(plan(goal))</code>. «Текущее значение» всегда живёт под ключом <code>"value"</code>: прочитал → посчитал → записал обратно. <code>step_i</code> — для истории, не для вычисления.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>В реальности план строит LLM, а память — платформенная или своя (мульти-провайдер):</p><ul><li><strong>Claude Agent SDK</strong> — agent loop + memory tool (<code>/memories</code>) или managed memory stores; план — через промптинг или субагентов.</li><li><strong>OpenAI Agents SDK</strong> — sessions хранят историю диалога; планирование — через инструкции агенту.</li><li>Свой вариант: <code>MemoryStore</code> из урока 4.2 как долговременная память + LLM-планировщик поверх <code>run</code>.</li></ul><p>⚠️ Память, в которую пишет агент, — это поверхность для prompt-инъекций: справочные (reference) данные держи read-only, отделяй их от того, что агент записал сам (6.5, 11.5).</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Агент с памятью и планом → <a href="#f-phases-07-agent-engineering-07-agent-memory-and-planning-outputs-planner-agent-py"><code>outputs/planner_agent.py</code></a></p><p>Переиспользуемый каркас «план + память»: подставляешь свои инструменты и цель. Дальше в фазе — заслоны и подтверждения на опасных шагах (7.3), разбор поломок (7.4) и оценка качества (7.5).</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Импровизировать вместо плана на длинной задаче.</strong> Без декомпозиции агент теряет нить и повторяет шаги. План задаёт маршрут — особенно важно, когда шагов много.</li><li><strong>Не нести состояние через память.</strong> Если шаг не пишет результат в память, следующий его не увидит — цепочка рвётся. Контракт «recall → tool → remember» обязателен.</li><li><strong>Хранить только итог, теряя промежуточное.</strong> Сохраняй <code>step_i</code>: это трейс для отладки и возможность вернуться к прошлому шагу. Один итог не даёт понять, где сломалось.</li><li><strong>Смешивать память агента и доверенные данные.</strong> То, что агент записал сам, и справочные данные — разные уровни доверия. Reference держи read-only, иначе инъекция через память (6.5/11.5).</li><li><strong>План «намертво» в коде.</strong> Здесь <code>plan</code> детерминирован для наглядности; в проде его строит LLM. Не хардкодь шаги, если задачи разные — планируй под цель.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="7.2"></div><h2>Материалы</h2><ul><li><a href="https://platform.claude.com/docs/en/agent-sdk/overview" target="_blank" rel="noopener">Anthropic — Agent SDK overview</a> — agent loop, контекст, инструменты.</li><li><a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool" target="_blank" rel="noopener">Anthropic — Memory tool</a> — память агента между сессиями.</li><li><a href="https://arxiv.org/abs/2210.03629" target="_blank" rel="noopener">ReAct (arXiv 2210.03629)</a> — рассуждение и действие как основа агента.</li><li><a href="https://arxiv.org/abs/2402.02716" target="_blank" rel="noopener">Huang et al., 2024 — Understanding the Planning of LLM Agents: A Survey</a> — таксономия планирования: декомпозиция, выбор плана, рефлексия, память.</li><li><a href="https://docs.langchain.com/oss/python/langgraph/persistence" target="_blank" rel="noopener">LangGraph — Persistence</a> — checkpointers (короткая память) + stores (длинная), resume / HITL / fault-tolerance в реальном фреймворке.</li><li><a href="https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents" target="_blank" rel="noopener">Anthropic — Effective harnesses for long-running agents (2025)</a> — многосессионность, трекинг прогресса, восстановление контекста.</li><li><a href="https://www.deeplearning.ai/courses/agentic-ai" target="_blank" rel="noopener">DeepLearning.AI — Agentic AI (Andrew Ng, 2025)</a> — паттерны Reflection / Tool / Planning / Multi-agent на чистом Python.</li><li><a href="https://pub.towardsai.net/understanding-memory-management-in-langgraph-a-practical-guide-for-genai-students-b3642c9ea7e1" target="_blank" rel="noopener">Towards AI — Memory Management in LangGraph (Medium)</a> — практический разбор памяти агента.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-07-agent-engineering-07-agent-memory-and-planning-code-test-planner-agent-py" open data-test="1"><summary><span class="fname">code/test_planner_agent.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from planner_agent import Memory, plan, run
+
+GOAL = {"start": 2, "ops": [("add", 3), ("mul", 4), ("sub", 1)]}   # (2+3)*4-1 = 19
+
+
+def test_plan_decomposes_into_steps():
+    steps = plan(GOAL)
+    assert len(steps) == 3
+    assert steps[0] == {"op": "add", "operand": 3}
+
+
+def test_run_computes_through_memory():
+    answer, memory, trace = run(GOAL)
+    assert answer == 19
+    assert len(trace) == 3
+    assert memory.recall("value") == 19
+
+
+def test_memory_holds_intermediate_steps():
+    _, memory, _ = run(GOAL)
+    assert memory.recall("step_0") == 5      # 2+3
+    assert memory.recall("step_1") == 20     # *4
+
+
+def test_memory_remember_recall():
+    m = Memory()
+    m.remember("k", 42)
+    assert m.recall("k") == 42
+    assert m.recall("missing", "def") == "def"
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-07-agent-engineering-07-agent-memory-and-planning-code-planner-agent-py"><summary><span class="fname">code/planner_agent.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Память и планирование агента — Build It для урока 7.2.
+
+Без зависимостей. Поверх цикла из 7.1 добавляем две вещи: ПЛАН (декомпозиция
+цели на шаги, как в 2.3) и ПАМЯТЬ (промежуточные результаты переживают шаги, как
+в 4.2). Каждый шаг читает прошлое значение из памяти и пишет новое — так агент
+ведёт многошаговую задачу, не теряя состояние.
+"""
+
+
+class Memory:
+    """Простейшая рабочая память агента (ключ → значение)."""
+
+    def __init__(self):
+        self.store = {}
+
+    def remember(self, key, value):
+        self.store[key] = value
+
+    def recall(self, key, default=None):
+        return self.store.get(key, default)
+
+
+TOOLS = {"add": lambda a, b: a + b, "sub": lambda a, b: a - b, "mul": lambda a, b: a * b}
+
+
+def plan(goal):
+    """Декомпозиция цели в упорядоченные шаги. goal = {start, ops:[(op, operand)]}."""
+    return [{"op": op, "operand": operand} for op, operand in goal["ops"]]
+
+
+def run(goal, memory=None):
+    """Выполнить план, неся состояние через память. Возвращает (итог, память, трейс)."""
+    memory = memory or Memory()
+    memory.remember("value", goal["start"])
+    trace = []
+    for i, step in enumerate(plan(goal)):
+        prev = memory.recall("value")                      # читаем из памяти
+        result = TOOLS[step["op"]](prev, step["operand"])
+        memory.remember("value", result)                   # пишем в память
+        memory.remember(f"step_{i}", result)               # история шагов
+        trace.append({"step": i, "op": step["op"], "operand": step["operand"], "result": result})
+    return memory.recall("value"), memory, trace
+
+
+if __name__ == "__main__":
+    goal = {"start": 2, "ops": [("add", 3), ("mul", 4), ("sub", 1)]}   # (2+3)*4-1
+    answer, memory, trace = run(goal)
+    for t in trace:
+        print(t)
+    print("Итог:", answer, "| память:", memory.store)
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-07-agent-engineering-07-agent-memory-and-planning-outputs-planner-agent-py" open><summary><span class="fname">outputs/planner_agent.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Память и планирование агента — Build It для урока 7.2.
+
+Без зависимостей. Поверх цикла из 7.1 добавляем две вещи: ПЛАН (декомпозиция
+цели на шаги, как в 2.3) и ПАМЯТЬ (промежуточные результаты переживают шаги, как
+в 4.2). Каждый шаг читает прошлое значение из памяти и пишет новое — так агент
+ведёт многошаговую задачу, не теряя состояние.
+"""
+
+
+class Memory:
+    """Простейшая рабочая память агента (ключ → значение)."""
+
+    def __init__(self):
+        self.store = {}
+
+    def remember(self, key, value):
+        self.store[key] = value
+
+    def recall(self, key, default=None):
+        return self.store.get(key, default)
+
+
+TOOLS = {"add": lambda a, b: a + b, "sub": lambda a, b: a - b, "mul": lambda a, b: a * b}
+
+
+def plan(goal):
+    """Декомпозиция цели в упорядоченные шаги. goal = {start, ops:[(op, operand)]}."""
+    return [{"op": op, "operand": operand} for op, operand in goal["ops"]]
+
+
+def run(goal, memory=None):
+    """Выполнить план, неся состояние через память. Возвращает (итог, память, трейс)."""
+    memory = memory or Memory()
+    memory.remember("value", goal["start"])
+    trace = []
+    for i, step in enumerate(plan(goal)):
+        prev = memory.recall("value")                      # читаем из памяти
+        result = TOOLS[step["op"]](prev, step["operand"])
+        memory.remember("value", result)                   # пишем в память
+        memory.remember(f"step_{i}", result)               # история шагов
+        trace.append({"step": i, "op": step["op"], "operand": step["operand"], "result": result})
+    return memory.recall("value"), memory, trace
+
+
+if __name__ == "__main__":
+    goal = {"start": 2, "ops": [("add", 3), ("mul", 4), ("sub", 1)]}   # (2+3)*4-1
+    answer, memory, trace = run(goal)
+    for t in trace:
+        print(t)
+    print("Итог:", answer, "| память:", memory.store)
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~5 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/reason-act-observe-loop/"><small>← 7.1</small>Цикл reason → act → observe</a><a href="../../lessons/human-in-the-loop-guardrails/" style="text-align:right"><small>7.3 →</small>Human-in-the-loop и guardrails</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

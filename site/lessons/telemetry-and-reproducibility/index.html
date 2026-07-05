@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>10.3 Телеметрия и воспроизводимость — AI Native</title>
+  <meta name="description" content="Считай токены и стоимость на процесс и фиксируй конфиг прогона — чтобы повторить и сравнить.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/telemetry-and-reproducibility/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="10.3 Телеметрия и воспроизводимость — AI Native">
+  <meta property="og:description" content="Считай токены и стоимость на процесс и фиксируй конфиг прогона — чтобы повторить и сравнить.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/telemetry-and-reproducibility/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="10.3">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 10.3 · Телеметрия и воспроизводимость</h1><p><strong>Фаза 10 — Production и интеграция</strong> · <strong>Результат фазы:</strong> Встроить ИИ в рабочий инструмент с мониторингом токенов и стоимости.</p><p><strong>Requires (только для USE IT):</strong> observability/биллинг провайдера. BUILD IT работает офлайн, без ключей и без сети.</p><p><strong>Мониторинг (10.2) отвечает «здорово ли». Телеметрия отвечает «сколько стоит и можно ли повторить».</strong> Это два разных вопроса: первый про здоровье, второй про экономику и воспроизводимость. Без второго нельзя ни понять, что дорого, ни честно сравнить «до/после».</p><blockquote><strong>MOTTO.</strong> Считай токены и стоимость на процесс и фиксируй конфиг прогона — чтобы повторить и сравнить.</blockquote><h2>PROBLEM</h2><p>Две дыры без телеметрии. Первая — <strong>деньги в разрезе процессов</strong>: общий счёт есть (9.4), но какой именно процесс — суммаризация, классификация, ресёрч — съедает бюджет? Без привязки токенов/стоимости к процессу неясно, что оптимизировать.</p><p>Вторая — <strong>воспроизводимость</strong>. Ты улучшил промпт, и качество выросло. Но ты заодно сменил температуру и модель — что из трёх дало эффект? Если конфиг прогона (модель, параметры, версия промпта, seed) не зафиксирован, результат <strong>нельзя повторить и нельзя честно сравнить</strong>. Соберём учёт расходов по процессам + отпечаток конфига.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Две вещи, как у учёного в лаборатории. <strong>Телеметрия</strong> — это <strong>счёт по статьям</strong>: не «потрачено $N», а «суммаризация — столько, классификация — столько», чтобы видеть, где дорого. <strong>Воспроизводимость</strong> — это <strong>подпись эксперимента</strong>: учёный записывает все условия опыта, чтобы повторить его и чтобы сравнение двух опытов было честным (изменили одно — видим эффект одного).</p><p>Отпечаток конфига (<code>fingerprint</code>) — и есть такая подпись: одинаковые условия → одинаковый хэш; сменил хоть один параметр → хэш другой, и сразу видно, что прогоны несравнимы «как есть».</p><h3>Как это работает</h3><pre><code>телеметрия:        record(process, tokens_in, tokens_out, cost) → by_process()
+воспроизводимость: RunConfig{model, temperature, prompt_version, seed}
+                       └─ fingerprint() : одинаковый конфиг → одинаковый хэш</code></pre><ul><li><code>record(process, tokens_in, tokens_out, cost)</code> — записать расход с привязкой к процессу.</li><li><code>by_process()</code> — агрегировать токены и стоимость по процессам (где деньги).</li><li><code>RunConfig.fingerprint()</code> — стабильный хэш конфига: одинаковый конфиг → одинаковый отпечаток; любой изменённый параметр → другой.</li></ul><p>Зачем хэш, а не просто хранить конфиг: отпечаток — это <strong>компактный ключ сравнимости</strong>. Два прогона с одинаковым fingerprint сравнимы напрямую; разные fingerprint честно говорят «вы поменяли условия, прежде чем делать вывод — учтите это». Это мост к FinOps (9.4, «до/после») и к eval промптов (2.5, сравнение версий).</p><blockquote><strong>Важная оговорка: конфиг ≠ бит-в-бит одинаковый вывод.</strong> Fingerprint фиксирует <strong>условия</strong> прогона, но LLM <strong>недетерминирован даже при <code>temperature=0</code> и фиксированном <code>seed</code></strong>: одинаковый запрос может дать чуть разный текст из-за батчинга запросов на сервере, неассоциативности float-арифметики на GPU и роутинга в MoE-моделях. Поэтому <code>seed</code>/<code>system_fingerprint</code> у провайдеров — это <strong>best-effort</strong>, а не гарантия. Что даёт fingerprint конфига: прогоны становятся <strong>сравнимыми и атрибутируемыми</strong> (поменял одно — знаешь, что именно), а воспроизводимость поведения проверяют не по одному ответу, а <strong>статистически на eval-наборе</strong> (2.5/7.5) — прогнал тот же конфиг по набору, сравнил метрику.</blockquote><h2>РАЗБОР ПО ШАГАМ</h2><p><strong>Телеметрия по процессам.</strong> Запишем три события:</p><pre><code>record("summarize", 1000, 200, 0.005)
+record("summarize",  800, 150, 0.004)
+record("classify",   300,  10, 0.0003)
+
+by_process() → {
+  summarize: {tokens_in: 1800, tokens_out: 350, cost: 0.009},   ← две записи слиты
+  classify:  {tokens_in: 300,  tokens_out: 10,  cost: 0.0003},
+}
+total_cost() → 0.005 + 0.004 + 0.0003 = 0.0093</code></pre><p>Сразу видно: <code>summarize</code> — главная статья (0.009 против 0.0003), оптимизировать надо его.</p><p><strong>Воспроизводимость.</strong> Сравним отпечатки конфигов:</p><pre><code>RunConfig("sonnet-4.6")                     → fingerprint b5ee2bf5632e
+RunConfig("sonnet-4.6")  (тот же)           → b5ee2bf5632e   (совпал → прогоны сравнимы)
+RunConfig("sonnet-4.6", temperature=0.7)    → c8205805c99e   (другой → НЕ сравнимы как есть)
+RunConfig("sonnet-4.6", prompt_version="v2")→ другой         (сменил промпт → другой отпечаток)</code></pre><p>Одинаковый конфиг дал одинаковый хэш — два таких прогона можно сравнивать. Сменил температуру или версию промпта — хэш изменился, и это сигнал: разница в результате могла быть из-за этого, а не из-за того, что ты тестировал. Так fingerprint защищает от ложного «до/после».</p><h2>BUILD IT</h2><p><strong>Задание: собери телеметрию по процессам и отпечаток конфига.</strong> Только стандартная библиотека (<code>hashlib</code>, <code>json</code>, <code>dataclasses</code>), без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/10.3-telemetry/</code>), а файлы урока клади в подпапку <code>code/</code> (как в 0.1). Нужен только <strong>Python 3</strong> (для теста ещё <code>pytest</code>).</blockquote><p>Создай файл <code>telemetry.py</code>:</p><ul><li><strong><code>Telemetry</code></strong> — <code>events = []</code>.</li><li><strong><code>record(process, tokens_in, tokens_out, cost)</code></strong> — добавить событие.</li><li><strong><code>by_process()</code></strong> — словарь <code>{process: {tokens_in, tokens_out, cost}}</code> (суммы по процессу).</li><li><strong><code>total_cost()</code></strong> — сумма всех <code>cost</code>.</li><li><strong><code>RunConfig(model, temperature=0.0, prompt_version="v1", seed=0)</code></strong> — dataclass.</li><li><strong><code>fingerprint()</code></strong> — стабильный хэш: <code>json.dumps(asdict(self), sort_keys=True)</code> → <code>sha256</code> → первые 12 hex-символов.</li></ul><p><strong>Готово, когда</strong> все тесты в <code>test_telemetry.py</code> зелёные — они проверяют: агрегация по процессу (summarize tokens_in 1800, cost 0.009); <code>total_cost</code> = 0.0093; <code>fingerprint</code> детерминирован (одинаковый конфиг → одинаковый хэш); смена <code>temperature</code> или <code>prompt_version</code> меняет отпечаток.</p><pre><code>pytest code -q         # красное → реализуй Telemetry/RunConfig → зелёное
+python code/telemetry.py # демо: расходы по процессам + отпечатки конфигов</code></pre><p><strong>Подсказка.</strong> <code>by_process</code> — копи в словаре через <code>setdefault</code>. <code>fingerprint</code>: <code>sort_keys=True</code> обязателен (иначе порядок ключей даст разный хэш для одного конфига); <code>asdict</code> сериализует dataclass.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>Дашборд расходов и качества (мульти-провайдер):</p><ul><li><strong>Токены/стоимость на процесс</strong> — из <code>usage</code> в ответе API (<code>input_tokens</code> / <code>output_tokens</code>) × карта цен (9.1); агрегируй по процессу/фиче, как <code>by_process</code>.</li><li><strong>Качество рядом со стоимостью</strong> — LLM-as-judge / eval-наборы (2.5) на том же дашборде: видно не только «дорого ли», но и «окупается ли качеством» (cost per outcome из 9.4).</li><li><strong>Воспроизводимость</strong> — логируй <code>RunConfig</code> (модель, temperature, версия промпта, seed) с каждым прогоном; OpenTelemetry GenAI стандартизует поля токенов (<code>gen_ai.*</code>), чтобы дашборд читал любой бэкенд.</li></ul><p>Принцип: расход — в разрезе процессов, качество — рядом, конфиг — зафиксирован. Тогда «стало лучше/дешевле» подтверждается числами и воспроизводимо.</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Встроенный в рабочий процесс ассистент → <a href="#f-phases-10-production-and-integration-10-telemetry-and-reproducibility-outputs-embedded-assistant-py"><code>outputs/embedded_assistant.py</code></a></p><p>Сквозной ассистент: фича-флаг + fallback (10.1) + логирование (10.2) + телеметрия токенов/стоимости и fingerprint конфига (10.3). Дальше — последний кирпич фазы: трейсинг шагов агента (10.4), чтобы видеть не только «сколько стоило», но и «где именно ушло время/токены внутри».</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Считать только общий счёт.</strong> Без разреза по процессам непонятно, что оптимизировать. Привязывай токены/стоимость к процессу (<code>by_process</code>), а не складывай в одну сумму.</li><li><strong>Сравнивать «до/после» без фиксации конфига.</strong> Поменял промпт И температуру — не знаешь, что дало эффект. Фиксируй <code>RunConfig</code> и сравнивай прогоны с одинаковым fingerprint.</li><li><strong>Менять несколько параметров разом.</strong> Тогда вывод о причине невозможен. Меняй по одному (модель ИЛИ промпт ИЛИ температуру) — отпечаток покажет, что именно отличается.</li><li><strong>Нестабильный хэш конфига.</strong> Без <code>sort_keys=True</code> один и тот же конфиг даст разный хэш из-за порядка ключей. Сериализуй детерминированно.</li><li><strong>Телеметрия без качества.</strong> Дешевле — не значит лучше. Клади метрику качества (2.5) рядом со стоимостью, иначе «сэкономили» может скрывать просадку результата.</li><li><strong>Ждать бит-в-бит одинаковый вывод при <code>temperature=0</code>.</strong> LLM недетерминирован даже с seed (батчинг, float, MoE). Fingerprint фиксирует конфиг, не ответ; воспроизводимость поведения меряют статистически на eval-наборе, а не сравнением одного ответа.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="10.3"></div><h2>Материалы</h2><ul><li><a href="https://langfuse.com/docs/observability/get-started" target="_blank" rel="noopener">Langfuse — Get started with tracing</a> — токены, сессии, трейсы.</li><li><a href="https://opentelemetry.io/blog/2026/genai-observability/" target="_blank" rel="noopener">OpenTelemetry — GenAI observability</a> — стандартные поля токенов/латентности.</li><li><a href="https://platform.claude.com/docs/en/docs/build-with-claude/define-success" target="_blank" rel="noopener">Anthropic — Create strong empirical evaluations</a> — измеримость и воспроизводимость качества.</li><li><a href="https://thinkingmachines.ai/blog/defeating-nondeterminism-in-llm-inference/" target="_blank" rel="noopener">Thinking Machines — Defeating Nondeterminism in LLM Inference</a> — почему вывод недетерминирован даже при temp=0 (батч-зависимость reduction-ядер) и как чинят (batch-invariant kernels → bit-identical).</li><li><a href="https://github.com/openai/openai-cookbook/blob/main/examples/Reproducible_outputs_with_the_seed_parameter.ipynb" target="_blank" rel="noopener">OpenAI — Reproducible outputs (seed + system_fingerprint)</a> — <code>seed</code> + <code>system_fingerprint</code>: fingerprint фиксирует конфиг (best-effort, не гарантия бит-в-бит).</li><li><a href="https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/increase-consistency" target="_blank" rel="noopener">Anthropic — Increase output consistency</a> — у Claude нет seed: формат, prefill, примеры, retrieval для консистентности формы.</li><li><a href="https://docs.wandb.ai/models/track" target="_blank" rel="noopener">Weights &amp; Biases — Experiment tracking</a> — логировать config/seed/версии/артефакты для воспроизводимости и дашборда «до-после».</li><li><a href="https://arxiv.org/abs/2003.12206" target="_blank" rel="noopener">Pineau et al., 2021 — Improving Reproducibility in ML (NeurIPS program)</a> — классический фреймворк воспроизводимости и ML Reproducibility Checklist.</li><li><a href="https://cobusgreyling.medium.com/openai-seeding-model-fingerprints-log-probabilities-cedf094e8b02" target="_blank" rel="noopener">Cobus Greyling — OpenAI Seeding, Model Fingerprints &amp; Log Probabilities (Medium)</a> — практический разбор seed/fingerprint/logprobs.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-10-production-and-integration-10-telemetry-and-reproducibility-code-test-telemetry-py" open data-test="1"><summary><span class="fname">code/test_telemetry.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from telemetry import Telemetry, RunConfig
+
+
+def _tel():
+    t = Telemetry()
+    t.record("summarize", 1000, 200, 0.005)
+    t.record("summarize", 800, 150, 0.004)
+    t.record("classify", 300, 10, 0.0003)
+    return t
+
+
+def test_aggregation_by_process():
+    by = _tel().by_process()
+    assert by["summarize"]["tokens_in"] == 1800
+    assert by["summarize"]["cost"] == 0.009
+    assert by["classify"]["tokens_out"] == 10
+
+
+def test_total_cost():
+    assert _tel().total_cost() == 0.0093
+
+
+def test_fingerprint_is_deterministic():
+    assert RunConfig("sonnet-4.6").fingerprint() == RunConfig("sonnet-4.6").fingerprint()
+
+
+def test_fingerprint_changes_with_params():
+    a = RunConfig("sonnet-4.6", temperature=0.0)
+    b = RunConfig("sonnet-4.6", temperature=0.7)
+    assert a.fingerprint() != b.fingerprint()
+    # другая версия промпта тоже меняет отпечаток
+    assert a.fingerprint() != RunConfig("sonnet-4.6", prompt_version="v2").fingerprint()
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-10-production-and-integration-10-telemetry-and-reproducibility-code-telemetry-py"><summary><span class="fname">code/telemetry.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Телеметрия и воспроизводимость — Build It для урока 10.3.
+
+Без зависимостей. Считаем токены и стоимость в разрезе процессов (телеметрия) и
+фиксируем конфигурацию запуска (модель, параметры, версия промпта) так, чтобы
+прогон можно было воспроизвести — одинаковый конфиг даёт одинаковый «отпечаток».
+"""
+import hashlib
+import json
+from dataclasses import dataclass, asdict, field
+
+
+class Telemetry:
+    """Учёт токенов и стоимости по процессам."""
+
+    def __init__(self):
+        self.events = []
+
+    def record(self, process, tokens_in, tokens_out, cost):
+        self.events.append({"process": process, "tokens_in": tokens_in,
+                            "tokens_out": tokens_out, "cost": cost})
+
+    def by_process(self):
+        out = {}
+        for e in self.events:
+            agg = out.setdefault(e["process"], {"tokens_in": 0, "tokens_out": 0, "cost": 0.0})
+            agg["tokens_in"] += e["tokens_in"]
+            agg["tokens_out"] += e["tokens_out"]
+            agg["cost"] = round(agg["cost"] + e["cost"], 6)
+        return out
+
+    def total_cost(self):
+        return round(sum(e["cost"] for e in self.events), 6)
+
+
+@dataclass
+class RunConfig:
+    """Конфиг прогона для воспроизводимости."""
+    model: str
+    temperature: float = 0.0
+    prompt_version: str = "v1"
+    seed: int = 0
+
+    def fingerprint(self):
+        """Стабильный отпечаток конфига: одинаковый конфиг → одинаковый хэш."""
+        blob = json.dumps(asdict(self), sort_keys=True).encode("utf-8")
+        return hashlib.sha256(blob).hexdigest()[:12]
+
+
+if __name__ == "__main__":
+    tel = Telemetry()
+    tel.record("summarize", 1000, 200, 0.005)
+    tel.record("summarize", 800, 150, 0.004)
+    tel.record("classify", 300, 10, 0.0003)
+    print("по процессам:", tel.by_process())
+    print("итого $:", tel.total_cost())
+
+    a = RunConfig("sonnet-4.6", temperature=0.0, prompt_version="v1")
+    b = RunConfig("sonnet-4.6", temperature=0.7, prompt_version="v1")
+    print("fp(a):", a.fingerprint(), "| fp(a2):", RunConfig("sonnet-4.6").fingerprint())
+    print("fp(b) отличается:", a.fingerprint() != b.fingerprint())
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-10-production-and-integration-10-telemetry-and-reproducibility-outputs-embedded-assistant-py" open><summary><span class="fname">outputs/embedded_assistant.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""embedded_assistant.py — артефакт урока 10.3: ИИ, встроенный в рабочий процесс.
+
+Самодостаточно, без зависимостей. Объединяет Фазу 10: фича-флаг + fallback (10.1),
+логирование вызовов (10.2), телеметрия токенов/стоимости и fingerprint конфига (10.3).
+В проде `_call_model` заменяется реальным вызовом API.
+
+Запуск:  python embedded_assistant.py
+"""
+import hashlib
+import json
+from dataclasses import dataclass, asdict
+
+PRICES = {"sonnet-4.6": (3.0, 15.0), "haiku-4.5": (1.0, 5.0)}      # $/1M (вход, выход)
+
+
+@dataclass
+class RunConfig:
+    model: str = "sonnet-4.6"
+    temperature: float = 0.0
+    prompt_version: str = "v1"
+
+    def fingerprint(self):
+        blob = json.dumps(asdict(self), sort_keys=True).encode()
+        return hashlib.sha256(blob).hexdigest()[:12]
+
+
+class EmbeddedAssistant:
+    """ИИ-шаг процесса: флаг + fallback + лог + телеметрия."""
+
+    def __init__(self, config: RunConfig, enabled=True):
+        self.config = config
+        self.enabled = enabled
+        self.log = []           # вызовы (мониторинг)
+        self.telemetry = []     # токены/стоимость (FinOps)
+
+    def _cost(self, n_in, n_out):
+        p_in, p_out = PRICES[self.config.model]
+        return round((n_in * p_in + n_out * p_out) / 1e6, 6)
+
+    def _call_model(self, text):
+        if "ошибк" in text.lower():
+            raise RuntimeError("модель недоступна")
+        n_in, n_out = len(text.split()) * 2, 30
+        return f"саммари: {text[:30]}...", n_in, n_out
+
+    def _fallback(self, text):
+        return "первые слова: " + " ".join(text.split()[:3])
+
+    def run(self, text, process="summarize"):
+        if not self.enabled:
+            return self._fallback(text)
+        try:
+            answer, n_in, n_out = self._call_model(text)
+            cost = self._cost(n_in, n_out)
+            self.log.append({"process": process, "status": "ok", "config": self.config.fingerprint()})
+            self.telemetry.append({"process": process, "tokens_in": n_in,
+                                   "tokens_out": n_out, "cost": cost})
+            return answer
+        except Exception as e:                                  # noqa: BLE001
+            self.log.append({"process": process, "status": "error", "error": str(e)})
+            return self._fallback(text)
+
+    def total_cost(self):
+        return round(sum(t["cost"] for t in self.telemetry), 6)
+
+
+if __name__ == "__main__":
+    asst = EmbeddedAssistant(RunConfig(model="sonnet-4.6", prompt_version="v3"))
+    print(asst.run("длинный отчёт для краткого пересказа команды"))
+    print(asst.run("текст с ошибкой"))            # упал → fallback, залогировано
+    print("config fp:", asst.config.fingerprint())
+    print("total cost:", asst.total_cost())
+    print("log:", asst.log)
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/deploy-and-monitoring/"><small>← 10.2</small>Деплой и мониторинг</a><a href="../../lessons/observability-tracing/" style="text-align:right"><small>10.4 →</small>Observability и трейсинг агентов</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

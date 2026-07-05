@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>11.3 Предвзятость и юридические риски — AI Native</title>
+  <meta name="description" content="Вывод ИИ — это риск: предвзятость, переобещания, чужой текст; их надо аудировать.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/bias-and-legal-risks/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="11.3 Предвзятость и юридические риски — AI Native">
+  <meta property="og:description" content="Вывод ИИ — это риск: предвзятость, переобещания, чужой текст; их надо аудировать.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/bias-and-legal-risks/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="11.3">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 11.3 · Предвзятость и юридические риски</h1><p><strong>Фаза 11 — Этика, безопасность, governance</strong> · <strong>Результат фазы:</strong> Оценить риски, настроить приватность и написать политику использования ИИ.</p><p><strong>Утечку (11.1) и галлюцинации (11.2) закрыли. Третий governance-риск — сам вывод модели.</strong> ИИ может выдать дискриминирующее обобщение, юридически опасное переобещание или дословно чужой текст. В проде это репутация и суд.</p><blockquote><strong>MOTTO.</strong> Вывод ИИ — это риск: предвзятость, переобещания, чужой текст; их надо аудировать.</blockquote><h2>PROBLEM</h2><p>Модель обучена на интернете и воспроизводит его паттерны — включая стереотипы. Она склонна звучать уверенно и «продавать» («гарантирую 100%»). И она видела массу защищённого авторским правом текста, который может воспроизвести дословно. Любое из трёх, ушедшее клиенту или в публикацию, — это дискриминация, невыполнимое обещание в договоре или нарушение копирайта.</p><p>Ручной просмотр не масштабируется на поток. Нужен <strong>аудит вывода</strong>: автоматически помечать рискованные паттерны и вести реестр рисков — чтобы критичное дошло до человека и юриста, а не до клиента. Соберём такой аудит.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Аудит — это <strong>детектор на конвейере</strong>, а не финальный контролёр качества. Он не выносит вердикт «законно/незаконно» — он <strong>сортирует поток</strong>: подсвечивает подозрительное и передаёт человеку. Как металлодетектор в аэропорту: пищит на металл (сигнал к досмотру), но решение принимает офицер, а не рамка.</p><p>Важнейшая оговорка сразу: эвристики — <strong>нижняя граница</strong>. Они ловят явное и масштабируются на поток, но не заменяют юриста и человека. Их роль — задать, ЧТО проверять, и не пропустить очевидное.</p><h3>Как это работает</h3><pre><code>вывод ИИ → audit(rules)
+   bias       — предвзятые обобщения              → high
+   overclaim  — «гарантирую», «100%», «всегда»    → medium
+   copyright  — длинная дословная цитата          → medium
+            ▼
+   реестр рисков {category, severity, snippet}</code></pre><ul><li><code>audit(text, max_quote_words)</code> — прогнать текст через правила: термины-стереотипы (<code>bias</code>), абсолютные обещания (<code>overclaim</code>), слишком длинные дословные цитаты (<code>copyright</code>). Вернуть находки с категорией, серьёзностью и фрагментом.</li><li><code>severity_counts(findings)</code> — сводка по серьёзности (сколько high/medium) для реестра.</li></ul><p>Серьёзность разная: предвзятость — <code>high</code> (прямой репутационный/юридический удар), переобещание и копирайт — <code>medium</code> (проверить контекст). Реестр — это не «запретить», а «эскалировать нужное нужному человеку».</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Прогоним <code>audit</code> по тексту с тремя проблемами сразу: <code>"Все женщины хуже водят. Я гарантирую результат. Он сказал: «&lt;25 слов дословно&gt;»"</code>:</p><pre><code>1. "все женщины"           → bias,      severity high    (стереотипное обобщение)
+2. "гарантирую"            → overclaim, severity medium  (абсолютное обещание)
+3. цитата 25 слов &gt; 20     → copyright, severity medium  (длинный дословный фрагмент)
+
+severity_counts → {high: 1, medium: 2}</code></pre><p>Три разных риска пойманы одним проходом и разложены по серьёзности — реестр готов к эскалации. А чистый текст («Сегодня солнечно, возьмите зонт») даёт <strong>пустой</strong> реестр — аудит не шумит на безопасном.</p><p>Но вот <strong>честная граница метода</strong>. Правила ловят <strong>явные</strong> маркеры и слепы к неявному:</p><ul><li><strong>Неявная предвзятость</strong> без слов-триггеров: рекомендация найма, статистически смещённая против группы, но без единого стереотипного слова, — audit её <strong>пропустит</strong>.</li><li><strong>Перефразированное переобещание</strong>: «результат вам обеспечен» вместо «гарантирую» — мимо списка.</li><li><strong>Копирайт короткими кусками</strong> или пересказом — короткая, но украденная фраза не превысит порог слов.</li></ul><p>Поэтому audit — это <strong>сито грубой очистки</strong>, а не юрист: он ловит очевидное и масштабируется, но серьёзные bias-риски меряют статистически (по группам), а юридические — человек. Поменяй правила на LLM-ревьюера — контракт «прогнать → пометить → эскалировать» не изменится, но и он не отменяет человека на критичном.</p><h2>BUILD IT</h2><p><strong>Задание: собери аудит вывода на риски</strong> — bias, overclaim, copyright + сводка. Только стандартная библиотека (<code>re</code>), без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/11.3-risk-audit/</code>), а файлы урока клади в подпапку <code>code/</code> (как в 0.1). Нужен только <strong>Python 3</strong> (для теста ещё <code>pytest</code>).</blockquote><p>Создай файл <code>risk_audit.py</code>: списки <code>BIAS_TERMS</code> (стереотипные обобщения), <code>OVERCLAIM</code> (абсолютные обещания: «гарантирую», «100% точно», «всегда прав»…) и:</p><ul><li><strong><code>audit(text, max_quote_words=20)</code></strong> — вернуть список находок <code>{category, severity, snippet}</code>: термин из <code>BIAS_TERMS</code> → <code>bias</code>/<code>high</code>; из <code>OVERCLAIM</code> → <code>overclaim</code>/<code>medium</code>; дословная цитата в <code>«…»</code>/<code>"…"</code> длиннее <code>max_quote_words</code> слов → <code>copyright</code>/<code>medium</code>.</li><li><strong><code>severity_counts(findings)</code></strong> — словарь <code>{severity: количество}</code>.</li></ul><p><strong>Готово, когда</strong> все тесты в <code>test_risk_audit.py</code> зелёные — они проверяют: ловится bias-термин; ловится overclaim; длинная цитата → copyright; чистый текст → пустой список; <code>severity_counts</code> считает high и medium.</p><pre><code>pytest code -q          # красное → реализуй audit → зелёное
+python code/risk_audit.py # демо: bias(high) + overclaim(medium) + copyright(medium)</code></pre><p><strong>Подсказка.</strong> Термины ищи в <code>text.lower()</code> подстрокой. Цитаты — <code>re.findall(r"[«\"]([^»\"]+)[»\"]", text)</code>, длину — <code>len(quote.split())</code>. Каждую находку клади словарём с фиксированной <code>severity</code>.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>Аудит вывода на риски в проде — поверх признанных фреймворков (мульти-провайдер):</p><ul><li><strong>Риск-классификация по EU AI Act</strong> — определи уровень риска сценария (<strong>запрещённый / высокий / ограниченный / минимальный</strong>) → из него следуют обязанности. Например, ИИ-скоринг при найме или кредитовании — «высокий риск» с требованиями к прозрачности и надзору.</li><li><strong>NIST AI RMF</strong> — функции <strong>Govern / Map / Measure / Manage</strong>: систематически выявлять, измерять и снижать риски (включая bias), а не разово.</li><li><strong>LLM-судья + правила</strong> — комбинируй эвристики (как <code>audit</code>) с моделью-ревьюером для неявного; критичное (юридическое, дискриминация) — на человека и юриста.</li><li><strong>Bias измеряй статистически</strong> — не по словам, а по распределению решений между группами (равенство исходов/ошибок), иначе неявное смещение не поймать.</li></ul><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Реестр рисков → <a href="#f-phases-11-ethics-safety-governance-11-bias-and-legal-risks-outputs-risk-register-md"><code>outputs/risk-register.md</code></a></p><p>Шаблон реестра: риск, категория, серьёзность, вероятность, владелец, меры снижения. Дальше — урок, который сводит приватность (11.1), фактчекинг (11.2) и риски в единую корпоративную политику ИИ (11.4).</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Считать эвристику юристом.</strong> Правила по ключевым словам — нижняя граница, не вердикт. Они сортируют поток и эскалируют; решение по юридическому/дискриминации — за человеком.</li><li><strong>Ловить только явные маркеры bias.</strong> Неявное смещение (перекос решений без стереотипных слов) списком не поймать — меряй статистически по группам.</li><li><strong>Копирайт только по длине цитаты.</strong> Короткий, но украденный фрагмент или пересказ порог не превысит. Длина — грубый сигнал, не доказательство.</li><li><strong>Нет реестра и владельца риска.</strong> Находка без записи, серьёзности и ответственного теряется. Реестр превращает «что-то не так» в управляемую задачу с owner.</li><li><strong>Аудит без фреймворка.</strong> Разовые проверки не покрывают систему. EU AI Act (уровни риска) и NIST RMF (Govern/Map/Measure/Manage) задают, что и как оценивать регулярно.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="11.3"></div><h2>Материалы</h2><ul><li><a href="https://www.nist.gov/itl/ai-risk-management-framework" target="_blank" rel="noopener">NIST — AI Risk Management Framework</a> — Govern/Map/Measure/Manage.</li><li><a href="https://digital-strategy.ec.europa.eu/en/policies/regulatory-framework-ai" target="_blank" rel="noopener">EU AI Act — regulatory framework</a> — риск-ориентированное регулирование.</li><li><a href="https://artificialintelligenceact.eu/high-level-summary/" target="_blank" rel="noopener">EU AI Act — high-level summary</a> — уровни риска и обязанности.</li><li><a href="https://arxiv.org/abs/1908.09635" target="_blank" rel="noopener">Mehrabi et al., 2021 — A Survey on Bias and Fairness in ML</a> — таксономия источников предвзятости (данные vs алгоритм) и метрик справедливости (ACM CSUR).</li><li><a href="https://arxiv.org/abs/2309.00770" target="_blank" rel="noopener">Gallegos et al., 2024 — Bias and Fairness in LLMs: A Survey</a> — LLM-специфичная таксономия bias: метрики на уровне embeddings / probabilities / текста.</li><li><a href="https://arxiv.org/abs/2110.08193" target="_blank" rel="noopener">Parrish et al., 2022 — BBQ: Bias Benchmark for QA</a> — измерять соц. предвзятость в ответах: 9 измерений, 58k примеров (ACL).</li><li><a href="https://arxiv.org/abs/2312.03689" target="_blank" rel="noopener">Tamkin et al., 2023 (Anthropic) — Evaluating and Mitigating Discrimination in LM Decisions</a> — проактивный аудит дискриминации: 70 сценариев решений, варьируем демографию (discrim-eval) — ровно «аудит вывода на риски».</li><li><a href="https://fairlearn.org/" target="_blank" rel="noopener">Fairlearn (Microsoft)</a> — open-source тулкит: оценка и снижение fairness-вреда по группам.</li><li><a href="https://github.com/ibm/aif360" target="_blank" rel="noopener">IBM AI Fairness 360 (AIF360)</a> — 71 метрика и 9 алгоритмов снижения bias (pre-/in-/post-processing).</li><li><a href="https://www.copyright.gov/ai/" target="_blank" rel="noopener">US Copyright Office — Copyright and Artificial Intelligence</a> — юридический первоисточник: копирайтность AI-вывода и обучение на защищённых работах (Part 1–3).</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-11-ethics-safety-governance-11-bias-and-legal-risks-code-test-risk-audit-py" open data-test="1"><summary><span class="fname">code/test_risk_audit.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from risk_audit import audit, severity_counts
+
+
+def test_flags_bias_term():
+    findings = audit("Все женщины хуже водят машину")
+    assert any(f["category"] == "bias" for f in findings)
+
+
+def test_flags_overclaim():
+    findings = audit("Я гарантирую стопроцентный результат")
+    assert any(f["category"] == "overclaim" for f in findings)
+
+
+def test_flags_long_quote_as_copyright():
+    text = 'Источник: «' + " ".join(["слово"] * 25) + '».'
+    findings = audit(text)
+    assert any(f["category"] == "copyright" for f in findings)
+
+
+def test_clean_text_no_findings():
+    assert audit("Сегодня солнечно, рекомендуем взять зонт на всякий случай.") == []
+
+
+def test_severity_counts():
+    findings = audit("Все мужчины всегда правы, гарантирую")
+    counts = severity_counts(findings)
+    assert counts.get("high", 0) &gt;= 1        # bias
+    assert counts.get("medium", 0) &gt;= 1      # overclaim
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-11-ethics-safety-governance-11-bias-and-legal-risks-code-risk-audit-py"><summary><span class="fname">code/risk_audit.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Предвзятость и юридические риски: аудит вывода — Build It для урока 11.3.
+
+Без зависимостей. Прогоняем текст модели через набор правил и собираем реестр
+рисков: предвзятые обобщения, переобещания (absolute claims), потенциальное
+нарушение авторских прав (длинная дословная цитата). Эвристика — нижняя граница,
+не юрист; задаёт, ЧТО проверять.
+"""
+import re
+
+BIAS_TERMS = ("все женщины", "все мужчины", "всегда виноваты", "по природе хуже",
+              "по природе лучше", "представители нации")
+OVERCLAIM = ("гарантирую", "100% точно", "никогда не ошиб", "всегда прав", "однозначно доказано")
+
+
+def audit(text, max_quote_words=20):
+    """Реестр рисков: список {category, severity, snippet}."""
+    findings = []
+    low = text.lower()
+    for term in BIAS_TERMS:
+        if term in low:
+            findings.append({"category": "bias", "severity": "high", "snippet": term})
+    for term in OVERCLAIM:
+        if term in low:
+            findings.append({"category": "overclaim", "severity": "medium", "snippet": term})
+    for quote in re.findall(r"[«\"]([^»\"]+)[»\"]", text):     # длинная дословная цитата
+        if len(quote.split()) &gt; max_quote_words:
+            findings.append({"category": "copyright", "severity": "medium",
+                             "snippet": quote[:30] + "…"})
+    return findings
+
+
+def severity_counts(findings):
+    out = {}
+    for f in findings:
+        out[f["severity"]] = out.get(f["severity"], 0) + 1
+    return out
+
+
+if __name__ == "__main__":
+    text = ('Все женщины хуже водят. Я гарантирую результат. '
+            'Он сказал: «' + " ".join(["слово"] * 25) + '».')
+    findings = audit(text)
+    for f in findings:
+        print(f["severity"], f["category"], "—", f["snippet"])
+    print("Итого по серьёзности:", severity_counts(findings))
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-11-ethics-safety-governance-11-bias-and-legal-risks-outputs-risk-register-md" open><summary><span class="fname">outputs/risk-register.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: реестр рисков ИИ
+
+Журнал рисков использования ИИ с мерами снижения. Аудитор вывода — [`code/risk_audit.py`](../code/risk_audit.py).
+
+## Шаблон записи
+
+| ID | Риск | Категория | Серьёзность | Вероятность | Владелец | Меры снижения |
+|---|---|---|---|---|---|---|
+| R1 | Предвзятые/дискриминирующие ответы | bias | high | сред. | Product | аудит вывода, разнообразные тесты, human review |
+| R2 | Переобещания/неверные гарантии | overclaim | medium | сред. | Legal | запрет абсолютных формулировок, ревью |
+| R3 | Дословное воспроизв. чужого текста | copyright | medium | низк. | Legal | лимит цитат, проверка источников |
+| R4 | Утечка PII во внешнюю модель | privacy | high | сред. | Security | redaction + классификация (11.1) |
+| R5 | Галлюцинация в ответе клиенту | accuracy | high | сред. | Support | фактчекинг (11.2), цитаты, «не знаю» |
+
+## Как вести
+
+- **Автоаудит** потока: `audit(text)` помечает bias/overclaim/copyright → пополняет реестр.
+- **Серьёзность × вероятность** → приоритет работ по снижению.
+- **Владелец** на каждый риск; меры — конкретные и проверяемые.
+- **Ревизия** регулярно и при инцидентах.
+
+## Рамки
+
+- **NIST AI RMF** — Map/Measure: систематически выявлять и измерять риски.
+- **EU AI Act** — классифицируй сценарий по уровню риска → требования.
+
+## Применение (код)
+
+```python
+from risk_audit import audit, severity_counts
+findings = audit(model_output)
+log_risks(findings); print(severity_counts(findings))
+```
+
+## Связи
+
+- Приватность/PII → урок 11.1 · Фактчекинг → урок 11.2 · Политика ИИ → урок 11.4
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~3 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/fact-checking-hallucinations/"><small>← 11.2</small>Фактчекинг и борьба с галлюцинациями</a><a href="../../lessons/ai-usage-policy/" style="text-align:right"><small>11.4 →</small>Корпоративные политики ИИ</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

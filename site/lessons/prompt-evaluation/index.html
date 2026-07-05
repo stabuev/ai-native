@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>2.5 Оценка качества промптов — AI Native</title>
+  <meta name="description" content="«Кажется, лучше» — не метрика. Промпт улучшают, измеряя на наборе кейсов.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/prompt-evaluation/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="2.5 Оценка качества промптов — AI Native">
+  <meta property="og:description" content="«Кажется, лучше» — не метрика. Промпт улучшают, измеряя на наборе кейсов.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/prompt-evaluation/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="2.5">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 2.5 · Оценка качества промптов</h1><p><strong>Фаза 2 — Промпт-инжиниринг</strong> · <strong>Результат фазы:</strong> Писать воспроизводимые промпты и измерять их качество через eval-harness.</p><p><strong>Requires (только для USE IT):</strong> платный API-ключ одного из провайдеров. BUILD IT работает офлайн, без ключей и без сети.</p><p><strong>Это венец Фазы 2: промпт-инжиниринг превращается из гадания в измерение.</strong> В уроке 2.1 мы договорились начинать с критериев успеха — здесь строим инструмент, который их проверяет. <strong>Eval-harness</strong> прогоняет промпт по фиксированному набору кейсов, считает метрику и <strong>честно сравнивает версии</strong> — чтобы «стало лучше» было числом, а не ощущением.</p><blockquote><strong>MOTTO.</strong> «Кажется, лучше» — не метрика. Промпт улучшают, измеряя на наборе кейсов.</blockquote><h2>PROBLEM</h2><p>Промпты правят «на глаз»: поменял формулировку, ответ на одном примере стал красивее — закоммитил. А на десяти других стало хуже, и ты этого <strong>не видишь</strong>. Так же незаметно «улучшение» ломается при смене модели или параметра. Без воспроизводимой оценки нельзя ни честно сравнить две версии промпта, ни доказать, что новая модель реально лучше старой. Нужен eval-harness — тест-сьют для промптов.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Eval — это <strong>юнит-тесты для промптов</strong>. Как в коде один ручной запуск не заменяет тестов, так и «посмотрел один ответ» не заменяет прогон по набору кейсов. Anthropic называет цикл «критерии успеха → оценка» <strong>центральным в промпт-инжиниринге</strong>: сначала формулируешь, что значит «хорошо» (в уроке 2.1), потом измеряешь.</p><h3>Как это работает</h3><pre><code>набор кейсов {input, expected}
+        │
+   prompt_fn (версия промпта / модель)
+        │
+     метрика(pred, expected) → score за кейс
+        │
+   усреднили → score версии → compare(версии) → рейтинг</code></pre><p>Три вещи делают оценку надёжной (по гайду Anthropic «build evaluations»):</p><ul><li><strong>Критерии успеха — SMART.</strong> Не «хорошо», а конкретно и измеримо: вместо «good performance» — «accurate sentiment classification». Метрика должна давать число.</li><li><strong>Автоматизируй грейдинг.</strong> Anthropic про выбор метода: бери самый быстрый и надёжный. Лестница такая:</li><li><strong>Code-based</strong> — быстрее и надёжнее всего, отлично масштабируется: <code>exact_match</code> (<code>pred == expected</code>), <code>contains</code> (<code>key_phrase in pred</code>). Для категориальных задач (классификация, извлечение) — то, что нужно.</li><li><strong>LLM-as-judge</strong> — для субъективного качества текста (связность, тон): другая модель оценивает по рубрике. Гибко и масштабируемо, но сначала проверь её надёжность (вернёмся к этому в агентных фазах).</li><li><strong>Human</strong> — самый гибкий, но медленный и дорогой; избегай, где можно.</li><li><strong>Объём важнее точности грейдинга.</strong> Anthropic: «больше вопросов со слегка более шумной автогрейдинг-оценкой лучше, чем мало вопросов с дорогой ручной». Фиксированный набор кейсов + автооценка = воспроизводимость.</li></ul><h2>РАЗБОР ПО ШАГАМ</h2><p>Прогоним harness руками. Набор кейсов (арифметика):</p><pre><code>{input: "2+2", expected: "4"}   {input: "3+5", expected: "8"}   {input: "10-4", expected: "6"}</code></pre><p>Сравним три «версии промпта» метрикой <code>exact_match</code>:</p><ul><li><strong>good</strong> — считает выражение → <code>"4"</code>, <code>"8"</code>, <code>"6"</code> → все три совпали → <strong>score 3/3 = 1.0</strong>;</li><li><strong>half</strong> — всегда отвечает <code>"4"</code> → совпал только первый кейс → <strong>score 1/3 ≈ 0.33</strong>;</li><li><strong>bad</strong> — всегда <code>"?"</code> → ни одного → <strong>score 0/3 = 0.0</strong>.</li></ul><p><code>evaluate</code> хранит и разбивку по кейсам (<code>per_case</code>) — видно, <strong>где именно</strong> версия ошиблась, как в <code>history</code> из урока 2.3. А <code>compare</code> строит рейтинг по убыванию:</p><pre><code>compare(versions, cases) → [("good", 1.0), ("half", 0.33), ("bad", 0.0)]</code></pre><p>Лучшая версия — первой, и это <strong>число</strong>, а не «мне кажется». Поменял промпт — прогнал тот же набор — увидел, вырос score или упал.</p><h2>BUILD IT</h2><p><strong>Задание: собери mini eval-harness</strong> — стандартная библиотека, без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/2.5-prompt-eval/</code>), а файлы урока клади в подпапку <code>code/</code> (как в 0.1). Нужен только <strong>Python 3</strong>, всё офлайн (для теста ещё <code>pytest</code>).</blockquote><p>Реализуй метрики и прогон:</p><ul><li><strong><code>exact_match(pred, expected)</code></strong> → <code>1.0</code>, если <code>pred.strip() == expected.strip()</code>, иначе <code>0.0</code>.</li><li><strong><code>contains(pred, expected)</code></strong> → <code>1.0</code>, если <code>expected.lower()</code> входит в <code>pred.lower()</code>, иначе <code>0.0</code>.</li><li><strong><code>evaluate(prompt_fn, cases, metric=exact_match)</code></strong> — прогони <code>prompt_fn</code> по кейсам <code>{input, expected}</code>: для каждого посчитай <code>pred = prompt_fn(input)</code> и <code>score = metric(pred, expected)</code>. Верни <code>{"score": среднее по кейсам, "per_case": [{input, pred, expected, score}, …]}</code> (на пустом наборе <code>score = 0.0</code>).</li><li><strong><code>compare(versions, cases, metric=exact_match)</code></strong> — <code>versions</code> это <code>{name: prompt_fn}</code>; верни список <code>(name, score)</code>, отсортированный по убыванию score.</li></ul><p><strong>Готово, когда</strong> тест <code>test_eval_harness.py</code> зелёный — он проверяет метрики (включая игнор пробелов и регистра), что <code>evaluate</code> даёт 1.0 на рабочей версии и 0.0 на сломанной, и что <code>compare</code> ставит лучшую версию первой, а худшую — последней.</p><pre><code>pytest code -q              # красное → реализуй функции → зелёное
+python code/eval_harness.py # демо: score рабочей vs сломанной версии + рейтинг</code></pre><p><strong>Подсказка.</strong> <code>evaluate</code> — цикл по <code>cases</code> с накоплением <code>per_case</code>, потом среднее. <code>compare</code> — словарь в список через <code>evaluate(...)["score"]</code> и <code>sorted(..., reverse=True)</code>.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>В проде <code>prompt_fn</code> — вызов модели; harness прогоняет твой набор кейсов и сравнивает версии/модели (мульти-провайдер):</p><pre><code>def v_claude(x): return Anthropic().messages.create(model="claude-haiku-4-5",
+    max_tokens=50, messages=[{"role": "user", "content": PROMPT.format(x=x)}]).content[0].text
+def v_openai(x): return OpenAI().responses.create(model="gpt-5.x", input=PROMPT.format(x=x)).output_text
+def v_gemini(x): return genai.Client().models.generate_content(
+    model="gemini-2.x-flash", contents=PROMPT.format(x=x)).text
+
+print(compare({"claude": v_claude, "openai": v_openai, "gemini": v_gemini}, CASES, metric=contains))</code></pre><p>Так выбор модели и версии промпта становится измеримым — и это прямой мост к Фазе 9, где к качеству добавится <strong>цена</strong> (одна и та же метрика, но score на доллар).</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> <code>prompt-eval</code> (skill) → <a href="#f-phases-02-prompt-engineering-02-prompt-evaluation-outputs-prompt-eval-skill-md"><code>outputs/prompt-eval/</code></a></p><p>Переиспользуемый скилл оценки промптов: подкладываешь кейсы и версии — получаешь рейтинг. Зарегистрирован в <a href="#f-claude-skills-prompt-eval-skill-md"><code>.claude/skills/prompt-eval</code></a>. Это рабочая лошадка для всех последующих фаз, где надо доказать, что «стало лучше».</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Править промпт по одному примеру.</strong> Один красивый ответ ничего не доказывает — на других кейсах могло стать хуже. Меряй на наборе.</li><li><strong>Брать LLM-as-judge там, где хватает code-based.</strong> Для категориальных задач <code>exact_match</code>/<code>contains</code> быстрее, надёжнее и бесплатнее; модель-судья — для субъективного качества.</li><li><strong>Менять промпт и модель одновременно.</strong> Не поймёшь, что подняло score. Фиксируй набор кейсов и меняй по одному.</li><li><strong>Маленький набор кейсов.</strong> На трёх примерах метрика — шум. Объём важнее точности грейдинга: лучше много кейсов с автооценкой.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="2.5"></div><h2>Материалы</h2><ul><li><a href="https://platform.claude.com/docs/en/docs/build-with-claude/define-success" target="_blank" rel="noopener">Anthropic — Define success criteria &amp; build evaluations</a> — что измерять (SMART-критерии) и как строить eval-наборы и грейдинг.</li><li><a href="https://github.com/anthropics/anthropic-cookbook/blob/main/misc/building_evals.ipynb" target="_blank" rel="noopener">anthropics/anthropic-cookbook — building_evals</a> — практический ноутбук по evals.</li><li><a href="https://github.com/promptfoo/promptfoo" target="_blank" rel="noopener">promptfoo</a> — тесты промптов с ассершенами, сравнение версий и моделей, CI/CD, red-team.</li><li><a href="https://github.com/confident-ai/deepeval" target="_blank" rel="noopener">DeepEval</a> — «Pytest для LLM»: юнит-тесты и метрики (G-Eval, relevancy, faithfulness).</li><li><a href="https://hamel.dev/blog/posts/evals/" target="_blank" rel="noopener">Hamel Husain — Your AI Product Needs Evals (2024)</a> — влиятельный практический разбор: зачем и как строить evals.</li><li><a href="https://arxiv.org/abs/2306.05685" target="_blank" rel="noopener">Zheng et al., 2023 — Judging LLM-as-a-Judge (MT-Bench)</a> — первоисточник подхода «модель-судья».</li><li><a href="https://developers.openai.com/api/docs/guides/evaluation-best-practices" target="_blank" rel="noopener">OpenAI — Evaluation best practices</a> — официальный гайд второго провайдера: непрерывные evals на каждое изменение, микс прод-данных и экспертных кейсов, «модель лучше различает, чем генерирует».</li><li><a href="https://arxiv.org/abs/2303.16634" target="_blank" rel="noopener">Liu et al., 2023 — G-Eval</a> — классика LLM-судьи по рубрике: модель сперва генерирует шаги оценки, потом оценивает по ним (пара к MT-Bench).</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-02-prompt-engineering-02-prompt-evaluation-code-test-eval-harness-py" open data-test="1"><summary><span class="fname">code/test_eval_harness.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from eval_harness import exact_match, contains, evaluate, compare
+
+CASES = [
+    {"input": "2+2", "expected": "4"},
+    {"input": "3+5", "expected": "8"},
+    {"input": "10-4", "expected": "6"},
+]
+
+
+def test_metrics():
+    assert exact_match("4", "4") == 1.0
+    assert exact_match("4 ", "4") == 1.0          # игнор пробелов
+    assert exact_match("5", "4") == 0.0
+    assert contains("ответ: 4", "4") == 1.0
+    assert contains("нет", "4") == 0.0
+
+
+def test_evaluate_scores_perfect_and_zero():
+    good = evaluate(lambda x: str(eval(x)), CASES)
+    assert good["score"] == 1.0
+    assert len(good["per_case"]) == 3
+    bad = evaluate(lambda x: "?", CASES)
+    assert bad["score"] == 0.0
+
+
+def test_compare_ranks_better_prompt_first():
+    versions = {
+        "good": lambda x: str(eval(x)),
+        "half": lambda x: "4",                    # угадывает только первый кейс
+        "bad": lambda x: "?",
+    }
+    ranking = compare(versions, CASES)
+    assert ranking[0][0] == "good"
+    assert ranking[-1][0] == "bad"
+    assert ranking[0][1] &gt; ranking[1][1] &gt; ranking[2][1]
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-02-prompt-engineering-02-prompt-evaluation-code-eval-harness-py"><summary><span class="fname">code/eval_harness.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Mini eval-harness: метрики и сравнение версий промптов — Build It для урока 2.5.
+
+Без зависимостей. Прогоняет промпт-функцию по набору кейсов {input, expected},
+считает метрику и сравнивает версии промптов между собой. Промпт-функция здесь —
+обычный callable (в тестах детерминированный stub); в USE IT её роль играет
+вызов модели. Это ядро фазы: «писать воспроизводимые промпты и измерять качество».
+"""
+
+
+# --- метрики: (pred, expected) -&gt; [0..1] ---
+def exact_match(pred, expected):
+    return 1.0 if pred.strip() == expected.strip() else 0.0
+
+
+def contains(pred, expected):
+    return 1.0 if expected.lower() in pred.lower() else 0.0
+
+
+def evaluate(prompt_fn, cases, metric=exact_match):
+    """Прогнать prompt_fn по кейсам. Возвращает {score, per_case}."""
+    per_case = []
+    for c in cases:
+        pred = prompt_fn(c["input"])
+        per_case.append({"input": c["input"], "pred": pred,
+                         "expected": c["expected"], "score": metric(pred, c["expected"])})
+    score = sum(p["score"] for p in per_case) / len(cases) if cases else 0.0
+    return {"score": score, "per_case": per_case}
+
+
+def compare(versions, cases, metric=exact_match):
+    """versions: {name: prompt_fn}. Рейтинг (name, score) по убыванию качества."""
+    scored = [(name, evaluate(fn, cases, metric)["score"]) for name, fn in versions.items()]
+    return sorted(scored, key=lambda x: x[1], reverse=True)
+
+
+if __name__ == "__main__":
+    cases = [
+        {"input": "2+2", "expected": "4"},
+        {"input": "3+5", "expected": "8"},
+        {"input": "10-4", "expected": "6"},
+    ]
+    # две «версии промпта»: рабочая и сломанная
+    good = lambda x: str(eval(x))               # noqa: S307 — учебный stub
+    bad = lambda x: "не знаю"
+    print("good:", evaluate(good, cases)["score"])
+    print("bad :", evaluate(bad, cases)["score"])
+    print("рейтинг:", compare({"good": good, "bad": bad}, cases))
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-02-prompt-engineering-02-prompt-evaluation-outputs-prompt-eval-skill-md" open><summary><span class="fname">outputs/prompt-eval/SKILL.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>---
+name: prompt-eval
+description: "Оценка качества промптов курса AI Native: прогоняет версии промпта по набору кейсов, считает метрику и сравнивает. Триггеры: «/prompt-eval», «сравни версии промпта», «измерь качество промпта», «какой промпт лучше», «прогони eval». Артефакт урока 2.5."
+---
+
+# prompt-eval — измерение и сравнение промптов
+
+Превращает «кажется, лучше» в число: фиксированный набор кейсов + метрика → честное сравнение версий промпта или моделей.
+
+## Как пользоваться
+
+1. Собери набор кейсов `cases = [{"input": ..., "expected": ...}, ...]` — реальные примеры с эталонами, включая граничные.
+2. Заведи версии как функции `versions = {"v1": fn1, "v2": fn2}`, где `fn(input) -&gt; ответ` (в проде — вызов модели).
+3. Выбери метрику: `exact_match` (классификация/извлечение) или `contains` (есть ли нужное); сложное — LLM-as-judge.
+4. Прогон и сравнение:
+
+```python
+import eval_harness as e
+ranking = e.compare(versions, cases, metric=e.exact_match)   # [(name, score), ...] по убыванию
+detail = e.evaluate(versions["v1"], cases, metric=e.exact_match)["per_case"]
+```
+
+5. Покажи рейтинг версий по убыванию score и per-case разбор (где именно версия проигрывает).
+
+## Файлы
+
+- `eval_harness.py` — движок: `exact_match`, `contains`, `evaluate(prompt_fn, cases, metric)`, `compare(versions, cases, metric)`.
+
+## Когда применять
+
+Перед тем как принять правку промпта, сменить модель или параметры — прогони eval и сравни с базлайном. Связка с выбором модели по цене/качеству — Фаза 9.
+</code></pre></details><details class="filebox" id="f-phases-02-prompt-engineering-02-prompt-evaluation-outputs-prompt-eval-eval-harness-py" open><summary><span class="fname">outputs/prompt-eval/eval_harness.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Mini eval-harness: метрики и сравнение версий промптов — Build It для урока 2.5.
+
+Без зависимостей. Прогоняет промпт-функцию по набору кейсов {input, expected},
+считает метрику и сравнивает версии промптов между собой. Промпт-функция здесь —
+обычный callable (в тестах детерминированный stub); в USE IT её роль играет
+вызов модели. Это ядро фазы: «писать воспроизводимые промпты и измерять качество».
+"""
+
+
+# --- метрики: (pred, expected) -&gt; [0..1] ---
+def exact_match(pred, expected):
+    return 1.0 if pred.strip() == expected.strip() else 0.0
+
+
+def contains(pred, expected):
+    return 1.0 if expected.lower() in pred.lower() else 0.0
+
+
+def evaluate(prompt_fn, cases, metric=exact_match):
+    """Прогнать prompt_fn по кейсам. Возвращает {score, per_case}."""
+    per_case = []
+    for c in cases:
+        pred = prompt_fn(c["input"])
+        per_case.append({"input": c["input"], "pred": pred,
+                         "expected": c["expected"], "score": metric(pred, c["expected"])})
+    score = sum(p["score"] for p in per_case) / len(cases) if cases else 0.0
+    return {"score": score, "per_case": per_case}
+
+
+def compare(versions, cases, metric=exact_match):
+    """versions: {name: prompt_fn}. Рейтинг (name, score) по убыванию качества."""
+    scored = [(name, evaluate(fn, cases, metric)["score"]) for name, fn in versions.items()]
+    return sorted(scored, key=lambda x: x[1], reverse=True)
+
+
+if __name__ == "__main__":
+    cases = [
+        {"input": "2+2", "expected": "4"},
+        {"input": "3+5", "expected": "8"},
+        {"input": "10-4", "expected": "6"},
+    ]
+    # две «версии промпта»: рабочая и сломанная
+    good = lambda x: str(eval(x))               # noqa: S307 — учебный stub
+    bad = lambda x: "не знаю"
+    print("good:", evaluate(good, cases)["score"])
+    print("bad :", evaluate(bad, cases)["score"])
+    print("рейтинг:", compare({"good": good, "bad": bad}, cases))
+</code></pre></details><h3>Связанные файлы</h3><details class="filebox" id="f-claude-skills-prompt-eval-skill-md" open><summary><span class="fname">.claude/skills/prompt-eval/SKILL.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>---
+name: prompt-eval
+description: "Оценка качества промптов курса AI Native: прогоняет версии промпта по набору кейсов, считает метрику и сравнивает. Триггеры: «/prompt-eval», «сравни версии промпта», «измерь качество промпта», «какой промпт лучше», «прогони eval». Артефакт урока 2.5."
+---
+
+# prompt-eval — измерение и сравнение промптов
+
+Превращает «кажется, лучше» в число: фиксированный набор кейсов + метрика → честное сравнение версий промпта или моделей.
+
+## Как пользоваться
+
+1. Собери набор кейсов `cases = [{"input": ..., "expected": ...}, ...]` — реальные примеры с эталонами, включая граничные.
+2. Заведи версии как функции `versions = {"v1": fn1, "v2": fn2}`, где `fn(input) -&gt; ответ` (в проде — вызов модели).
+3. Выбери метрику: `exact_match` (классификация/извлечение) или `contains` (есть ли нужное); сложное — LLM-as-judge.
+4. Прогон и сравнение:
+
+```bash
+python -c "import eval_harness as e; \
+print(e.compare({'good': lambda x: str(eval(x)), 'bad': lambda x: '?'}, \
+[{'input':'2+2','expected':'4'}], e.exact_match))"
+```
+
+5. Покажи рейтинг версий по убыванию score и per-case разбор (где именно версия проигрывает).
+
+## Файлы
+
+- `eval_harness.py` — движок: `exact_match`, `contains`, `evaluate(prompt_fn, cases, metric)`, `compare(versions, cases, metric)`.
+
+## Когда применять
+
+Перед тем как принять правку промпта, сменить модель или параметры — прогони eval и сравни с базлайном. Связка с выбором модели по цене/качеству — Фаза 9.
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~3 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/system-prompts-structured-output/"><small>← 2.4</small>Системные промпты и структурированный вывод</a><a href="../../lessons/summarization-editing-tone/" style="text-align:right"><small>3.1 →</small>Резюмирование, редактура, тон</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

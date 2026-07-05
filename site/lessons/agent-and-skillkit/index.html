@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>0.3 Агент и SkillKit — AI Native</title>
+  <meta name="description" content="Агент + скиллы превращают модель из «чата» в рабочий инструмент с памятью навыков.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/agent-and-skillkit/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="0.3 Агент и SkillKit — AI Native">
+  <meta property="og:description" content="Агент + скиллы превращают модель из «чата» в рабочий инструмент с памятью навыков.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/agent-and-skillkit/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="0.3">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 0.3 · Агент и SkillKit</h1><p><strong>Фаза 0 — Setup &amp; Tooling</strong> · <strong>Результат фазы:</strong> Настроить окружение, ключи и агента; осознанно выбрать модель под задачу.</p><p><strong>Этот урок ставит твоего рабочего агента и учит главному формату курса — скиллам.</strong> Модель в веб-чате забывает контекст и не знает твоих приёмов. Агент живёт в репозитории, видит файлы и запускает команды, а <strong>скиллы</strong> дают ему переиспользуемые навыки. К концу урока у тебя установлен агент, подключены два курсовых скилла и есть <strong>персональный маршрут</strong> по курсу — что проходить подробно, а что пролистать.</p><blockquote><strong>MOTTO.</strong> Агент + скиллы превращают модель из «чата» в рабочий инструмент с памятью навыков.</blockquote><h2>PROBLEM</h2><p>Голая модель в чате забывает контекст и каждый раз требует объяснять ей одни и те же приёмы заново. Агент (Claude Code / Cursor / Codex) уже лучше — он видит твои файлы и запускает команды, — но без накопленных навыков ты всё равно повторяешься. И отдельная боль: курс на ~228 часов нельзя проходить вслепую, иначе утонешь в том, что и так знаешь, и пролетишь важное.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p><strong>Агент</strong> — это модель, которой дали руки: она читает твой код, правит файлы и запускает команды прямо в проекте. Официально Claude Code описан так: «an agentic coding tool that reads your codebase, edits files, runs commands, and integrates with your development tools».</p><p><strong>Скилл</strong> — переиспользуемый навык агента: папка с файлом <code>SKILL.md</code>, где написано, <strong>что</strong> делать и <strong>когда</strong> это применять. В отличие от обычного промпта (разовая инструкция в одном разговоре), скилл подключается сам, когда задача под него подходит, и не нужно объяснять приём заново. По определению Anthropic: «Skills are reusable, filesystem-based resources… Skills load on-demand and eliminate the need to repeatedly provide the same guidance across multiple conversations».</p><h3>Как это работает</h3><p>У скилла есть <code>SKILL.md</code> с YAML-frontmatter (<code>name</code> + <code>description</code>), а агент решает, <strong>подключать ли скилл, по его <code>description</code></strong> — поэтому описание говорит и что скилл делает, и когда его применять.</p><pre><code>агент (Claude Code / Cursor / Codex)
+   └── .claude/skills/&lt;name&gt;/SKILL.md       ← проектные скиллы (или ~/.claude/skills — личные)
+          ---
+          name: find-your-level
+          description: что делает + КОГДА применять  ← по этому агент и решает
+          ---
+          &lt;инструкция: шаги, примеры&gt;</code></pre><p>Чтобы много скиллов не забивали контекст, работает <strong>progressive disclosure</strong> — подгрузка по уровням (из доков Agent Skills):</p><ul><li><strong>Уровень 1 — метаданные</strong> (<code>name</code>/<code>description</code>): загружены всегда, ~100 токенов на скилл. Агент лишь знает, что скилл есть и когда он нужен.</li><li><strong>Уровень 2 — тело <code>SKILL.md</code></strong>: подгружается, только когда задача совпала с описанием.</li><li><strong>Уровень 3 — ресурсы и скрипты</strong>: читаются по мере надобности, не занимая контекст заранее.</li></ul><p>Итог: можно держать десятки скиллов почти без платы за контекст — подробности входят в окно только когда реально нужны.</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Посмотрим, как из ответов на входной квиз получается персональный маршрут. Возьмём два крайних профиля и пройдём логику руками.</p><p><strong>Новичок</strong> отвечает на все 10 вопросов по нулям. <code>score</code> суммирует веса → <strong>0 баллов</strong>. <code>level</code>: меньше 10 → <strong>«Новичок»</strong>. <code>route</code>: новичку каждая фаза идёт <code>focus</code> (множитель 1.0), поэтому часы = сумма базовых = <strong>228 ч</strong> — полный курс.</p><p><strong>Инженер</strong> отвечает по максимуму → <code>score</code> = <strong>30</strong> → <code>level</code> (больше 20) = <strong>«Инженер»</strong>. Теперь действия по фазам разные: setup (фаза 0) — <code>skip</code> (0 ч), базовые фазы 1–2 — <code>skim</code> (половина часов), остальное — <code>focus</code>, а Capstone всегда <code>focus</code>. Итог: 228 − 8 (skip setup) − 6 (фаза 1: 12→6) − 8 (фаза 2: 16→8) = <strong>206 ч</strong>.</p><p>Один и тот же движок по баллу выдаёт и уровень, и план с часами. Ровно это упаковано в скилл <code>/find-your-level</code>.</p><h2>BUILD IT</h2><p>Под капотом курсовых онбординг-скиллов — два офлайн-движка без зависимостей (читай, запусти, поправь под себя):</p><ul><li><a href="#f-phases-00-setup-and-tooling-00-agent-and-skillkit-code-find-your-level-py"><code>code/find_your_level.py</code></a> — входной квиз: <code>score(answers)</code> суммирует веса, <code>level(total)</code> даёт уровень (Новичок/Практик/Инженер), <code>route(total)</code> строит план по 13 фазам с действием (focus/skim/skip) и часами.</li><li><a href="#f-phases-00-setup-and-tooling-00-agent-and-skillkit-code-check-understanding-py"><code>code/check_understanding.py</code></a> — квиз по фазе: <code>run_quiz(phase, answers)</code> считает результат, выдаёт вердикт и список уроков на повтор (банки готовы для контрольных фаз 1, 4, 8).</li></ul><pre><code>python code/find_your_level.py     # три профиля: новичок ~228 ч, практик ~218 ч, инженер ~206 ч
+python code/check_understanding.py
+pytest code -q</code></pre><p>Это и есть «персональный маршрут» в коде; ниже мы запустим то же самое как скилл прямо в агенте.</p><h2>USE IT</h2><ol><li><strong>Поставь агента.</strong> Claude Code ставится одной командой (официальный способ):</li></ol><pre><code>curl -fsSL https://claude.ai/install.sh | bash    # macOS/Linux/WSL; или: brew install --cask claude-code
+cd ai-native &amp;&amp; claude                            # запуск в своей папке курса</code></pre><p>(Cursor и Codex — альтернативы; формат скиллов у них общий.)</p><ol><li><strong>Подключи курсовые скиллы.</strong> Репозиторий ты не клонируешь, поэтому собери скилл из файлов на этой странице. В своей <code>ai-native/</code> создай папку <code>.claude/skills/find-your-level/</code> и положи в неё два файла — <code>SKILL.md</code> и <code>find_your_level.py</code> — взяв их внизу страницы, в <a href="#lesson-files">«Исходниках урока»</a>, кнопкой «Копировать». То же для <code>check-understanding</code>. Агент подхватит их сам по <code>description</code>. (Личные скиллы, общие для всех проектов, кладут в <code>~/.claude/skills/</code>.) <strong>Не хочешь возиться с файлами</strong> — движок уже у тебя из Build It: запусти <code>python code/find_your_level.py</code> и увидишь пример маршрута.</li></ol><ol><li><strong>Запусти онбординг прямо в агенте:</strong></li></ol><pre><code>/find-your-level          → ответь на 10 вопросов → получишь маршрут с часами
+/check-understanding 1     → после Фазы 1 → узнаешь, что повторить</code></pre><blockquote><strong>Врезка (2026): категории кодовых агентов.</strong> Claude Code — терминал и глубокий контекст; Cursor — IDE и инлайн-редактирование; Codex — облачный фоновый воркер; OpenClaw / Hermes — локальные персональные платформы (подробно в уроке 4.5). У каждого свой файл-инструкция проекта: <code>CLAUDE.md</code> (Claude Code), <code>AGENTS.md</code> (Codex), <code>.cursorrules</code> (Cursor) — но формат скиллов <code>SKILL.md</code> у них общий.</blockquote><p><strong>Безопасность.</strong> Ставь скиллы только из доверенных источников: скилл несёт инструкции и код, и вредоносный может направить агента не туда. Доки прямо предупреждают: «Use Skills only from trusted sources».</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Персональный маршрут с оценкой часов → <a href="#f-phases-00-setup-and-tooling-00-agent-and-skillkit-outputs-personal-route-md"><code>outputs/personal-route.md</code></a></p><p>Плюс два рабочих скилла: <a href="#f-claude-skills-find-your-level-skill-md"><code>.claude/skills/find-your-level</code></a> и <a href="#f-claude-skills-check-understanding-skill-md"><code>.claude/skills/check-understanding</code></a>. Маршрут — твой личный план прохождения курса; <code>/check-understanding</code> возвращается после ключевых фаз (1, 4, 8).</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Путать промпт и скилл.</strong> Промпт — разовая инструкция в одном разговоре; скилл — переиспользуемый навык, который подключается сам по описанию. Повторяешь одно и то же из чата в чат — заведи скилл.</li><li><strong>Слабый <code>description</code>.</strong> Агент решает подключить скилл именно по <code>description</code>. Если там не сказано, <strong>когда</strong> применять, скилл просто не сработает.</li><li><strong>Скилл из недоверенного источника.</strong> Скилл = инструкции + код; чужой непроверенный скилл — как запуск чужого софта. Бери только своё или от Anthropic.</li><li><strong>Проходить курс вслепую.</strong> Без <code>/find-your-level</code> легко утонуть в знакомом и пролететь важное. Сначала маршрут, потом учёба.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="0.3"></div><h2>Материалы</h2><ul><li><a href="https://code.claude.com/docs/en/overview" target="_blank" rel="noopener">Claude Code — overview</a> — что умеет агент и как его поставить.</li><li><a href="https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview" target="_blank" rel="noopener">Agent Skills — overview</a> — что такое <code>SKILL.md</code> и progressive disclosure.</li><li><a href="https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices" target="_blank" rel="noopener">Agent Skills — best practices</a> — как писать <code>description</code>, чтобы скилл срабатывал.</li><li><a href="https://github.com/anthropics/skills" target="_blank" rel="noopener">anthropics/skills</a> — публичные скиллы и шаблон для старта.</li><li><a href="https://www.anthropic.com/engineering/claude-code-best-practices" target="_blank" rel="noopener">Anthropic — Claude Code: Best practices for agentic coding</a> — рабочие приёмы: plan mode, CLAUDE.md как память, evidence over assertions, субагенты.</li><li><a href="https://simonwillison.net/2025/Oct/16/claude-skills/" target="_blank" rel="noopener">Simon Willison — «Claude Skills are awesome, maybe a bigger deal than MCP»</a> — зачем скиллы, почему это Markdown + progressive disclosure и чем отличаются от MCP.</li><li><a href="https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills" target="_blank" rel="noopener">Anthropic — Equipping agents with Agent Skills</a> — первоисточник «зачем скиллы»: онбординг-аналогия, структура <code>SKILL.md</code>, динамическая загрузка.</li><li><a href="https://cursor.com/docs" target="_blank" rel="noopener">Cursor — Docs</a> — агент-альтернатива из связки «Claude/Cursor/Codex»: правила, MCP, скиллы, CLI.</li><li><a href="https://developers.openai.com/codex" target="_blank" rel="noopener">OpenAI — Codex</a> — ещё одна агент-альтернатива: CLI-агент с MCP и sandbox.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><h3>Код урока (Build It)</h3><details class="filebox" id="f-phases-00-setup-and-tooling-00-agent-and-skillkit-code-check-understanding-py" open><summary><span class="fname">code/check_understanding.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Движок квиза /check-understanding — Build It (companion) урока 0.3.
+
+Офлайн, без зависимостей. По банку вопросов фазы считает результат, выдаёт
+вердикт и список уроков на повтор по неверным ответам. Банки готовы для
+контрольных точек курса — фаз 1, 4 и 8.
+"""
+from __future__ import annotations
+
+# Для каждой фазы — список вопросов {q, options, correct (индекс), lesson}.
+BANKS = {
+    1: [
+        {"q": "Что модель видит на входе?",
+         "options": ["слова", "символы", "токены", "байты"], "correct": 2, "lesson": "1.1"},
+        {"q": "За что выставляется счёт API?",
+         "options": ["за запросы", "за токены (вход+выход)", "за время", "за символы"],
+         "correct": 1, "lesson": "1.1"},
+        {"q": "Температура 0 даёт…",
+         "options": ["случайность", "самый вероятный токен", "ошибку", "длинный ответ"],
+         "correct": 1, "lesson": "1.3"},
+        {"q": "top-p (nucleus) отсекает кандидатов…",
+         "options": ["по числу токенов", "по сумме вероятностей", "по длине", "по алфавиту"],
+         "correct": 1, "lesson": "1.3"},
+        {"q": "Галлюцинация — это…",
+         "options": ["сбой сети", "уверенно неверный ответ", "превышение лимита", "таймаут"],
+         "correct": 1, "lesson": "1.4"},
+    ],
+    4: [
+        {"q": "Что в SKILL.md решает, когда грузить скилл?",
+         "options": ["имя файла", "frontmatter description (триггеры)", "размер", "автор"],
+         "correct": 1, "lesson": "4.1"},
+        {"q": "Зачем агенту память?",
+         "options": ["ускорить сеть", "хранить контекст между сессиями", "сжать модель", "рисовать графики"],
+         "correct": 1, "lesson": "4.2"},
+        {"q": "Проект (workspace) — это…",
+         "options": ["только модель", "system prompt + база знаний", "датасет", "GPU"],
+         "correct": 1, "lesson": "4.3"},
+        {"q": "Контекст-инжиниринг — это про…",
+         "options": ["шрифты", "что и в каком порядке класть в окно под бюджет", "скорость диска", "тему"],
+         "correct": 1, "lesson": "4.4"},
+        {"q": "Что грузится в контекст по описанию скилла?",
+         "options": ["все скиллы сразу", "только релевантный (progressive disclosure)", "ничего", "случайный"],
+         "correct": 1, "lesson": "4.1"},
+    ],
+    8: [
+        {"q": "Паттерн orchestrator-workers — это…",
+         "options": ["один агент на всё", "lead раздаёт подзадачи субагентам и сводит", "база данных", "кэш"],
+         "correct": 1, "lesson": "8.1"},
+        {"q": "Для чего нужен A2A?",
+         "options": ["агент ↔ инструменты", "агент ↔ агент (карточки + задачи)", "сжатие", "логирование"],
+         "correct": 1, "lesson": "8.2"},
+        {"q": "Чем MCP отличается от A2A?",
+         "options": ["ничем", "MCP: агент↔инструменты, A2A: агент↔агент", "оба про БД", "оба про UI"],
+         "correct": 1, "lesson": "8.2"},
+        {"q": "Главный риск общего контекста мульти-агентов?",
+         "options": ["скорость", "конфликты записи", "цвет", "шрифт"],
+         "correct": 1, "lesson": "8.3"},
+        {"q": "Мульти-агент по токенам обычно…",
+         "options": ["дешевле", "дороже в разы (4–15×)", "бесплатно", "так же"],
+         "correct": 1, "lesson": "8.1"},
+    ],
+}
+
+PASS_THRESHOLD = 0.8
+
+
+def grade(answers, bank) -&gt; dict:
+    """answers: список выбранных индексов. Возвращает результат и список повтора."""
+    assert len(answers) == len(bank), "нужен ответ на каждый вопрос"
+    correct = sum(a == q["correct"] for a, q in zip(answers, bank))
+    review = sorted({q["lesson"] for a, q in zip(answers, bank) if a != q["correct"]})
+    s = correct / len(bank)
+    return {
+        "correct": correct, "total": len(bank), "score": round(s, 2),
+        "verdict": "сдано" if s &gt;= PASS_THRESHOLD else "повторить",
+        "review_lessons": review,
+    }
+
+
+def run_quiz(phase: int, answers) -&gt; dict:
+    if phase not in BANKS:
+        raise KeyError(f"нет банка вопросов для фазы {phase}")
+    return grade(answers, BANKS[phase])
+
+
+if __name__ == "__main__":
+    bank = BANKS[1]
+    perfect = [q["correct"] for q in bank]
+    print("Все верно:", run_quiz(1, perfect))
+    mixed = perfect.copy(); mixed[0] = (mixed[0] + 1) % 4
+    print("Одна ошибка:", run_quiz(1, mixed))
+</code></pre></details><details class="filebox" id="f-phases-00-setup-and-tooling-00-agent-and-skillkit-code-find-your-level-py" open><summary><span class="fname">code/find_your_level.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Движок входного квиза /find-your-level — Build It для урока 0.3.
+
+Без зависимостей и офлайн. 10 вопросов с весами (0..3 за вопрос), по сумме
+баллов определяет уровень студента и строит персональный маршрут по курсу с
+оценкой часов. Тот же движок упакован в скилл (см. outputs/ и .claude/skills/).
+"""
+from __future__ import annotations
+
+# Каждый вопрос: текст + варианты (label, score 0..3).
+QUESTIONS = [
+    {"q": "Python",            "options": [("не писал", 0), ("скрипты по примеру", 1), ("свои функции/модули", 2), ("пакеты, тесты, типы", 3)]},
+    {"q": "Терминал/Linux",    "options": [("боюсь", 0), ("базовые команды", 1), ("env, pipes, процессы", 2), ("свободно", 3)]},
+    {"q": "git",               "options": [("нет", 0), ("commit/push", 1), ("ветки/merge", 2), ("rebase/CI", 3)]},
+    {"q": "Вызов LLM API",     "options": [("никогда", 0), ("через UI", 1), ("пару раз кодом", 2), ("в проде", 3)]},
+    {"q": "Промптинг",         "options": [("интуитивно", 0), ("знаю few-shot", 1), ("CoT, форматы", 2), ("делаю eval", 3)]},
+    {"q": "RAG/эмбеддинги",    "options": [("что это", 0), ("слышал", 1), ("пробовал", 2), ("строил", 3)]},
+    {"q": "Агенты/tool use",   "options": [("нет", 0), ("читал", 1), ("запускал", 2), ("писал свои", 3)]},
+    {"q": "MCP",               "options": [("впервые слышу", 0), ("знаю идею", 1), ("подключал", 2), ("писал сервер", 3)]},
+    {"q": "SQL/аналитика",     "options": [("нет", 0), ("простые SELECT", 1), ("джоины/окна", 2), ("свободно", 3)]},
+    {"q": "Стоимость/FinOps",  "options": [("не думал", 0), ("примерно", 1), ("считаю токены", 2), ("оптимизирую роутингом", 3)]},
+]
+
+# (id, название, базовые часы) — сумма = 228 (см. README / ROADMAP, дорожная карта).
+PHASES = [
+    (0, "Setup &amp; Tooling", 8), (1, "Как работают LLM", 12), (2, "Промпт-инжиниринг", 16),
+    (3, "Текст и документы", 18), (4, "Скиллы, память, проекты", 20), (5, "Данные и аналитика", 18),
+    (6, "Инструменты и MCP", 18), (7, "Agent Engineering", 26), (8, "Мульти-агенты", 18),
+    (9, "FinOps", 14), (10, "Production", 16), (11, "Этика и governance", 14), (12, "Capstone", 30),
+]
+
+_FACTOR = {"focus": 1.0, "skim": 0.5, "skip": 0.0}
+
+
+def score(answers) -&gt; int:
+    """Сумма баллов по выбранным индексам (0..3 за вопрос). Диапазон 0..30."""
+    assert len(answers) == len(QUESTIONS), "нужен ответ на каждый вопрос"
+    return sum(QUESTIONS[i]["options"][choice][1] for i, choice in enumerate(answers))
+
+
+def level(total: int) -&gt; str:
+    if total &lt; 10:
+        return "Новичок"
+    if total &lt;= 20:
+        return "Практик"
+    return "Инженер"
+
+
+def _action(lvl: str, pid: int) -&gt; str:
+    """Что делать с фазой при данном уровне. Capstone всегда focus."""
+    if pid == 12:
+        return "focus"
+    if lvl == "Новичок":
+        return "focus"
+    if lvl == "Практик":
+        return "skim" if pid in (0, 1) else "focus"   # уже знает setup и базу LLM
+    # Инженер
+    if pid == 0:
+        return "skip"
+    return "skim" if pid in (1, 2) else "focus"
+
+
+def route(total: int) -&gt; dict:
+    """Персональный маршрут: действие и часы по каждой фазе + итог по часам."""
+    lvl = level(total)
+    plan, hours = [], 0.0
+    for pid, name, base in PHASES:
+        action = _action(lvl, pid)
+        h = base * _FACTOR[action]
+        hours += h
+        plan.append({"phase": pid, "name": name, "action": action, "hours": h})
+    return {"level": lvl, "score": total, "total_hours": hours, "plan": plan}
+
+
+if __name__ == "__main__":
+    for answers, who in [([0] * 10, "новичок"), ([2] * 10, "практик"), ([3] * 10, "инженер")]:
+        r = route(score(answers))
+        print(f"{who}: {r['level']}, балл {r['score']}, ~{r['total_hours']:.0f} ч")
+</code></pre></details><details class="filebox" id="f-phases-00-setup-and-tooling-00-agent-and-skillkit-code-test-onboarding-py" open data-test="1"><summary><span class="fname">code/test_onboarding.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from find_your_level import QUESTIONS, PHASES, score, level, route
+from check_understanding import run_quiz, BANKS
+
+
+def test_score_range_and_levels():
+    assert score([0] * len(QUESTIONS)) == 0
+    assert score([3] * len(QUESTIONS)) == 30
+    assert level(9) == "Новичок"
+    assert level(10) == "Практик"
+    assert level(20) == "Практик"
+    assert level(21) == "Инженер"
+
+
+def test_route_beginner_is_full_228h():
+    r = route(score([0] * len(QUESTIONS)))
+    assert r["level"] == "Новичок"
+    assert r["total_hours"] == 228        # сумма базовых часов = README / ROADMAP
+    assert all(p["action"] == "focus" for p in r["plan"])
+
+
+def test_route_engineer_is_shorter_but_keeps_capstone():
+    r = route(score([3] * len(QUESTIONS)))
+    assert r["level"] == "Инженер"
+    assert r["total_hours"] &lt; 228
+    plan = {p["phase"]: p["action"] for p in r["plan"]}
+    assert plan[0] == "skip"        # инженер пропускает setup
+    assert plan[12] == "focus"      # capstone делают все
+    assert len(r["plan"]) == len(PHASES) == 13
+
+
+def test_check_understanding_all_correct():
+    bank = BANKS[1]
+    res = run_quiz(1, [q["correct"] for q in bank])
+    assert res["verdict"] == "сдано"
+    assert res["review_lessons"] == []
+
+
+def test_check_understanding_flags_review_lessons():
+    bank = BANKS[1]
+    answers = [(q["correct"] + 1) % len(q["options"]) for q in bank]  # все мимо
+    res = run_quiz(1, answers)
+    assert res["verdict"] == "повторить"
+    assert "1.1" in res["review_lessons"]
+
+
+def test_check_understanding_has_key_phase_banks():
+    # квизы готовы для контрольных точек курса: фазы 1, 4, 8
+    for phase in (1, 4, 8):
+        assert phase in BANKS and len(BANKS[phase]) &gt;= 5
+        bank = BANKS[phase]
+        res = run_quiz(phase, [q["correct"] for q in bank])
+        assert res["verdict"] == "сдано" and res["review_lessons"] == []
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-00-setup-and-tooling-00-agent-and-skillkit-outputs-personal-route-md" open><summary><span class="fname">outputs/personal-route.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: персональный маршрут по курсу
+
+Результат прохождения `/find-your-level` — твой план обучения. Ниже **пример** для профиля «Практик» (балл 11). Свой маршрут получи через скилл или движок [`code/find_your_level.py`](../code/find_your_level.py).
+
+## Пример: Практик · балл 11 · ~218 ч
+
+| Фаза | Название | Действие | Часы |
+|---|---|---|---|
+| 0 | Setup &amp; Tooling | skim | 4 |
+| 1 | Как работают LLM | skim | 6 |
+| 2 | Промпт-инжиниринг | focus | 16 |
+| 3 | Текст и документы | focus | 18 |
+| 4 | Скиллы, память, проекты | focus | 20 |
+| 5 | Данные и аналитика | focus | 18 |
+| 6 | Инструменты и MCP | focus | 18 |
+| 7 | Agent Engineering | focus | 26 |
+| 8 | Мульти-агенты | focus | 18 |
+| 9 | FinOps | focus | 14 |
+| 10 | Production | focus | 16 |
+| 11 | Этика и governance | focus | 14 |
+| 12 | Capstone | focus | 30 |
+
+**Действия:** `focus` — проходить подробно; `skim` — пролистать (≈половина часов); `skip` — пропустить.
+
+## Как сгенерировать свой
+
+```bash
+# из code/ урока 0.3 или из .claude/skills/find-your-level/
+python -c "import find_your_level as f, json; \
+print(json.dumps(f.route(f.score([2,2,1,1,1,1,1,0,1,1])), ensure_ascii=False, indent=2))"
+```
+
+Замени список индексов на свои ответы (по одному `0..3` на каждый из 10 вопросов). После ключевых фаз прогоняй `/check-understanding &lt;phase&gt;`, чтобы свериться.
+</code></pre></details><h3>Связанные файлы</h3><details class="filebox" id="f-claude-skills-find-your-level-skill-md" open><summary><span class="fname">.claude/skills/find-your-level/SKILL.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>---
+name: find-your-level
+description: "Входной квиз курса AI Native: оценивает уровень студента и строит персональный маршрут по 13 фазам с оценкой часов. Триггеры: «/find-your-level», «найди мой уровень», «с чего начать курс», «составь маршрут обучения», начало прохождения курса."
+---
+
+# find-your-level — входной квиз и персональный маршрут
+
+Помогает студенту понять, что в курсе пройти подробно, что пролистать, а что пропустить, и сколько это займёт часов.
+
+## Как проводить
+
+1. Задай студенту **10 вопросов** из `find_your_level.py` (`QUESTIONS`). Для каждого покажи варианты с номерами `0..3` и попроси выбрать.
+2. Собери ответы как список индексов, например `[1, 2, 0, ...]` (по одному на вопрос).
+3. Посчитай результат движком (детерминированный, офлайн):
+
+```bash
+python -c "import find_your_level as f; import json; print(json.dumps(f.route(f.score([1,2,0,1,1,0,0,0,1,1])), ensure_ascii=False, indent=2))"
+```
+
+4. Покажи студенту: **уровень** (Новичок/Практик/Инженер), **итог по часам** и **план по фазам** (focus / skim / skip).
+5. Предложи сохранить результат как `outputs/personal-route.md` в его проекте.
+
+## Логика (из движка)
+
+- Баллы 0..30 → уровень: `&lt;10` Новичок, `10..20` Практик, `&gt;20` Инженер.
+- Маршрут: Новичок — всё focus (~228 ч); Практик — листает Фазы 0–1 (~218 ч); Инженер — пропускает Фазу 0, листает 1–2 (~206 ч). Capstone (Фаза 12) делают все.
+
+## Файлы
+
+- `find_your_level.py` — движок (`QUESTIONS`, `score`, `level`, `route`). Кросс-платформенно: Claude Code / Cursor / Codex.
+</code></pre></details><details class="filebox" id="f-claude-skills-check-understanding-skill-md" open><summary><span class="fname">.claude/skills/check-understanding/SKILL.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>---
+name: check-understanding
+description: "Квиз по фазе курса AI Native: проверяет понимание после ключевых фаз (1, 4, 8), даёт вердикт и список уроков на повтор. Триггеры: «/check-understanding &lt;phase&gt;», «проверь понимание фазы N», «квиз по фазе», «что повторить»."
+---
+
+# check-understanding — квиз по фазе
+
+Контроль знаний без преподавателя: после фазы студент отвечает на вопросы, получает вердикт (сдано/повторить) и точечный список уроков на повтор.
+
+## Аргумент
+
+Номер фазы, напр. `1`. Банки вопросов лежат в `check_understanding.py` (`BANKS`). Готовы банки контрольных точек курса — фаз **1, 4, 8**; другие фазы добавляются дописыванием `BANKS[&lt;phase&gt;]`.
+
+## Как проводить
+
+1. Возьми банк фазы: `BANKS[phase]`. Задай вопросы, для каждого покажи варианты с номерами и попроси выбрать индекс.
+2. Собери ответы как список индексов и посчитай результат:
+
+```bash
+python -c "import check_understanding as c; import json; print(json.dumps(c.run_quiz(1,[2,1,1,1,1]), ensure_ascii=False))"
+```
+
+3. Покажи: `score`, `verdict` (порог сдачи 80%), и `review_lessons` — какие уроки повторить по неверным ответам.
+
+## Файлы
+
+- `check_understanding.py` — движок (`BANKS`, `grade`, `run_quiz`). Чтобы добавить фазу — допиши `BANKS[&lt;phase&gt;]` списком вопросов `{q, options, correct, lesson}`.
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~2 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/accounts-keys-env/"><small>← 0.2</small>Аккаунты, тарифы, API-ключи, окружение</a><a href="../../lessons/course-conventions/" style="text-align:right"><small>0.4 →</small>Соглашения курса</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

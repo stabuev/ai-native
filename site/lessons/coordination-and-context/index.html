@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>8.3 Координация и контекст — AI Native</title>
+  <meta name="description" content="Несколько агентов над одним состоянием — это про передачу контекста и предотвращение конфликтов.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/coordination-and-context/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="8.3 Координация и контекст — AI Native">
+  <meta property="og:description" content="Несколько агентов над одним состоянием — это про передачу контекста и предотвращение конфликтов.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/coordination-and-context/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="8.3">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 8.3 · Координация и контекст</h1><p><strong>Фаза 8 — Мульти-агенты и оркестрация</strong> · <strong>Результат фазы:</strong> Построить мульти-агентный процесс с оркестратором и передачей контекста.</p><p><strong>Requires (только для USE IT):</strong> платный API-ключ одного из провайдеров. BUILD IT работает офлайн, без ключей и без сети.</p><p><strong>Оркестратор раздал роли (8.1), агенты нашли друг друга (8.2). Но они работают над общим результатом — и тут начинаются конфликты.</strong> У одиночного агента такой проблемы нет; у команды — есть. Этот урок про общее состояние и предотвращение конфликтов.</p><blockquote><strong>MOTTO.</strong> Несколько агентов над одним состоянием — это про передачу контекста и предотвращение конфликтов.</blockquote><h2>PROBLEM</h2><p>Когда несколько субагентов пишут в общий результат, появляются две беды, которых нет у одиночки:</p><ul><li><strong>конфликты</strong> — двое записали один и тот же ключ по-разному (<code>researcher</code> положил факты, <code>rogue</code>-агент их перезаписал своими);</li><li><strong>потеря контекста</strong> — агент не видит, что уже сделал другой, и дублирует или противоречит.</li></ul><p>Без координации мульти-агентный процесс выдаёт несогласованный результат: каждый работал «правильно», а вместе вышел разнобой. Нужно общее состояние, видимое всем, и правило, которое <strong>замечает</strong> конфликтную запись. Соберём такой общий контекст.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Это <strong>общая доска (blackboard)</strong>, на которой работает команда. Каждый пишет на доску свой результат и читает, что написали другие, — поэтому <code>writer</code> видит факты <code>researcher</code> и строит на них. Но если двое пишут в одну клетку разное, доску надо не молча затирать, а <strong>зафиксировать спор</strong>: кто, что, поверх чего. Тогда ведущий (lead) увидит конфликт и разрешит его, а не отдаст наружу случайную из двух версий.</p><p>Anthropic в своём мульти-агентном ресёрче сводит результаты субагентов именно через <strong>общее хранилище</strong> (краткие выжимки), а не пересылкой длинных чат-ответов, и реконсилирует их у lead-агента.</p><h3>Как это работает</h3><pre><code>        SharedContext (blackboard)
+   agent1 ─ write(facts, ...) ┐
+   agent2 ─ read(facts) ──────┤  состояние видно всем
+   agent3 ─ write(facts, ...) ┘  ← конфликт, если ДРУГОЙ агент пишет ДРУГОЕ значение</code></pre><ul><li><code>write(key, value, agent)</code> — записать в общее состояние с автором; если ключ уже занят <strong>другим</strong> агентом и значение <strong>другое</strong> → зафиксировать запись в <code>conflicts</code> (но всё равно записать — детекция, не блокировка).</li><li><code>read(key)</code> — прочитать общее состояние (так контекст передаётся между агентами).</li><li><code>run_process(steps)</code> — прогнать агентов <code>[(name, fn)]</code> над одним контекстом.</li></ul><p>Важно, что считать конфликтом: <strong>тот же агент</strong> переписывает свой ключ — норма (он уточняет себя); <strong>другой агент, но то же значение</strong> — тоже норма (согласие). Конфликт — только когда <strong>другой автор кладёт другое значение</strong>: это и есть несогласованность, которую нельзя терять.</p><h3>Как разрешают конфликт</h3><p>Разделяй два уровня. <strong>Детекция</strong> — это механизм: дёшево, детерминированно, доска просто замечает спор (наш <code>SharedContext</code>). <strong>Разрешение</strong> — это политика: зависит от задачи, и единственно верной нет. Поэтому доска фиксирует конфликт, но не решает его сама — решает резолвер (обычно lead). Типовые стратегии:</p><ul><li><strong>Last-write-wins</strong> — побеждает последняя запись. Так делает наш <code>data</code> по умолчанию: просто, но <strong>молча теряет</strong> работу первого автора. Годится для идемпотентных/неважных ключей, опасно для содержательных.</li><li><strong>Приоритет роли</strong> — у авторов ранг: запись <code>researcher</code> бьёт запись случайного <code>rogue</code>. Детерминированно и дёшево, если иерархия ролей ясна.</li><li><strong>Кворум/голосование</strong> — если значение независимо подтвердили ≥N агентов, берём его. Гасит одиночный сбойный голос, но дороже (нужно несколько мнений).</li><li><strong>Эскалация к lead</strong> — lead-агент (LLM) смотрит обе версии и решает или <strong>сливает</strong> их (<code>["A","B"]</code> + <code>["X"]</code> → <code>["A","B","X"]</code>). Самый гибкий и самый дорогой; для этого и нужна полная запись спора (<code>old</code>/<code>new</code>/<code>by</code>/<code>prev_by</code>).</li></ul><p>Выбор стратегии — часть дизайна процесса, как и выбор guardrail в 7.3. Дешёвые правила (приоритет роли) — для рутины; эскалация к lead — там, где цена ошибки высока.</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Прогоним процесс из трёх агентов над общим контекстом:</p><pre><code>1. researcher: write("facts", ["A","B"], "researcher")
+   data = {facts: ["A","B"]}   writers = {facts: researcher}
+
+2. writer: read("facts") → ["A","B"] (видит чужой результат!)
+            write("draft", "черновик по 2 фактам", "writer")
+   data = {facts:["A","B"], draft:"черновик по 2 фактам"}
+
+3. rogue: write("facts", ["X"], "rogue")
+   ключ facts занят (researcher), значение другое (["A","B"] ≠ ["X"]), автор другой
+   → КОНФЛИКТ: {key:facts, old:["A","B"], new:["X"], by:rogue, prev_by:researcher}
+   data = {facts:["X"], ...}   (значение перезаписано, но спор зафиксирован)</code></pre><p>Видно обе механики. <strong>Передача контекста</strong>: <code>writer</code> не работает с нуля — он прочитал факты <code>researcher</code> и построил на них. <strong>Детекция конфликта</strong>: <code>rogue</code> перезаписал чужой ключ другим значением — это попало в <code>conflicts</code> с полной историей (кто, что, поверх чего), чтобы lead мог разрешить. А если бы <code>rogue</code> записал те же <code>["A","B"]</code> или это был сам <code>researcher</code> — конфликта бы не было.</p><p>Теперь приложим к этому спору (<code>["A","B"]</code> от <code>researcher</code> против <code>["X"]</code> от <code>rogue</code>) разные <strong>стратегии разрешения</strong> — и увидим, что они дают разный итог:</p><pre><code>last-write-wins  → ["X"]            (что и лежит в data; работа researcher потеряна)
+приоритет роли   → ["A","B"]        (researcher старше rogue → его версия)
+эскалация к lead → ["A","B","X"]    (lead решил слить обе)</code></pre><p>Это и есть граница урока: доска <strong>детектит</strong> одинаково, а итог зависит от выбранной <strong>политики</strong>. Наш <code>SharedContext</code> по умолчанию делает last-write-wins для <code>data</code>, но сохраняет запись спора — поэтому резолвер (lead) может переопределить результат любой из стратегий выше.</p><h2>BUILD IT</h2><p><strong>Задание: собери общий контекст с детекцией конфликтов</strong> — blackboard для команды агентов. Только стандартная библиотека, без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/8.3-coordination/</code>), а файлы урока клади в подпапку <code>code/</code> (как в 0.1). Нужен только <strong>Python 3</strong> (для теста ещё <code>pytest</code>).</blockquote><p>Создай файл <code>coordination.py</code>:</p><ul><li><strong><code>SharedContext</code></strong> — поля <code>data</code> (значения), <code>writers</code> (автор по ключу), <code>conflicts</code> (список).</li><li><strong><code>write(key, value, agent)</code></strong> — если ключ уже в <code>data</code>, автор был <strong>другой</strong> и значение <strong>другое</strong> → добавить в <code>conflicts</code> запись <code>{key, old, new, by, prev_by}</code>. В любом случае записать <code>data[key]=value</code>, <code>writers[key]=agent</code>.</li><li><strong><code>read(key, default=None)</code></strong> — вернуть значение или <code>default</code>.</li><li><strong><code>run_process(steps, ctx=None)</code></strong> — <code>steps</code> это <code>[(name, fn)]</code>; создать контекст (если не передан), вызвать каждый <code>fn(ctx, name)</code>, вернуть контекст.</li></ul><p><strong>Готово, когда</strong> все тесты в <code>test_coordination.py</code> зелёные — они проверяют: <code>write</code>/<code>read</code> (с дефолтом); конфликт при кросс-агентной перезаписи другим значением (с <code>by</code>/<code>prev_by</code>); НЕ конфликт при том же агенте или том же значении; <code>run_process</code> передаёт контекст между агентами (<code>consumer</code> видит <code>producer</code>).</p><pre><code>pytest code -q          # красное → реализуй SharedContext → зелёное
+python code/coordination.py # демо: researcher→writer→rogue, конфликт по facts</code></pre><p><strong>Подсказка.</strong> Условие конфликта — ровно три «и»: <code>key in data</code> <strong>и</strong> <code>writers[key] != agent</code> <strong>и</strong> <code>data[key] != value</code>. Запись делается всегда; конфликт лишь фиксируется.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>Прогон мульти-агентного процесса в проде = оркестратор (8.1) + discovery (8.2) + общий контекст (мульти-провайдер):</p><ul><li><strong>Shared memory store</strong> — субагенты пишут краткие <strong>выжимки</strong> в общее хранилище, а lead их сводит (как у Anthropic), вместо пересылки длинных ответов между агентами.</li><li><strong>Изолированные контексты субагентов</strong> (Claude Code) + явная передача только нужного — меньше context rot (4.4): на доску кладут результат, а не весь свой процесс.</li><li><strong>Реконсиляция у lead</strong> — единая точка сборки и разрешения конфликтов: доска фиксирует спор, lead решает, чья версия верна.</li></ul><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Рабочий мульти-агентный процесс → <a href="#f-phases-08-multi-agent-orchestration-08-coordination-and-context-outputs-multi-agent-process-py"><code>outputs/multi_agent_process.py</code></a></p><p>Сквозной процесс: оркестратор раздаёт роли, субагенты пишут в общий контекст, конфликты детектируются, lead сводит результат. Дальше — последний вопрос фазы: когда всё это собирать фреймворком, а когда no-code (8.4).</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Молча затирать чужую запись.</strong> Если <code>rogue</code> перезаписал факты и никто не заметил, наружу уйдёт случайная версия. Конфликт надо <strong>фиксировать</strong> (кто, что, поверх чего), а не терять.</li><li><strong>Считать любую перезапись конфликтом.</strong> Тот же агент, уточняющий свой ключ, или другой агент с тем же значением — это норма, не спор. Конфликт — только другой автор + другое значение.</li><li><strong>Пересылать между агентами длинные ответы.</strong> Это раздувает контекст. Субагенты кладут на доску краткие выжимки, lead сводит — так дешевле и чище (как у Anthropic).</li><li><strong>Нет единой точки реконсиляции.</strong> Без lead, который разрешает конфликты, несогласованность дойдёт до пользователя. Доска детектит, lead решает — это разные роли.</li><li><strong>Блокировать запись вместо детекции.</strong> Жёсткий лок усложняет процесс и плодит дедлоки. Проще зафиксировать конфликт и разрешить его на сборке у lead.</li><li><strong>Брать last-write-wins для содержательных ключей.</strong> Удобный дефолт молча теряет работу первого автора. Под важные данные выбирай стратегию осознанно — приоритет роли, кворум или эскалацию к lead (как guardrail в 7.3).</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="8.3"></div><h2>Материалы</h2><ul><li><a href="https://www.anthropic.com/engineering/multi-agent-research-system" target="_blank" rel="noopener">Anthropic — Multi-agent research system</a> — shared memory и реконсиляция результатов.</li><li><a href="https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents" target="_blank" rel="noopener">Anthropic — Effective context engineering</a> — управление контекстом на длинных горизонтах.</li><li><a href="https://code.claude.com/docs/en/sub-agents" target="_blank" rel="noopener">Claude Code — Subagents</a> — изоляция контекста субагентов.</li><li><a href="https://en.wikipedia.org/wiki/Blackboard_system" target="_blank" rel="noopener">Blackboard system (Wikipedia)</a> — классическая архитектура: общий blackboard + knowledge sources + control (ровно Build It урока; истоки — Hearsay-II, 1970-е).</li><li><a href="https://arxiv.org/abs/2501.06322" target="_blank" rel="noopener">Tran et al., 2025 — Multi-Agent Collaboration Mechanisms: A Survey</a> — таксономия координации: типы, структуры (централизованная/распределённая), протоколы.</li><li><a href="https://docs.langchain.com/oss/python/langgraph/graph-api" target="_blank" rel="noopener">LangGraph — Graph API (shared state)</a> — состояние-«blackboard» + reducers: слияние правок без конфликтов.</li><li><a href="https://arxiv.org/abs/2507.01701" target="_blank" rel="noopener">Han &amp; Zhang, 2025 — Advanced LLM MAS Based on Blackboard Architecture</a> — blackboard в LLM-MAS: агенты делят всю информацию в ходе решения.</li><li><a href="https://arxiv.org/abs/2510.01285" target="_blank" rel="noopener">Salemi et al., 2025 — LLM-based Multi-Agent Blackboard System</a> — субагенты сами вызываются на запрос к blackboard (vs master-slave), меньше фрагментации.</li><li><a href="https://medium.com/@bharatraj1918/langgraph-state-management-part-1-how-langgraph-manages-state-for-multi-agent-workflows-da64d352c43b" target="_blank" rel="noopener">LangGraph State Management for Multi-Agent (Medium)</a> — практика управления общим состоянием.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-08-multi-agent-orchestration-08-coordination-and-context-code-test-coordination-py" open data-test="1"><summary><span class="fname">code/test_coordination.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from coordination import SharedContext, run_process
+
+
+def test_write_read():
+    ctx = SharedContext()
+    ctx.write("k", 1, "a")
+    assert ctx.read("k") == 1
+    assert ctx.read("missing", "def") == "def"
+
+
+def test_conflict_detected_on_cross_agent_overwrite():
+    ctx = SharedContext()
+    ctx.write("facts", ["A"], "agent1")
+    ctx.write("facts", ["X"], "agent2")          # другой агент, другое значение
+    assert len(ctx.conflicts) == 1
+    assert ctx.conflicts[0]["by"] == "agent2" and ctx.conflicts[0]["prev_by"] == "agent1"
+
+
+def test_no_conflict_same_agent_or_same_value():
+    ctx = SharedContext()
+    ctx.write("k", 1, "a")
+    ctx.write("k", 2, "a")                        # тот же агент → не конфликт
+    ctx.write("k", 2, "b")                        # другой агент, но то же значение → не конфликт
+    assert ctx.conflicts == []
+
+
+def test_process_passes_context_between_agents():
+    def producer(ctx, me):
+        ctx.write("facts", ["A", "B"], me)
+
+    def consumer(ctx, me):
+        ctx.write("draft", len(ctx.read("facts")), me)
+
+    ctx = run_process([("producer", producer), ("consumer", consumer)])
+    assert ctx.read("draft") == 2                 # consumer увидел контекст producer'а
+    assert ctx.conflicts == []
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-08-multi-agent-orchestration-08-coordination-and-context-code-coordination-py"><summary><span class="fname">code/coordination.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Координация и контекст — Build It для урока 8.3.
+
+Без зависимостей. Несколько агентов работают над общим состоянием (blackboard):
+читают и пишут разделяемый контекст. Главная опасность мульти-агентности —
+конфликты записи; здесь они детектируются. Так оркестрация (8.1) и A2A (8.2)
+превращаются в связный процесс с передачей состояния.
+"""
+
+
+class SharedContext:
+    """Общий контекст (blackboard) с отслеживанием авторов и конфликтов записи."""
+
+    def __init__(self):
+        self.data = {}
+        self.writers = {}
+        self.conflicts = []
+
+    def write(self, key, value, agent):
+        # конфликт: другой агент уже записал в этот ключ ДРУГОЕ значение
+        if key in self.data and self.writers[key] != agent and self.data[key] != value:
+            self.conflicts.append({
+                "key": key, "old": self.data[key], "new": value,
+                "by": agent, "prev_by": self.writers[key],
+            })
+        self.data[key] = value
+        self.writers[key] = agent
+
+    def read(self, key, default=None):
+        return self.data.get(key, default)
+
+
+def run_process(steps, ctx=None):
+    """steps: list[(agent_name, fn(ctx))]. Прогоняет агентов над общим контекстом."""
+    ctx = ctx or SharedContext()
+    for name, fn in steps:
+        fn(ctx, name)
+    return ctx
+
+
+if __name__ == "__main__":
+    def researcher(ctx, me):
+        ctx.write("facts", ["A", "B"], me)
+
+    def writer(ctx, me):
+        ctx.write("draft", f"черновик по {len(ctx.read('facts'))} фактам", me)
+
+    def rogue(ctx, me):
+        ctx.write("facts", ["X"], me)            # перезапишет facts — конфликт
+
+    ctx = run_process([("researcher", researcher), ("writer", writer), ("rogue", rogue)])
+    print("data:", ctx.data)
+    print("conflicts:", ctx.conflicts)
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-08-multi-agent-orchestration-08-coordination-and-context-outputs-multi-agent-process-py" open><summary><span class="fname">outputs/multi_agent_process.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""multi_agent_process.py — артефакт урока 8.3: сквозной мульти-агентный процесс.
+
+Самодостаточно, без зависимостей. Объединяет Фазу 8: оркестратор раздаёт роли
+субагентам, субагенты пишут в общий контекст (с детекцией конфликтов), lead сводит
+результат. В проде субагенты — это LLM-агенты (Claude subagents / Agent SDK).
+
+Запуск:  python multi_agent_process.py
+"""
+
+
+class SharedContext:
+    """Общий blackboard с авторами записей и детекцией конфликтов."""
+
+    def __init__(self):
+        self.data, self.writers, self.conflicts = {}, {}, []
+
+    def write(self, key, value, agent):
+        if key in self.data and self.writers[key] != agent and self.data[key] != value:
+            self.conflicts.append({"key": key, "by": agent, "prev_by": self.writers[key]})
+        self.data[key] = value
+        self.writers[key] = agent
+
+    def read(self, key, default=None):
+        return self.data.get(key, default)
+
+
+# --- субагенты-роли (в проде — LLM-агенты со своим контекстом) ---
+def researcher(ctx, me):
+    ctx.write("facts", ["возврат 14 дней", "гарантия 12 мес"], me)
+
+
+def writer(ctx, me):
+    facts = ctx.read("facts", [])
+    ctx.write("draft", f"Памятка по {len(facts)} пунктам: " + "; ".join(facts), me)
+
+
+def reviewer(ctx, me):
+    draft = ctx.read("draft", "")
+    ctx.write("review", "ок" if "14 дней" in draft else "проверить факты", me)
+
+
+def orchestrate(steps):
+    """Lead: прогоняет субагентов над общим контекстом и сводит результат."""
+    ctx = SharedContext()
+    for name, fn in steps:
+        fn(ctx, name)
+    return {"result": ctx.read("draft"), "review": ctx.read("review"),
+            "conflicts": ctx.conflicts}
+
+
+if __name__ == "__main__":
+    out = orchestrate([("researcher", researcher), ("writer", writer), ("reviewer", reviewer)])
+    print("Результат :", out["result"])
+    print("Ревью     :", out["review"])
+    print("Конфликты :", out["conflicts"] or "нет")
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~5 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/a2a-and-server-cards/"><small>← 8.2</small>A2A и MCP Server Cards</a><a href="../../lessons/frameworks-vs-nocode/" style="text-align:right"><small>8.4 →</small>Оркестрация: фреймворки vs no-code</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

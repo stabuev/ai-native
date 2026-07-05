@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>9.3 Паттерны экономии — AI Native</title>
+  <meta name="description" content="Сначала дёшево, эскалация по необходимости: каскад + кэш + batch дают кратную экономию.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/cost-saving-patterns/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="9.3 Паттерны экономии — AI Native">
+  <meta property="og:description" content="Сначала дёшево, эскалация по необходимости: каскад + кэш + batch дают кратную экономию.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/cost-saving-patterns/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="9.3">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 9.3 · Паттерны экономии</h1><p><strong>Фаза 9 — Экономика и оркестрация моделей (FinOps)</strong> · <strong>Результат фазы:</strong> Спроектировать маршрутизацию моделей и посчитать бюджет «до/после».</p><p><strong>Requires (только для USE IT):</strong> платный API-ключ одного из провайдеров. BUILD IT работает офлайн, без ключей и без сети.</p><p><strong>Роутер из 9.2 угадывает сложность заранее — но классификатор может ошибиться.</strong> Этот урок про более надёжный паттерн: не угадывать, а <strong>пробовать дёшево и эскалировать по факту</strong>, плюс инфраструктурные скидки.</p><blockquote><strong>MOTTO.</strong> Сначала дёшево, эскалация по необходимости: каскад + кэш + batch дают кратную экономию.</blockquote><h2>PROBLEM</h2><p>Роутер (9.2) решает наперёд: «это сложно → сразу на Opus». Но он судит по поверхностным признакам и иногда промахивается — отправит простое на топ (переплата) или сложное на дешёвое (брак).</p><p>Надёжнее судить <strong>по результату</strong>: запустить дешёвую модель, проверить качество ответа, и эскалировать на сильную <strong>только если</strong> дешёвая не дотянула. Это <strong>каскад</strong>. Сверху — инфраструктурные скидки (prompt caching, batch API), которые стэкаются с каскадом. Вместе — кратная экономия. Соберём каскад с quality-gate и честно посмотрим, когда он выигрывает, а когда нет.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Каскад — это <strong>«сначала спроси стажёра, не справился — эскалируй к старшему»</strong>. Большинство задач закрывает дешёвый исполнитель; дорогого эксперта подключаешь, только когда дешёвый явно не вытянул.</p><p>Каскад — из работы <strong>FrugalGPT</strong>, и там это лишь <strong>одна из трёх</strong> стратегий экономии, которые стэкаются: <strong>prompt adaptation</strong> (сжать вход — короче промпт, меньше токенов), <strong>LLM approximation</strong> (кэш ответов и дообучение мелкой модели) и <strong>LLM cascade</strong> (наша лестница моделей со scoring-функцией). Результат у FrugalGPT двойной: либо <strong>то же качество, что у лучшей модели (GPT-4), дешевле до 98%</strong>, либо <strong>+4% к точности за ту же цену</strong>. То есть экономия — это не только «срезать счёт», но и «за те же деньги получить больше».</p><p>Но у каскада есть цена: за <strong>проваленную</strong> дешёвую попытку ты всё равно заплатил. Поэтому каскад выгоден, когда дешёвые модели проходят <strong>часто</strong>; если почти всё сложное — он, наоборот, дороже, чем сразу звать топ.</p><h3>Как это работает</h3><pre><code>запрос → cheap → quality &gt;= gate? ──да──► ответ (заплатили мало)
+                     │ нет
+                     ▼
+                  mid → quality &gt;= gate? ──да──► ответ
+                     │ нет
+                     ▼
+                  top → ответ (платим за топ только когда нужно)
+   + prompt caching (чтение 0.1× входа)  + batch (−50%)  — стэкаются</code></pre><ul><li><code>cascade(request, answer_fn, quality_fn, gate)</code> — идти по лестнице моделей (дешёвая→дорогая), накапливая стоимость; на каждой проверять <code>quality_fn(request, answer)</code>; вернуть первый ответ с качеством ≥ <code>gate</code> (или лучший доступный, если до топа никто не прошёл).</li><li><code>quality_fn</code> — оценка качества (здесь стаб; в проде — дешёвая <strong>модель-судья</strong> из 2.5, чтобы не эскалировать зря).</li><li><code>always_top_cost()</code> — сколько стоило бы «всё через топ», для сравнения экономии.</li></ul><p>В терминах FrugalGPT каскад держится на двух функциях: <strong>generation function</strong> задаёт порядок моделей (у нас — фиксированная лестница <code>CASCADE</code> дёшево→дорого), а <strong>scoring function</strong> решает, принять ответ или эскалировать (у нас — <code>quality_fn</code> + порог <code>gate</code>). Ключ — <strong>quality-gate</strong>: порог, ниже которого ответ считается недостаточным и запускает следующую модель.</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Лестница с условной ценой за вызов: <code>flash=1, sonnet=10, opus=30</code>, порог <code>gate=0.7</code>. Стаб качества: простое тянет любая модель (0.9), сложное — только Opus.</p><pre><code>"простой вопрос":
+  flash  → quality 0.9 ≥ 0.7  → СТОП.  cost = 1
+
+"сложный вопрос":
+  flash  → 0.4 &lt; 0.7 → эскалация   (потратили 1)
+  sonnet → 0.4 &lt; 0.7 → эскалация   (потратили 1+10=11)
+  opus   → 0.9 ≥ 0.7 → СТОП.        cost = 1+10+30 = 41</code></pre><p>Теперь смесь — 3 простых + 1 сложный:</p><pre><code>каскад:     1 + 1 + 1 + 41 = 44
+всё на топ: 30 × 4         = 120        → каскад дешевле на 63%</code></pre><p>Каскад выиграл — но обрати внимание на честную деталь: <strong>сам сложный запрос в каскаде стоил 41 против 30 «сразу топ»</strong> — мы переплатили за провалившиеся flash и sonnet. Экономию дали три простых по цене 1 вместо 30. Вывод: каскад окупается <strong>долей простого</strong>. Если бы нагрузка была почти вся сложная, каскад проиграл бы прямому вызову топа — это его граница.</p><h2>BUILD IT</h2><p><strong>Задание: собери каскадный роутер с quality-gate</strong> — дёшево, эскалация по факту. Только стандартная библиотека, без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/9.3-cascade/</code>), а файлы урока клади в подпапку <code>code/</code> (как в 0.1). Нужен только <strong>Python 3</strong> (для теста ещё <code>pytest</code>).</blockquote><p>Создай файл <code>cost_router.py</code>:</p><ul><li><strong><code>CASCADE</code></strong> — лестница <code>[(model, price), ...]</code> от дешёвой к дорогой (<code>flash=1, sonnet=10, opus=30</code>).</li><li><strong><code>cascade(request, answer_fn, quality_fn, gate=0.7, ladder=CASCADE)</code></strong> — идти по <code>ladder</code>: прибавлять <code>price</code> к <code>spent</code>, получить <code>answer = answer_fn(model, request)</code>, оценить <code>q = quality_fn(request, answer)</code>, запомнить <code>{model, answer, quality, cost: spent}</code>; если <code>q &gt;= gate</code> → вернуть. Дошли до конца → вернуть последний (лучший доступный).</li><li><strong><code>always_top_cost(ladder=CASCADE)</code></strong> — цена топ-модели (<code>ladder[-1][1]</code>).</li></ul><p><strong>Готово, когда</strong> все тесты в <code>test_cost_router.py</code> зелёные — они проверяют: простой запрос останавливается на самой дешёвой (cost 1); сложный эскалирует до Opus (quality ≥ gate); на смешанной нагрузке каскад дешевле «всегда топ»; если никто не прошёл gate — возвращается верхняя модель.</p><pre><code>pytest code -q          # красное → реализуй cascade → зелёное
+python code/cost_router.py # демо: простой → flash, сложный → opus</code></pre><p><strong>Подсказка.</strong> Копи <code>spent</code> ДО вызова модели (вызов уже стоит денег). Возвращай первый ответ с <code>q &gt;= gate</code>; если цикл закончился — отдавай последний <code>last</code>. <code>quality_fn</code> — заменяемая деталь (стаб ↔ LLM-judge).</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>Паттерны экономии в проде стэкаются (мульти-провайдер). Ниже — best practices каждого, а не только «включи и сэкономишь».</p><p><strong>Каскад (best practices):</strong></p><ul><li><strong>Дешёвый scorer.</strong> Если scoring-функция — тяжёлая модель, она съест экономию. Гейт делают мелкой моделью-судьёй (2.5) или эвристикой; он должен быть в разы дешевле эскалации, которую предотвращает.</li><li><strong>Калибруй gate на eval-наборе.</strong> Порог — это компромисс «деньги vs брак»: высокий гонит всё на топ (нет экономии), низкий пропускает плохие ответы. Подбирай его на размеченном наборе (2.5/7.5), а не на глаз.</li><li><strong>Порядок дёшево→дорого и немного ступеней.</strong> 2–3 модели обычно достаточно; лишние ступени добавляют цену провалов без выигрыша.</li><li><strong>Каскад + роутер вместе, а не вместо.</strong> Роутер (9.2) сразу отсекает явно сложное, чтобы не тратить дешёвую попытку впустую; каскад страхует на неопределённом. Связка экономит больше, чем любой по отдельности.</li></ul><p><strong>Prompt caching (best practices — кэш работает по префиксу!):</strong></p><ul><li><strong>Статика в начало, динамика в конец.</strong> Порядок <code>tools → system → messages</code>: стабильное (инструменты, system-промпт, документы) — в начало, изменчивое (таймстамп, ввод пользователя) — в конец. <code>cache_control</code> ставь на <strong>последний неизменный</strong> блок. Частая ошибка: поставить breakpoint после блока с таймстампом — тогда префикс каждый раз разный, кэш <strong>никогда</strong> не попадает, и ты платишь только за записи.</li><li><strong>Следи за минимумом токенов.</strong> Короче порога кэш молча не создаётся (на 2026-06: Opus 4.8 и Sonnet 4.6 — ~1024 токена, Haiku 4.5 — ~4096). Проверяй поля <code>cache_read_input_tokens</code> / <code>cache_creation_input_tokens</code> в ответе: оба 0 → кэш не сработал.</li><li><strong>Выбирай TTL под частоту переиспользования.</strong> 5-минутный кэш (запись 1.25×) обновляется бесплатно при каждом использовании — для частых запросов; 1-часовой (запись 2×) — когда тот же контекст зовут реже, но в пределах часа.</li><li><strong>Помни про инвалидацию.</strong> Изменение на уровне иерархии бьёт этот уровень и все ниже: правка определения инструмента инвалидирует и system, и messages. Стабильный префикс — залог попаданий.</li></ul><p><strong>Batch API:</strong> асинхронные нетерминальные задачи (классификация, eval, массовая генерация) — −50% на вход и выход; стэкается с кэшем.</p><p>Маршрутизация + каскад + кэш + batch вместе и дают целевые <strong>50–85%</strong> экономии фазы — но каждый паттерн со своей границей применимости, и применять их надо по best practices выше, а не «в лоб».</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> <code>cost-aware-router</code> (skill) → <a href="#f-phases-09-model-economics-finops-09-cost-saving-patterns-outputs-cost-aware-router-skill-md"><code>outputs/cost-aware-router/SKILL.md</code></a></p><p>Скилл каскадного роутера: подставляешь модели, <code>quality_fn</code> и <code>gate</code> — получаешь дешёвую оркестрацию с эскалацией. Зарегистрирован в <a href="#f-claude-skills-cost-aware-router-skill-md"><code>.claude/skills/cost-aware-router</code></a>. Дальше: учёт расходов, лимиты и ROI (9.4).</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Считать каскад бесплатным на сложном.</strong> За проваленную дешёвую попытку платишь. Каскад окупается долей простого; на почти-всё-сложной нагрузке прямой вызов топа дешевле.</li><li><strong>Дорогой quality-gate.</strong> Если судья — тяжёлая модель, он съест экономию каскада. Гейт — дешёвая модель-судья или эвристика (2.5).</li><li><strong>Слишком высокий или низкий gate.</strong> Высокий порог гонит всё на топ (нет экономии); низкий пропускает брак. Порог калибруют на eval-наборе (2.5/7.5).</li><li><strong>Не стэкать скидки.</strong> Caching и batch комбинируются и между собой, и с каскадом. Использовать только один паттерн — оставить деньги на столе.</li><li><strong>Каскад вместо роутера, а не вместе.</strong> Роутер отсекает явно сложное сразу (не тратя дешёвую попытку), каскад страхует на неопределённом. Лучшая экономия — связка, а не одно из двух.</li><li><strong>Динамика перед кэш-breakpoint.</strong> Кэш работает по префиксу: если перед точкой кэширования стоит изменчивый блок (таймстамп, ввод), префикс каждый раз новый и кэш <strong>никогда</strong> не попадает — платишь только за записи. Статика в начало, <code>cache_control</code> на последний неизменный блок.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="9.3"></div><h2>Материалы</h2><ul><li><a href="https://arxiv.org/abs/2305.05176" target="_blank" rel="noopener">Chen et al., 2023 — FrugalGPT</a> — каскад LLM, экономия вплоть до 98%.</li><li><a href="https://platform.claude.com/docs/en/build-with-claude/prompt-caching" target="_blank" rel="noopener">Anthropic — Prompt caching</a> — чтение из кэша за 0.1× входа.</li><li><a href="https://platform.claude.com/docs/en/build-with-claude/batch-processing" target="_blank" rel="noopener">Anthropic — Batch processing</a> — −50% на асинхронные задачи.</li><li><a href="https://platform.openai.com/docs/guides/prompt-caching" target="_blank" rel="noopener">OpenAI — Prompt caching</a> — авто, до −90% input / −80% latency; prefix-match (статику — в начало промпта).</li><li><a href="https://platform.openai.com/docs/guides/batch" target="_blank" rel="noopener">OpenAI — Batch API</a> — −50% на асинхронные задачи, окно 24ч.</li><li><a href="https://ai.google.dev/gemini-api/docs/caching" target="_blank" rel="noopener">Google Gemini — Context caching</a> — implicit (авто) + explicit (−90% на кэш-токены).</li><li><a href="https://github.com/zilliztech/GPTCache" target="_blank" rel="noopener">GPTCache</a> — семантический кэш: возвращает ответ на <strong>похожий</strong> запрос (не только точный), может пропустить вызов LLM.</li><li><a href="https://arxiv.org/abs/2310.12963" target="_blank" rel="noopener">Madaan &amp; Aggarwal et al., 2023 — AutoMix (NeurIPS'24)</a> — self-verification + POMDP-роутер: каскад с эскалацией к большей модели (ровно router + quality-gate урока).</li><li><a href="https://www.maviklabs.com/blog/llm-cost-optimization-2026" target="_blank" rel="noopener">Mavik Labs — LLM Cost Optimization: Routing, Caching, Batching</a> — практический разбор рычагов и % экономии (routing 40–70%, cache ~90% на хите, batch −50%).</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-09-model-economics-finops-09-cost-saving-patterns-code-test-cost-router-py" open data-test="1"><summary><span class="fname">code/test_cost_router.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from cost_router import cascade, always_top_cost, CASCADE
+
+
+def answer_fn(model, req):
+    return f"[{model}] ответ"
+
+
+def quality_fn(req, ans):
+    if "сложн" in req.lower():
+        return 0.9 if "opus" in ans else 0.4     # сложное тянет только opus
+    return 0.9                                    # простое — любая модель
+
+
+def test_easy_stops_at_cheapest():
+    res = cascade("простой вопрос", answer_fn, quality_fn)
+    assert res["model"] == "gemini-flash"
+    assert res["cost"] == 1
+
+
+def test_hard_escalates_to_top():
+    res = cascade("сложный вопрос", answer_fn, quality_fn)
+    assert res["model"] == "opus-4.8"
+    assert res["quality"] &gt;= 0.7
+
+
+def test_cascade_cheaper_than_always_top_on_mixed_workload():
+    workload = ["простой", "простой", "простой", "сложный"]
+    total = sum(cascade(r, answer_fn, quality_fn)["cost"] for r in workload)
+    always_top = always_top_cost() * len(workload)
+    assert total &lt; always_top          # каскад экономит на простых запросах
+
+
+def test_returns_best_when_none_pass_gate():
+    res = cascade("сложный", answer_fn, lambda r, a: 0.1)   # никто не проходит gate
+    assert res["model"] == CASCADE[-1][0]
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-09-model-economics-finops-09-cost-saving-patterns-code-cost-router-py"><summary><span class="fname">code/cost_router.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Паттерны экономии: роутер + каскад с quality-gate — Build It для урока 9.3.
+
+Без зависимостей. Каскад: сначала пробуем дешёвую модель; если качество ответа ниже
+порога (quality-gate) — эскалируем на более сильную. Так платим за топ-модель только
+там, где она реально нужна. Цены — как в 9.1, проверка качества — стаб (в проде LLM-judge).
+"""
+
+# Каскад от дешёвого к дорогому + цена за «вызов» (усл. единицы, см. 9.1).
+CASCADE = [("gemini-flash", 1), ("sonnet-4.6", 10), ("opus-4.8", 30)]
+
+
+def cascade(request, answer_fn, quality_fn, gate=0.7, ladder=CASCADE):
+    """Идти по лестнице моделей, пока качество &gt;= gate. Возвращает результат + стоимость.
+
+    answer_fn(model, request) -&gt; ответ; quality_fn(request, answer) -&gt; [0..1].
+    """
+    spent = 0
+    last = None
+    for model, price in ladder:
+        spent += price
+        answer = answer_fn(model, request)
+        q = quality_fn(request, answer)
+        last = {"model": model, "answer": answer, "quality": q, "cost": spent}
+        if q &gt;= gate:
+            return last
+    return last          # дошли до топа — отдаём лучший доступный
+
+
+def always_top_cost(ladder=CASCADE):
+    return ladder[-1][1]
+
+
+if __name__ == "__main__":
+    # стаб: дешёвая модель хороша на простом, плоха на сложном
+    def answer_fn(model, req):
+        return f"[{model}] ответ"
+
+    def quality_fn(req, ans):
+        hard = "сложн" in req.lower()
+        if hard:
+            return 0.9 if "opus" in ans else 0.4      # только opus тянет сложное
+        return 0.9                                     # простое тянет любая
+
+    print("простой:", cascade("простой вопрос", answer_fn, quality_fn))
+    print("сложный:", cascade("сложный вопрос", answer_fn, quality_fn))
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-09-model-economics-finops-09-cost-saving-patterns-outputs-cost-aware-router-skill-md" open><summary><span class="fname">outputs/cost-aware-router/SKILL.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>---
+name: cost-aware-router
+description: "Экономная маршрутизация моделей курса AI Native: каскад дешёвая→топ с quality-gate. Триггеры: «/cost-aware-router», «выбери модель подешевле», «сократи расходы на LLM», «каскад моделей», «какую модель взять под задачу». Артефакт урока 9.3."
+---
+
+# cost-aware-router — каскадная маршрутизация по цене
+
+Платим за топ-модель только когда дешёвая не справилась: каскад от дешёвой к дорогой с проверкой качества (quality-gate).
+
+## Как пользоваться
+
+1. Задай лестницу моделей по возрастанию цены: `CASCADE = [("gemini-flash",1),("sonnet-4.6",10),("opus-4.8",30)]`.
+2. Дай `answer_fn(model, request)` (в проде — вызов модели) и `quality_fn(request, answer)-&gt;[0..1]` (LLM-judge, урок 2.5).
+3. Запусти каскад:
+
+```bash
+python -c "import cost_router as c; \
+print(c.cascade('запрос', lambda m,r: f'[{m}]', lambda r,a: 0.9 if 'opus' in a else 0.4))"
+```
+
+4. Результат: `{model, answer, quality, cost}` — самая дешёвая модель, прошедшая gate.
+
+## Когда применять
+
+- Массовые/смешанные нагрузки, где часть запросов простая.
+- Перед сменой «всё через Opus» на экономную схему — сравни с `always_top_cost()`.
+
+## Связи
+
+- Стоимость считается калькулятором из урока 9.1; классификатор сложности — 9.2.
+- Дополняй prompt caching (−90%) и batch (−50%) — стэкается.
+- Учёт расходов и ROI — урок 9.4.
+</code></pre></details><details class="filebox" id="f-phases-09-model-economics-finops-09-cost-saving-patterns-outputs-cost-aware-router-cost-router-py" open><summary><span class="fname">outputs/cost-aware-router/cost_router.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Паттерны экономии: роутер + каскад с quality-gate — Build It для урока 9.3.
+
+Без зависимостей. Каскад: сначала пробуем дешёвую модель; если качество ответа ниже
+порога (quality-gate) — эскалируем на более сильную. Так платим за топ-модель только
+там, где она реально нужна. Цены — как в 9.1, проверка качества — стаб (в проде LLM-judge).
+"""
+
+# Каскад от дешёвого к дорогому + цена за «вызов» (усл. единицы, см. 9.1).
+CASCADE = [("gemini-flash", 1), ("sonnet-4.6", 10), ("opus-4.8", 30)]
+
+
+def cascade(request, answer_fn, quality_fn, gate=0.7, ladder=CASCADE):
+    """Идти по лестнице моделей, пока качество &gt;= gate. Возвращает результат + стоимость.
+
+    answer_fn(model, request) -&gt; ответ; quality_fn(request, answer) -&gt; [0..1].
+    """
+    spent = 0
+    last = None
+    for model, price in ladder:
+        spent += price
+        answer = answer_fn(model, request)
+        q = quality_fn(request, answer)
+        last = {"model": model, "answer": answer, "quality": q, "cost": spent}
+        if q &gt;= gate:
+            return last
+    return last          # дошли до топа — отдаём лучший доступный
+
+
+def always_top_cost(ladder=CASCADE):
+    return ladder[-1][1]
+
+
+if __name__ == "__main__":
+    # стаб: дешёвая модель хороша на простом, плоха на сложном
+    def answer_fn(model, req):
+        return f"[{model}] ответ"
+
+    def quality_fn(req, ans):
+        hard = "сложн" in req.lower()
+        if hard:
+            return 0.9 if "opus" in ans else 0.4      # только opus тянет сложное
+        return 0.9                                     # простое тянет любая
+
+    print("простой:", cascade("простой вопрос", answer_fn, quality_fn))
+    print("сложный:", cascade("сложный вопрос", answer_fn, quality_fn))
+</code></pre></details><h3>Связанные файлы</h3><details class="filebox" id="f-claude-skills-cost-aware-router-skill-md" open><summary><span class="fname">.claude/skills/cost-aware-router/SKILL.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>---
+name: cost-aware-router
+description: "Экономная маршрутизация моделей курса AI Native: каскад дешёвая→топ с quality-gate. Триггеры: «/cost-aware-router», «выбери модель подешевле», «сократи расходы на LLM», «каскад моделей», «какую модель взять под задачу». Артефакт урока 9.3."
+---
+
+# cost-aware-router — каскадная маршрутизация по цене
+
+Платим за топ-модель только когда дешёвая не справилась: каскад от дешёвой к дорогой с проверкой качества (quality-gate).
+
+## Как пользоваться
+
+1. Задай лестницу моделей по возрастанию цены: `CASCADE = [("gemini-flash",1),("sonnet-4.6",10),("opus-4.8",30)]`.
+2. Дай `answer_fn(model, request)` (в проде — вызов модели) и `quality_fn(request, answer)-&gt;[0..1]` (LLM-judge, урок 2.5).
+3. Запусти каскад:
+
+```bash
+python -c "import cost_router as c; \
+print(c.cascade('запрос', lambda m,r: f'[{m}]', lambda r,a: 0.9 if 'opus' in a else 0.4))"
+```
+
+4. Результат: `{model, answer, quality, cost}` — самая дешёвая модель, прошедшая gate.
+
+## Когда применять
+
+- Массовые/смешанные нагрузки, где часть запросов простая.
+- Перед сменой «всё через Opus» на экономную схему — сравни с `always_top_cost()`.
+
+## Связи
+
+- Стоимость считается калькулятором из урока 9.1; классификатор сложности — 9.2.
+- Дополняй prompt caching (−90%) и batch (−50%) — стэкается.
+- Учёт расходов и ROI — урок 9.4.
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/model-per-task/"><small>← 9.2</small>Какую модель под какую задачу</a><a href="../../lessons/finops-for-ai/" style="text-align:right"><small>9.4 →</small>FinOps для ИИ</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

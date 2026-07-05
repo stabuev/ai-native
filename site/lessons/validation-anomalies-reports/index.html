@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>5.5 Валидация, аномалии, автоотчёты — AI Native</title>
+  <meta name="description" content="Цифру от ИИ нельзя показывать непроверенной: сначала валидация и поиск аномалий, потом отчёт.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/validation-anomalies-reports/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="5.5 Валидация, аномалии, автоотчёты — AI Native">
+  <meta property="og:description" content="Цифру от ИИ нельзя показывать непроверенной: сначала валидация и поиск аномалий, потом отчёт.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/validation-anomalies-reports/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="5.5">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 5.5 · Валидация, аномалии, автоотчёты</h1><p><strong>Фаза 5 — Данные и аналитика</strong> · <strong>Результат фазы:</strong> Анализировать данные с ИИ, делать NL→SQL и автоотчёты с валидацией результатов.</p><p><strong>Requires (только для USE IT):</strong> платный API-ключ или доступ к планировщику/БД. BUILD IT работает офлайн, без ключей и без сети.</p><p><strong>Это финал Фазы 5 — и страховка для всего, что было до неё.</strong> ИИ-аналитик (5.1), Code Interpreter (5.2), NL→SQL (5.3) и BI-агент (5.4) уверенно выдают числа. Но «уверенно» ≠ «верно». Прежде чем цифра уйдёт в отчёт, её надо <strong>проверить</strong> автоматически.</p><blockquote><strong>MOTTO.</strong> Цифру от ИИ нельзя показывать непроверенной: сначала валидация и поиск аномалий, потом отчёт.</blockquote><h2>PROBLEM</h2><p>ИИ-аналитик выдаёт число с одинаковой уверенностью, права она или нет: мог взять не ту метрику, потерять строки при джойне, не заметить выброс из-за битой записи. Цифра выглядит правдоподобно — и именно поэтому опасна: уйдёт в отчёт руководству, и решение примут по мусору.</p><p>Нужен <strong>контроль качества данных</strong> — автоматический, перед показом: проверки на вменяемость (бизнес-инварианты), детекция аномалий (что выбивается из ряда) и сборка отчёта с флагами. Не «посмотреть глазами, если будет время», а встроить в пайплайн.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Это <strong>фактчекинг для цифр</strong>, как редактор проверяет статью перед публикацией. Две независимые проверки:</p><ul><li><strong>Валидация по правилам</strong> — отвечает на «может ли это вообще быть правдой?». Выручка не бывает отрицательной, заказов не бывает ноль в рабочий день, доля не больше 100%. Это твои <strong>бизнес-инварианты</strong> — то, что обязано выполняться всегда.</li><li><strong>Поиск аномалий</strong> — отвечает на «не выбивается ли что-то из ряда?». Даже если значение проходит правила, резкий скачок относительно соседей подозрителен и достоин флага.</li></ul><p>Прошло обе проверки — собираем отчёт. Не прошло — отчёт всё равно собираем, но <strong>с флагами и алертом</strong>, чтобы человек посмотрел до того, как цифра разойдётся.</p><h3>Как это работает</h3><pre><code>результат анализа
+   │ validate_result (правила-предикаты: revenue ≥ 0, orders &gt; 0, нет пропусков)
+   │ find_anomalies  (z-score: |value − mean| / std &gt; порога)
+   ▼
+build_report → отчёт с метриками и флагами → (по расписанию + алерт)</code></pre><ul><li><code>validate_result(metrics, rules)</code> — прогнать каждую метрику через предикат-правило; вернуть список нарушений (и пометить отсутствующие метрики).</li><li><code>find_anomalies(series, z)</code> — посчитать z-score каждого значения (на сколько стандартных отклонений оно отстоит от среднего) и вернуть те, где <code>|z|</code> больше порога.</li><li><code>build_report(...)</code> — собрать markdown-отчёт из метрик и найденных аномалий.</li></ul><p>Автоотчёт — это те же три шага, запускаемые <strong>регулярно</strong> (по cron/в оркестраторе): данные → анализ → валидация → аномалии → отчёт, с уведомлением при флагах.</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Поищем аномалию в ряду <code>[100, 110, 95, 105, 100, 500]</code> (порог <code>z = 2</code>). z-score = <code>(value − mean) / std</code>:</p><pre><code>1. mean = (100+110+95+105+100+500) / 6 = 168.33
+2. std (pstdev) ≈ 148.4
+3. z каждого значения:
+     100 → (100−168.33)/148.4 = −0.46     |z| &lt; 2  ок
+     110 → −0.39                            ок
+      95 → −0.49                            ок
+     105 → −0.43                            ок
+     100 → −0.46                            ок
+     500 → (500−168.33)/148.4 = +2.23      |z| &gt; 2  ← АНОМАЛИЯ</code></pre><p>Флаг получает только <code>500</code> (индекс 5, z = 2.23). Дальше <code>build_report</code> соберёт отчёт, где в разделе «Аномалии» будет строка про индекс 5 — и пайплайн поднимет алерт. Тонкость: один большой выброс <strong>сам раздувает</strong> mean и std, маскируя себя и сдвигая порог — поэтому z-score на маленькой выборке грубоват; в проде берут устойчивые методы (медиана/IQR, см. Материалы). Но как первый дешёвый фильтр он ловит явное.</p><h2>BUILD IT</h2><p><strong>Задание: собери контроль качества</strong> — валидацию по правилам, детекцию аномалий и сборку отчёта. Только стандартная библиотека (<code>statistics</code>), без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/5.5-validation/</code>), а файлы урока клади в подпапку <code>code/</code> (как в 0.1). Нужен только <strong>Python 3</strong> (для теста ещё <code>pytest</code>).</blockquote><p>Создай файл <code>validation.py</code> с тремя функциями:</p><ul><li><strong><code>validate_result(metrics, rules)</code></strong> — <code>metrics</code> это <code>{ключ: значение}</code>, <code>rules</code> это <code>{ключ: предикат(значение)-&gt;bool}</code>. Для каждого правила: если ключа нет в метриках → добавь нарушение «отсутствует»; если предикат вернул <code>False</code> → добавь «не прошёл проверку». Верни список нарушений (пустой = всё ок).</li><li><strong><code>find_anomalies(series, z=2.0)</code></strong> — если в ряду меньше 2 значений или <code>std == 0</code> → верни <code>[]</code>. Иначе посчитай <code>mean</code> и <code>pstdev</code>, верни список <code>{"index", "value", "z": round(zscore, 2)}</code> для значений с <code>|z| &gt; z</code>.</li><li><strong><code>build_report(title, metrics, anomalies)</code></strong> — собери markdown: заголовок <code># {title}</code>, раздел <code>## Метрики</code> (по строке на метрику), раздел <code>## Аномалии</code> (строки <code>индекс N: value (z=...)</code> или «не обнаружено»).</li></ul><p><strong>Готово, когда</strong> все тесты в <code>test_validation.py</code> зелёные — они проверяют: валидация ловит провал правила и отсутствующую метрику, пропускает хорошие; <code>find_anomalies</code> находит выброс 500 и молчит на ровном ряду; отчёт содержит метрики и аномалии.</p><pre><code>pytest code -q          # красное → реализуй три функции → зелёное
+python code/validation.py # демо: ловит выброс 500, собирает отчёт</code></pre><p><strong>Подсказка.</strong> z-score: <code>(v - mu) / sigma</code>, где <code>mu = mean(series)</code>, <code>sigma = pstdev(series)</code>. Обязательно проверь <code>sigma == 0</code> (ровный ряд) и <code>len(series) &lt; 2</code> до деления. Правила — это лямбды: <code>{"revenue": lambda x: x &gt;= 0}</code>.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>Автоотчёт по расписанию — это пайплайн из наших трёх шагов, запускаемый регулярно (мульти-провайдер):</p><pre><code>metrics   = run_daily_analysis()              # NL→SQL (5.3) / BI-агент (5.4)
+problems  = validate_result(metrics, RULES)
+anomalies = find_anomalies(series)
+report    = build_report("Дневной отчёт", metrics, anomalies)
+if problems or anomalies:
+    notify(report)                            # алерт вместо «тихого» отчёта</code></pre><ul><li>Источник данных в проде подключают через <strong>MCP-коннектор к БД</strong> (Фаза 6) — агент сам ходит за свежими данными.</li><li>Расписание — планировщик (cron / dbt jobs / Genie).</li><li>Главное правило: при флагах — <strong>алерт человеку</strong>, а не молчаливый отчёт «всё хорошо».</li></ul><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Аналитический агент + спека MCP-коннектора к БД → <a href="#f-phases-05-data-and-analytics-05-validation-anomalies-reports-outputs-analytics-agent-py"><code>outputs/analytics_agent.py</code></a></p><p>Готовый агент: SQL-выгрузка (sqlite) → валидация → аномалии → отчёт, плюс заметка о подключении БД через MCP (соберём в Фазе 6). Это <strong>итог Фазы 5</strong>: сквозной пайплайн данные → анализ → проверка → отчёт, который дальше станет автономным (агенты, Фаза 7) и подключённым к реальным БД (MCP, Фаза 6).</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Показывать цифру от ИИ без проверки.</strong> Уверенный тон ≠ правильность. Валидация и аномалии — обязательный шаг перед отчётом, а не «если будет время».</li><li><strong>Только аномалии без бизнес-правил (или наоборот).</strong> Это две разные проверки: правила ловят невозможное (выручка &lt; 0), аномалии — подозрительное (скачок). Нужны обе.</li><li><strong>Доверять z-score на маленькой выборке.</strong> Один выброс раздувает mean и std и может замаскировать сам себя. Для прода — устойчивые методы (медиана/IQR, isolation forest).</li><li><strong>«Тихий» автоотчёт.</strong> Если отчёт уходит всегда одинаково, флаги теряются. При нарушениях/аномалиях — отдельный алерт, который нельзя пролистать.</li><li><strong>Правила «в коде навсегда».</strong> Бизнес-инварианты меняются (новый продукт, сезон). Держи <code>rules</code> конфигурируемыми и пересматривай, иначе валидация устареет и пропустит ошибку.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="5.5"></div><h2>Материалы</h2><ul><li><a href="https://scikit-learn.org/stable/modules/outlier_detection.html" target="_blank" rel="noopener">scikit-learn — Outlier detection</a> — методы детекции аномалий за пределами z-score.</li><li><a href="https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations" target="_blank" rel="noopener">Anthropic — Reduce hallucinations</a> — проверяемость и «не доверяй вслепую».</li><li><a href="https://docs.databricks.com/aws/en/genie/" target="_blank" rel="noopener">Databricks — AI/BI Genie</a> — автоматизация и MCP-доступ к данным.</li><li><a href="https://github.com/great-expectations/great_expectations" target="_blank" rel="noopener">Great Expectations</a> — валидация данных: «expectations» как юнит-тесты для данных и результатов.</li><li><a href="https://github.com/unionai-oss/pandera" target="_blank" rel="noopener">Pandera</a> — валидация dataframe: схемы + статистические проверки (pandas / polars).</li><li><a href="https://github.com/evidentlyai/evidently" target="_blank" rel="noopener">Evidently AI</a> — мониторинг data drift, качества и аномалий + отчёты (ровно «аномалии + автоотчёты»).</li><li><a href="https://github.com/modelcontextprotocol/servers" target="_blank" rel="noopener">MCP servers (official)</a> — референс-серверы MCP, включая коннекторы к БД (артефакт урока: агент + MCP к БД).</li><li><a href="https://www.oreilly.com/library/view/data-quality-fundamentals/9781098112035/ch04.html" target="_blank" rel="noopener">O'Reilly — Data Quality Fundamentals, гл. 4</a> — построение anomaly-детекции и мониторинга (каноничная книга по data observability).</li><li><a href="https://www.montecarlodata.com/blog-data-quality-anomaly-detection-everything-you-need-to-know/" target="_blank" rel="noopener">Monte Carlo — Data Quality Anomaly Detection</a> — практический разбор от лидеров data observability: типы мониторов, метрики, «unknown unknowns».</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-05-data-and-analytics-05-validation-anomalies-reports-code-test-validation-py" open data-test="1"><summary><span class="fname">code/test_validation.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from validation import validate_result, find_anomalies, build_report
+
+
+def test_validate_flags_failing_and_missing():
+    metrics = {"revenue": -5}
+    problems = validate_result(metrics, {"revenue": lambda x: x &gt;= 0, "orders": lambda x: x &gt; 0})
+    assert any("revenue" in p for p in problems)
+    assert any("orders" in p and "отсутствует" in p for p in problems)
+
+
+def test_validate_passes_good_metrics():
+    metrics = {"revenue": 270, "orders": 5}
+    assert validate_result(metrics, {"revenue": lambda x: x &gt;= 0, "orders": lambda x: x &gt; 0}) == []
+
+
+def test_find_anomalies_flags_outlier():
+    anomalies = find_anomalies([100, 110, 95, 105, 100, 500])
+    assert len(anomalies) == 1
+    assert anomalies[0]["value"] == 500
+
+
+def test_no_anomalies_when_uniform():
+    assert find_anomalies([5, 5, 5, 5]) == []
+    assert find_anomalies([42]) == []
+
+
+def test_report_contains_metrics_and_anomalies():
+    report = build_report("Отчёт", {"revenue": 270}, [{"index": 5, "value": 500, "z": 2.2}])
+    assert "# Отчёт" in report
+    assert "revenue: 270" in report
+    assert "индекс 5" in report
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-05-data-and-analytics-05-validation-anomalies-reports-code-validation-py"><summary><span class="fname">code/validation.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Валидация, аномалии, автоотчёты — Build It для урока 5.5.
+
+Без внешних зависимостей (statistics из stdlib). Проверяем результат на
+вменяемость, ищем аномалии (z-score), собираем markdown-отчёт. Это контроль
+качества аналитики перед показом цифр (мост к Фазе 11 — фактчекинг).
+"""
+from statistics import mean, pstdev
+
+
+def validate_result(metrics, rules):
+    """metrics: dict; rules: {key: predicate(value)-&gt;bool}. Список нарушений."""
+    problems = []
+    for key, predicate in rules.items():
+        if key not in metrics:
+            problems.append(f"{key}: отсутствует")
+        elif not predicate(metrics[key]):
+            problems.append(f"{key}: не прошёл проверку (={metrics[key]})")
+    return problems
+
+
+def find_anomalies(series, z=2.0):
+    """Значения, отклоняющиеся больше чем на z стандартных отклонений (z-score)."""
+    if len(series) &lt; 2:
+        return []
+    mu, sigma = mean(series), pstdev(series)
+    if sigma == 0:
+        return []
+    return [{"index": i, "value": v, "z": round((v - mu) / sigma, 2)}
+            for i, v in enumerate(series) if abs((v - mu) / sigma) &gt; z]
+
+
+def build_report(title, metrics, anomalies):
+    """Собрать markdown-отчёт из метрик и найденных аномалий."""
+    lines = [f"# {title}", "", "## Метрики"]
+    lines += [f"- {k}: {v}" for k, v in metrics.items()]
+    lines += ["", "## Аномалии"]
+    if anomalies:
+        lines += [f"- индекс {a['index']}: {a['value']} (z={a['z']})" for a in anomalies]
+    else:
+        lines.append("- не обнаружено")
+    return "\n".join(lines)
+
+
+if __name__ == "__main__":
+    metrics = {"revenue": 270.0, "orders": 5, "avg_check": 54.0}
+    rules = {"revenue": lambda x: x &gt;= 0, "orders": lambda x: x &gt; 0}
+    print("Нарушения:", validate_result(metrics, rules) or "нет")
+    series = [100, 110, 95, 105, 100, 500]      # 500 — выброс
+    anomalies = find_anomalies(series)
+    print(build_report("Дневной отчёт", metrics, anomalies))
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-05-data-and-analytics-05-validation-anomalies-reports-outputs-analytics-agent-py" open><summary><span class="fname">outputs/analytics_agent.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""analytics_agent.py — артефакт урока 5.5: сквозной аналитический агент.
+
+Самодостаточно, без зависимостей (sqlite3 + statistics из stdlib).
+Пайплайн: SQL-выгрузка → валидация → поиск аномалий → markdown-отчёт.
+
+В проде источник данных подключается через MCP-коннектор к БД (Фаза 6),
+а запуск — по расписанию (cron / dbt jobs / оркестратор).
+
+Запуск:  python analytics_agent.py
+"""
+import sqlite3
+from statistics import mean, pstdev
+
+# --- источник данных (в проде — реальная БД через MCP) ---
+# mar — всплеск: на достаточном числе месяцев выйдет за 2σ и попадёт в аномалии.
+ROWS = [
+    ("Москва", "jan", 100), ("Москва", "feb", 120), ("Москва", "mar", 900),
+    ("Москва", "apr", 110), ("Москва", "may", 130), ("Москва", "jun", 115),
+    ("Питер", "jan", 80), ("Питер", "feb", 90), ("Питер", "mar", 85),
+    ("Питер", "apr", 95), ("Питер", "may", 88), ("Питер", "jun", 92),
+]
+
+
+def query(sql):
+    con = sqlite3.connect(":memory:")
+    con.execute("CREATE TABLE sales (region TEXT, month TEXT, amount REAL)")
+    con.executemany("INSERT INTO sales VALUES (?,?,?)", ROWS)
+    result = con.execute(sql).fetchall()
+    con.close()
+    return result
+
+
+def validate(metrics, rules):
+    return [f"{k}: нарушено" for k, pred in rules.items()
+            if k not in metrics or not pred(metrics[k])]
+
+
+def find_anomalies(series, z=2.0):
+    if len(series) &lt; 2:
+        return []
+    mu, sigma = mean(series), pstdev(series)
+    if sigma == 0:
+        return []
+    return [{"value": v, "z": round((v - mu) / sigma, 2)}
+            for v in series if abs((v - mu) / sigma) &gt; z]
+
+
+def run():
+    by_month = query("SELECT month, SUM(amount) FROM sales GROUP BY month")
+    total = query("SELECT SUM(amount) FROM sales")[0][0]
+    metrics = {"total_revenue": total, "months": len(by_month)}
+
+    problems = validate(metrics, {"total_revenue": lambda x: x &gt;= 0,
+                                  "months": lambda x: x &gt; 0})
+    anomalies = find_anomalies([v for _, v in by_month])
+
+    lines = ["# Авто-отчёт по выручке", "", "## Метрики",
+             f"- Итого выручка: {total}", f"- Месяцев: {len(by_month)}",
+             "", "## По месяцам"]
+    lines += [f"- {m}: {v}" for m, v in by_month]
+    lines += ["", "## Контроль качества"]
+    lines.append(f"- Валидация: {'OK' if not problems else problems}")
+    lines.append(f"- Аномалии: {anomalies or 'не обнаружено'}")
+    return "\n".join(lines)
+
+
+if __name__ == "__main__":
+    print(run())
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/bi-agents/"><small>← 5.4</small>BI-агенты</a><a href="../../lessons/tool-use-function-calling/" style="text-align:right"><small>6.1 →</small>Tool use / function calling изнутри</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

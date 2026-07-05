@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>10.4 Observability и трейсинг агентов — AI Native</title>
+  <meta name="description" content="Агент недетерминирован — без трейса шагов отладка в проде превращается в гадание.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/observability-tracing/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="10.4 Observability и трейсинг агентов — AI Native">
+  <meta property="og:description" content="Агент недетерминирован — без трейса шагов отладка в проде превращается в гадание.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/observability-tracing/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="10.4">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 10.4 · Observability и трейсинг агентов</h1><p><strong>Фаза 10 — Production и интеграция</strong> · <strong>Результат фазы:</strong> Встроить ИИ в рабочий инструмент с мониторингом токенов и стоимости.</p><p><strong>Requires (только для USE IT):</strong> observability-бэкенд. BUILD IT работает офлайн, без ключей и без сети.</p><p><strong>Это финал Фазы 10.</strong> Мониторинг (10.2) дал агрегаты, телеметрия (10.3) — расходы и воспроизводимость. Но когда <strong>агент</strong> выдал странный результат, агрегатов мало — нужно увидеть весь его путь по шагам. Это трейсинг.</p><blockquote><strong>MOTTO.</strong> Агент недетерминирован — без трейса шагов отладка в проде превращается в гадание.</blockquote><h2>PROBLEM</h2><p>Агент (Фаза 7) — это цепочка шагов: retrieve → llm_call → tool → ещё llm_call. Когда он отвечает не так или висит 10 секунд, метрика «error_rate 0.2» не поможет: непонятно, <strong>на каком шаге</strong> сломалось, какой инструмент вернул мусор, где ушло время и токены.</p><p>Нужно видеть <strong>дерево выполнения</strong>: какие шаги были, как они вложены, сколько каждый длился, с какими атрибутами (модель, токены, k у retrieve). Это <strong>трейсинг</strong> — вложенные spans на каждый шаг, как в OpenTelemetry GenAI. Соберём мини-трейсер с нуля.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Трейс — это <strong>подробный счёт-детализация звонка</strong>, а не «итого за месяц». Мониторинг говорит «потрачено столько, ошибок столько-то»; трейс раскрывает <strong>один конкретный запрос</strong> по шагам: вот retrieve занял 50мс, вот llm_call — 1.2с (вот где время!), вот tool вернул ошибку (вот где сломалось). Шаги вложены, как пункты и подпункты счёта: <code>agent_run</code> содержит <code>retrieve</code>, <code>llm_call</code>, <code>tool</code>.</p><p>Span — это «замер одного шага»: имя, атрибуты, начало/конец, длительность, и <strong>кто его родитель</strong> (внутри какого шага он случился). Дерево spans показывает и узкое место (самый долгий), и точку отказа.</p><h3>Как это работает</h3><pre><code>trace (один запрос)
+ └─ span: agent_run
+     ├─ span: retrieve (k=3)        ← attrs, длительность
+     ├─ span: llm_call (model, токены)
+     └─ span: tool (args, результат)
+   → дерево spans: где узкое место, где упало, сколько стоило</code></pre><ul><li><code>span(name, **attrs)</code> — контекст-менеджер: при входе фиксирует старт и <strong>родителя</strong> (текущий span из стека), при выходе — конец и длительность. Вложенность — через стек.</li><li><code>total_duration()</code> — сумма длительностей <strong>корневых</strong> spans (не двойной счёт: дети уже внутри родителя).</li><li><code>slowest()</code> — самый долгий span — узкое место.</li></ul><blockquote><strong>Что такое контекст-менеджер (<code>with</code>).</strong> <code>@contextmanager</code> превращает функцию с <code>yield</code> в объект для <code>with</code>: код <strong>до</strong> <code>yield</code> выполняется при входе в блок <code>with tracer.span("retrieve"):</code>, код <strong>после</strong> <code>yield</code> — при выходе из него (даже если внутри случилась ошибка — за это отвечает <code>try/finally</code>). Поэтому «замер начался» пишется автоматически на входе, а «замер закончился, длительность такая-то» — на выходе; тебе остаётся лишь обернуть шаг в <code>with</code>.</blockquote><p>Ключ — <strong>вложенность через стек</strong>: пока span открыт, он на вершине стека и становится родителем всех, кто открылся внутри. Так из плоского списка замеров восстанавливается дерево «шаг → подшаг».</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Прогоним два вложенных span с фейковым clock <code>[0, 1, 3, 6]</code> (детерминированно для теста): <code>a</code> открылся в 0, внутри <code>b</code> открылся в 1 и закрылся в 3, затем <code>a</code> закрылся в 6.</p><pre><code>вход a:  стек [a],     a.parent = None, a.start = 0
+вход b:  стек [a,b],   b.parent = a (вершина стека), b.start = 1
+выход b: b.end = 3 → b.duration = 3−1 = 2,  стек [a]
+выход a: a.end = 6 → a.duration = 6−0 = 6,  стек []
+
+spans: a{parent:None, dur:6}, b{parent:a, dur:2}
+total_duration() → 6   (только корневой a; b уже внутри него)
+slowest()        → a   (6 &gt; 2)</code></pre><p>Видно три вещи. <strong>Родитель</strong> определяется стеком: <code>b</code> открылся, пока <code>a</code> был на вершине → <code>b.parent = a</code>. <strong>Длительность</strong> — разница конца и старта. <strong>total</strong> считает только корни (<code>a</code>), иначе время <code>b</code> посчиталось бы дважды (и в <code>a</code>, и отдельно). <code>slowest = a</code> — узкое место. На реальном агенте <code>a</code> это <code>agent_run</code>, и если <code>slowest</code> указал на <code>llm_call</code> внутри — ты сразу знаешь, что тормозит модель, а не retrieval. Поменяй фейковый clock на <code>time.perf_counter</code> — трейсер заработает на настоящих шагах.</p><h2>BUILD IT</h2><p><strong>Задание: собери трейсер вложенных spans</strong> — контекст-менеджер с родителем и длительностью + сводка. Только стандартная библиотека (<code>contextlib</code>, <code>time</code>), без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/10.4-tracer/</code>), а файлы урока клади в подпапку <code>code/</code> (как в 0.1). Нужен только <strong>Python 3</strong> (для теста ещё <code>pytest</code>).</blockquote><p>Создай файл <code>tracer.py</code> с классом <code>Tracer(clock=None)</code> (<code>clock</code> по умолчанию <code>time.perf_counter</code>, подменяется в тестах):</p><ul><li><strong><code>span(name, **attrs)</code></strong> — контекст-менеджер (<code>@contextmanager</code>): создать span <code>{name, attrs, parent, start}</code>, где <code>parent</code> — имя верхнего span из стека (или <code>None</code>); положить в <code>self.spans</code> и на стек; в <code>finally</code> проставить <code>end</code>, <code>duration</code> и снять со стека.</li><li><strong><code>total_duration()</code></strong> — сумма <code>duration</code> у spans с <code>parent is None</code>.</li><li><strong><code>slowest()</code></strong> — span с максимальной <code>duration</code> (или <code>None</code>, если пусто).</li></ul><p><strong>Готово, когда</strong> все тесты в <code>test_tracer.py</code> зелёные — они проверяют (с фейковым clock): вложенность и родитель (<code>b.parent == "a"</code>, <code>a.parent is None</code>); длительности (b=2, a=6); <code>total_duration</code> = 6 (только корень); <code>slowest</code> = <code>a</code>; атрибуты записаны (<code>model</code>).</p><pre><code>pytest code -q       # красное → реализуй Tracer → зелёное
+python code/tracer.py # демо: agent_run → retrieve + llm_call, узкое место</code></pre><p><strong>Подсказка.</strong> Родитель = <code>self._stack[-1]["name"] if self._stack else None</code>. Оберни тело в <code>try/finally</code>, чтобы span закрылся даже при исключении (иначе трейс «поедет»). Стек — обычный список: <code>append</code> на входе, <code>pop</code> в <code>finally</code>.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>Готовые платформы трейсинга/observability (мульти-инструмент):</p><ul><li><strong>Arize Phoenix</strong> — open-source на OpenTelemetry/OpenInference: трейсинг + evals локально, без отправки в SaaS; поддержка OpenAI / Claude Agent SDK, LangGraph, CrewAI.</li><li><strong>LangSmith</strong> — трейсинг + evals (offline/online, 7.5), framework-agnostic, CI-интеграция.</li><li><strong>Langfuse</strong> — open-source трейсинг, токены/стоимость, LLM-as-judge.</li><li>Все говорят на стандарте <strong>OpenTelemetry GenAI</strong> (<code>gen_ai.*</code>) — единый формат spans без вендор-лока (10.2).</li></ul><p>Принцип один с нашим трейсером: оборачиваешь шаги агента в spans, получаешь дерево с длительностями и атрибутами — и видишь, где узкое место и где упало.</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> <code>observability</code> (skill) → <a href="#f-phases-10-production-and-integration-10-observability-tracing-outputs-observability-skill-md"><code>outputs/observability/SKILL.md</code></a></p><p>Скилл трейсинга: оборачиваешь шаги агента в spans, получаешь дерево с длительностями и узким местом. Зарегистрирован в <a href="#f-claude-skills-observability-skill-md"><code>.claude/skills/observability</code></a>. Это <strong>завершает Фазу 10</strong>: ИИ встроен в процесс (10.1) с мониторингом (10.2), телеметрией (10.3) и трейсингом шагов (10.4). Связь с 7.5 (online-evals), 7.4 (отладка поломок).</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Отлаживать агента по агрегатам.</strong> «error_rate 0.2» не скажет, на каком шаге сломалось. Нужен трейс конкретного запроса — дерево spans по шагам.</li><li><strong>Плоский лог вместо вложенных spans.</strong> Без родителя не видно, что внутри чего; теряется структура «шаг → подшаг». Трейсинг — это дерево, а не список строк.</li><li><strong>Двойной счёт времени.</strong> Если суммировать длительности всех spans, время вложенных посчитается дважды. <code>total</code> берёт только корневые — дети уже внутри них.</li><li><strong>Span не закрывается при исключении.</strong> Без <code>try/finally</code> упавший шаг оставит span открытым и сломает стек/дерево. Закрывай span всегда.</li><li><strong>Самописный формат spans.</strong> Свой формат привязывает к одному инструменту. OpenTelemetry GenAI (<code>gen_ai.*</code>) читается Phoenix/LangSmith/Langfuse — меньше лок-ина (как и в 10.2).</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="10.4"></div><h2>Материалы</h2><ul><li><a href="https://arize.com/docs/phoenix" target="_blank" rel="noopener">Arize Phoenix</a> — open-source трейсинг/eval на OpenTelemetry.</li><li><a href="https://docs.langchain.com/langsmith/" target="_blank" rel="noopener">LangSmith</a> — трейсинг и оценка агентов.</li><li><a href="https://opentelemetry.io/blog/2026/genai-observability/" target="_blank" rel="noopener">OpenTelemetry — GenAI observability</a> — стандартные spans/метрики.</li><li><a href="https://research.google/pubs/dapper-a-large-scale-distributed-systems-tracing-infrastructure/" target="_blank" rel="noopener">Sigelman et al., 2010 — Dapper (Google)</a> — первоисточник распределённого трейсинга: tree / span / annotation, trace-id и span-id (родоначальник концепции spans).</li><li><a href="https://opentelemetry.io/docs/concepts/signals/traces/" target="_blank" rel="noopener">OpenTelemetry — Traces &amp; Spans</a> — span = единица работы, parent/child, span-id, attributes, kind — то, что урок строит с нуля.</li><li><a href="https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-spans/" target="_blank" rel="noopener">OpenTelemetry — GenAI spans (semantic conventions)</a> — стандартные спаны агентов: <code>invoke_agent</code>, <code>execute_tool</code>, <code>gen_ai.*</code> атрибуты.</li><li><a href="https://github.com/Arize-ai/openinference" target="_blank" rel="noopener">OpenInference (Arize)</a> — семантические конвенции AI-трейсов: span-kind (LLM/TOOL/AGENT/RETRIEVER…) и атрибуты (под капотом Phoenix).</li><li><a href="https://langfuse.com/docs/observability/get-started" target="_blank" rel="noopener">Langfuse — Get Started with Tracing</a> — traces / observations / sessions поверх OTel (упомянут в Use It урока).</li><li><a href="https://medium.com/dzerolabs/observability-journey-understanding-logs-events-traces-and-spans-836524d63172" target="_blank" rel="noopener">Dzero Labs — Logs, Events, Traces &amp; Spans (Medium)</a> — доступный разбор основ трейсинга.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-10-production-and-integration-10-observability-tracing-code-test-tracer-py" open data-test="1"><summary><span class="fname">code/test_tracer.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from tracer import Tracer
+
+
+def _fake_clock(values):
+    it = iter(values)
+    return lambda: next(it)
+
+
+def test_nested_spans_and_parent():
+    # последовательность вызовов часов: a.start, b.start, b.end, a.end
+    tr = Tracer(clock=_fake_clock([0, 1, 3, 6]))
+    with tr.span("a"):
+        with tr.span("b"):
+            pass
+    by_name = {s["name"]: s for s in tr.spans}
+    assert by_name["b"]["parent"] == "a"
+    assert by_name["a"]["parent"] is None
+    assert by_name["b"]["duration"] == 2
+    assert by_name["a"]["duration"] == 6
+
+
+def test_total_duration_counts_roots():
+    tr = Tracer(clock=_fake_clock([0, 1, 3, 6]))
+    with tr.span("a"):
+        with tr.span("b"):
+            pass
+    assert tr.total_duration() == 6        # только корневой span
+
+
+def test_slowest_span():
+    tr = Tracer(clock=_fake_clock([0, 1, 3, 6]))
+    with tr.span("a"):
+        with tr.span("b"):
+            pass
+    assert tr.slowest()["name"] == "a"
+
+
+def test_attributes_recorded():
+    tr = Tracer(clock=_fake_clock([0, 1]))
+    with tr.span("llm", model="sonnet-4.6"):
+        pass
+    assert tr.spans[0]["attrs"]["model"] == "sonnet-4.6"
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-10-production-and-integration-10-observability-tracing-code-tracer-py"><summary><span class="fname">code/tracer.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Observability и трейсинг агентов: spans с нуля — Build It 10.4.
+
+Без зависимостей. Чтобы отлаживать агента в проде, нужен трейс: вложенные spans
+(шаг → подшаг) с длительностью и атрибутами — как в OpenTelemetry GenAI. Собираем
+мини-трейсер. В USE IT — LangSmith / Langfuse / Arize поверх того же принципа.
+"""
+import time
+from contextlib import contextmanager
+
+
+class Tracer:
+    """Сбор вложенных spans. clock можно подменить для воспроизводимых тестов."""
+
+    def __init__(self, clock=None):
+        self.spans = []
+        self._stack = []
+        self._clock = clock or time.perf_counter
+
+    @contextmanager
+    def span(self, name, **attrs):
+        sp = {"name": name, "attrs": attrs,
+              "parent": self._stack[-1]["name"] if self._stack else None,
+              "start": self._clock()}
+        self.spans.append(sp)
+        self._stack.append(sp)
+        try:
+            yield sp
+        finally:
+            sp["end"] = self._clock()
+            sp["duration"] = sp["end"] - sp["start"]
+            self._stack.pop()
+
+    def total_duration(self):
+        """Суммарная длительность корневых spans."""
+        return sum(s["duration"] for s in self.spans if s["parent"] is None)
+
+    def slowest(self):
+        """Самый долгий span (узкое место)."""
+        finished = [s for s in self.spans if "duration" in s]
+        return max(finished, key=lambda s: s["duration"]) if finished else None
+
+
+if __name__ == "__main__":
+    tr = Tracer()
+    with tr.span("agent_run"):
+        with tr.span("retrieve", k=3):
+            time.sleep(0.01)
+        with tr.span("llm_call", model="sonnet-4.6"):
+            time.sleep(0.02)
+    print("spans:", [(s["name"], s["parent"], round(s["duration"] * 1000)) for s in tr.spans])
+    print("total ms:", round(tr.total_duration() * 1000))
+    print("slowest:", tr.slowest()["name"])
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-10-production-and-integration-10-observability-tracing-outputs-observability-skill-md" open><summary><span class="fname">outputs/observability/SKILL.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>---
+name: observability
+description: "Трейсинг агента курса AI Native: вложенные spans на шаги, длительности, узкое место. Триггеры: «/observability», «трейс агента», «где тормозит агент», «добавь spans», «observability/tracing». Артефакт урока 10.4."
+---
+
+# observability — трейсинг шагов агента (spans)
+
+Делает путь агента видимым: вложенные spans (шаг → подшаг) с атрибутами и длительностью — мини-OpenTelemetry для отладки в проде.
+
+## Как пользоваться
+
+1. Оберни шаги агента в spans:
+
+```python
+import tracer
+tr = tracer.Tracer()
+with tr.span("agent_run"):
+    with tr.span("retrieve", k=3):
+        ...
+    with tr.span("llm_call", model="sonnet-4.6"):
+        ...
+```
+
+2. Смотри дерево: `tr.spans` (name/parent/duration/attrs), `tr.total_duration()`, `tr.slowest()` — узкое место.
+3. Для тестов подменяй `clock` на детерминированный.
+
+## Файлы
+
+- `tracer.py` — `Tracer.span(...)`, `total_duration()`, `slowest()`.
+
+## Когда применять
+
+Когда агент выдал странный результат или тормозит — трейс покажет, на каком шаге. В проде переноси на OpenTelemetry GenAI + Phoenix/LangSmith/Langfuse (те же spans, дашборды и evals). Связь: мониторинг (10.2), телеметрия (10.3), evals (7.5).
+</code></pre></details><details class="filebox" id="f-phases-10-production-and-integration-10-observability-tracing-outputs-observability-tracer-py" open><summary><span class="fname">outputs/observability/tracer.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Observability и трейсинг агентов: spans с нуля — Build It 10.4.
+
+Без зависимостей. Чтобы отлаживать агента в проде, нужен трейс: вложенные spans
+(шаг → подшаг) с длительностью и атрибутами — как в OpenTelemetry GenAI. Собираем
+мини-трейсер. В USE IT — LangSmith / Langfuse / Arize поверх того же принципа.
+"""
+import time
+from contextlib import contextmanager
+
+
+class Tracer:
+    """Сбор вложенных spans. clock можно подменить для воспроизводимых тестов."""
+
+    def __init__(self, clock=None):
+        self.spans = []
+        self._stack = []
+        self._clock = clock or time.perf_counter
+
+    @contextmanager
+    def span(self, name, **attrs):
+        sp = {"name": name, "attrs": attrs,
+              "parent": self._stack[-1]["name"] if self._stack else None,
+              "start": self._clock()}
+        self.spans.append(sp)
+        self._stack.append(sp)
+        try:
+            yield sp
+        finally:
+            sp["end"] = self._clock()
+            sp["duration"] = sp["end"] - sp["start"]
+            self._stack.pop()
+
+    def total_duration(self):
+        """Суммарная длительность корневых spans."""
+        return sum(s["duration"] for s in self.spans if s["parent"] is None)
+
+    def slowest(self):
+        """Самый долгий span (узкое место)."""
+        finished = [s for s in self.spans if "duration" in s]
+        return max(finished, key=lambda s: s["duration"]) if finished else None
+
+
+if __name__ == "__main__":
+    tr = Tracer()
+    with tr.span("agent_run"):
+        with tr.span("retrieve", k=3):
+            time.sleep(0.01)
+        with tr.span("llm_call", model="sonnet-4.6"):
+            time.sleep(0.02)
+    print("spans:", [(s["name"], s["parent"], round(s["duration"] * 1000)) for s in tr.spans])
+    print("total ms:", round(tr.total_duration() * 1000))
+    print("slowest:", tr.slowest()["name"])
+</code></pre></details><h3>Связанные файлы</h3><details class="filebox" id="f-claude-skills-observability-skill-md" open><summary><span class="fname">.claude/skills/observability/SKILL.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>---
+name: observability
+description: "Трейсинг агента курса AI Native: вложенные spans на шаги, длительности, узкое место. Триггеры: «/observability», «трейс агента», «где тормозит агент», «добавь spans», «observability/tracing». Артефакт урока 10.4."
+---
+
+# observability — трейсинг шагов агента (spans)
+
+Делает путь агента видимым: вложенные spans (шаг → подшаг) с атрибутами и длительностью — мини-OpenTelemetry для отладки в проде.
+
+## Как пользоваться
+
+1. Оберни шаги агента в spans:
+
+```python
+import tracer
+tr = tracer.Tracer()
+with tr.span("agent_run"):
+    with tr.span("retrieve", k=3):
+        ...
+    with tr.span("llm_call", model="sonnet-4.6"):
+        ...
+```
+
+2. Смотри дерево: `tr.spans` (name/parent/duration/attrs), `tr.total_duration()`, `tr.slowest()` — узкое место.
+3. Для тестов подменяй `clock` на детерминированный.
+
+## Файлы
+
+- `tracer.py` — `Tracer.span(...)`, `total_duration()`, `slowest()`.
+
+## Когда применять
+
+Когда агент выдал странный результат или тормозит — трейс покажет, на каком шаге. В проде переноси на OpenTelemetry GenAI + Phoenix/LangSmith/Langfuse (те же spans, дашборды и evals). Связь: мониторинг (10.2), телеметрия (10.3), evals (7.5).
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/telemetry-and-reproducibility/"><small>← 10.3</small>Телеметрия и воспроизводимость</a><a href="../../lessons/privacy-and-corporate-data/" style="text-align:right"><small>11.1 →</small>Конфиденциальность и корпоративные данные</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

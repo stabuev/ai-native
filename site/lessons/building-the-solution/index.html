@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>12.2 Сборка решения — AI Native</title>
+  <meta name="description" content="Capstone — это не новый кубик, а сборка изученного в один работающий процесс.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/building-the-solution/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="12.2 Сборка решения — AI Native">
+  <meta property="og:description" content="Capstone — это не новый кубик, а сборка изученного в один работающий процесс.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/building-the-solution/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="12.2">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 12.2 · Сборка решения</h1><p><strong>Фаза 12 — Capstone</strong> · <strong>Результат фазы:</strong> Автоматизировать реальный процесс end-to-end и защитить решение с метриками эффекта.</p><p><strong>Спека готова (12.1) — время собрать.</strong> Capstone не требует нового кубика: всё, что нужно, ты уже строил по фазам — роутинг, guardrail, инструменты, память, телеметрия. Здесь ты соединяешь их в один процесс, который реально работает от входа до результата.</p><blockquote><strong>MOTTO.</strong> Capstone — это не новый кубик, а сборка изученного в один работающий процесс.</blockquote><h2>PROBLEM</h2><p>За курс собрано много кирпичей: промпты, RAG, агенты, MCP, cost-aware роутинг, память, мониторинг. Но по отдельности это набор демок. Реальная задача Capstone — соединить их в <strong>один end-to-end процесс</strong>, который решает конкретную задачу из спеки (12.1): принял вход, выбрал модель по сложности, проверил guardrail'ом, вызвал инструмент, записал состояние, посчитал стоимость, вернул результат.</p><p>Сложность не в каждом блоке (они уже собраны), а в <strong>интеграции</strong>: чтобы блоки передавали друг другу данные и вместе давали рабочий результат, а не пять несвязанных кусков. Соберём скелет такого процесса — с правильными стыками, на детерминированных стабах вместо реальной модели.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Собранный Capstone — это <strong>конвейер, а не куча деталей на верстаке</strong>. Двигатель, коробка, колёса по отдельности не едут — едет машина, где они соединены в нужном порядке. Так и здесь: роутинг без инструмента бесполезен, инструмент без телеметрии неучётен, память без guardrail'а небезопасна. Ценность рождается на <strong>стыках</strong>, когда выход одного блока становится входом следующего.</p><p>Ключевая мысль: Capstone не изобретает механизмы — он <strong>оркестрирует</strong> уже изученные. Каждый блок ты собирал в своей фазе; здесь важен только порядок и передача данных между ними.</p><h3>Как это работает</h3><pre><code>вход → classify (Ф9): по сложности → выбор модели (haiku/opus)
+     → guardrail (Ф7): пустое/опасное → блок
+     → инструмент (Ф6, в проде через MCP) → действие
+     → память (Ф4/7): записать состояние процесса
+     → телеметрия (Ф10): модель, уровень, стоимость → учёт
+     → результат</code></pre><ul><li><code>classify(task)</code> — роутинг по сложности (Фаза 9): по стем-триггерам («анализ», «код», «сложн», «стратег») → <code>high</code>, иначе <code>low</code>.</li><li><code>Capstone.run(task)</code> — прогон по конвейеру: guardrail → выбор модели → инструмент → память → телеметрия; вернуть <code>{result, model, level, cost}</code>.</li><li><code>total_cost()</code> — суммарные расходы процесса из телеметрии (FinOps, Фаза 9).</li></ul><p>Стоимость считается как в Фазе 9: по числу токенов (здесь прокси — слова×3) на цену модели за 1M. Haiku 4.5 — $1/$5, Opus 4.8 — $5/$25 (вход/выход), поэтому простая задача через Haiku стоит кратно дешевле сложной через Opus.</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Прогоним два задания через один и тот же <code>Capstone</code>:</p><pre><code>run("сделай саммари письма")
+   classify → "low"   (нет стем-триггеров сложности)
+   модель  → haiku-4.5 ($1/$5)
+   n_in = 4 слова × 3 = 12 токенов, n_out = 20
+   cost = (12×1 + 20×5) / 1e6 = 112/1e6 ≈ $0.000112
+   → {result: "результат: ...", model: "haiku-4.5", level: "low", cost: 0.000112}
+
+run("проведи анализ архитектуры кода")
+   classify → "high"  ("анализ" и "код" — триггеры)
+   модель  → opus-4.8 ($5/$25)
+   n_in = 4×3 = 12, n_out = 20
+   cost = (12×5 + 20×25) / 1e6 = 560/1e6 ≈ $0.00056
+   → {..., model: "opus-4.8", level: "high", cost: 0.00056}
+
+в памяти: 2 задачи | total_cost() ≈ $0.000672</code></pre><p>Один конвейер сам направил дешёвую задачу на дешёвую модель, а дорогую — на топовую, и обе записал в память и телеметрию. Это и есть интеграция: роутинг (Ф9), инструмент (Ф6), память (Ф4/7) и учёт (Ф10) сработали вместе за один вызов.</p><p>Но вот <strong>честная граница скелета</strong>:</p><ul><li><strong>Стабы вместо реальных блоков.</strong> <code>_tool</code> возвращает строку, модель не вызывается — здесь важен <strong>контракт и проводка</strong>, а не интеллект. В проде <code>_tool</code> идёт через MCP-сервер, а <code>run</code> дергает реальную модель.</li><li><strong>Один проход, не цикл.</strong> Настоящий агент петляет reason→act→observe (Фаза 7), пока не решит задачу; скелет показывает единичный проход — каркас, на который навешивается цикл.</li><li><strong>Стоимость — оценка.</strong> <code>cost</code> из прокси-токенов; фактические берутся из телеметрии реальных вызовов (Фаза 10). Скелет учит <strong>куда</strong> класть учёт, а не даёт точную цифру.</li></ul><p>Поменяй стабы на реальные блоки курса — контракт «вход → роутинг → guardrail → инструмент → память → телеметрия → результат» не изменится.</p><h2>BUILD IT</h2><p><strong>Задание: собери end-to-end процесс из кирпичей курса.</strong> Только стандартная библиотека, без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/12.2-solution/</code>), а файлы урока клади в подпапку <code>code/</code> (как в 0.1). Нужен только <strong>Python 3</strong> (для теста ещё <code>pytest</code>).</blockquote><p>Создай файл <code>solution.py</code>: словарь <code>ROUTE</code> (уровень → модель и цены), функцию <code>classify</code> и класс <code>Capstone</code>:</p><ul><li><strong><code>classify(task)</code></strong> — вернуть <code>"high"</code>, если в задаче есть стем сложности («анализ», «код», «сложн», «стратег»), иначе <code>"low"</code>.</li><li><strong><code>Capstone.__init__</code></strong> — завести <code>self.memory = {}</code> и <code>self.telemetry = []</code>.</li><li><strong><code>Capstone.run(task)</code></strong> — guardrail (пустая задача → <code>raise ValueError</code>); <code>classify</code> → выбрать модель и цены из <code>ROUTE</code>; вызвать инструмент; посчитать <code>cost</code> по токенам-прокси; записать в <code>memory</code> и <code>telemetry</code>; вернуть <code>{result, model, level, cost}</code>.</li><li><strong><code>Capstone.total_cost()</code></strong> — сумма <code>cost</code> по телеметрии.</li></ul><p><strong>Готово, когда</strong> все тесты в <code>test_solution.py</code> зелёные — они проверяют: <code>classify</code> различает простое/сложное; простая задача → <code>haiku-4.5</code>/<code>low</code>, сложная → <code>opus-4.8</code>; память и телеметрия пополняются, <code>total_cost &gt; 0</code>; пустая задача → <code>ValueError</code> (guardrail).</p><pre><code>pytest code -q          # красное → реализуй solution.py → зелёное
+python code/solution.py # демо: простая→haiku, сложная→opus, итог по памяти и $</code></pre><p><strong>Подсказка.</strong> Стем-триггеры ищи в <code>task.lower()</code> через <code>any(w in low for w in (...))</code> (как в Фазе 9 — морфология ломает точное совпадение, поэтому стемы). Цены держи в <code>ROUTE</code> рядом с моделью, чтобы <code>run</code> брал их одним обращением.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>Интеграция в рабочий инструмент (мульти-провайдер): замени стабы на реальные блоки курса.</p><ul><li><strong>Агент</strong> — цикл reason→act→observe (Фаза 7) на Claude Agent SDK или OpenAI Agents SDK вместо единичного прохода.</li><li><strong>Инструменты и данные</strong> — через MCP-сервер (Фаза 6, актуальная спека 2025-11-25): доступ к БД/файлам с контролем прав и allowlist (6.5, 11.1, 11.5).</li><li><strong>Cost-aware</strong> — роутер/каскад (Фаза 9), кэш и batch: <code>classify</code> тут — упрощённый роутер, в проде добавь quality-gate и кэш префикса.</li><li><strong>Память</strong> — модуль из 4.2 (релевантность + свежесть) вместо словаря; <strong>наблюдаемость</strong> — телеметрия и трейсинг (Фаза 10) вместо списка.</li><li><strong>Встрой безопасно</strong> — за фича-флагом с fallback на старый путь (10.1), чтобы откат был мгновенным, а не выкатывай «в лоб».</li></ul><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Работающий end-to-end процесс → <a href="#f-phases-12-capstone-12-building-the-solution-outputs-solution-py"><code>outputs/solution.py</code></a></p><p>Скелет процесса под твою спеку (12.1) — с правильными стыками роутинга, guardrail'а, инструмента, памяти и телеметрии. Замени стабы на реальные блоки, встрой за фича-флагом — и переходи к замерам эффекта и защите (12.3).</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Собирать новый кубик вместо интеграции.</strong> Capstone — оркестрация изученного, а не изобретение механизма. Ценность на стыках блоков, а не в новом коде.</li><li><strong>Пропустить учёт и память.</strong> Без телеметрии не посчитать стоимость для защиты (12.3), без памяти теряется состояние процесса. Это не опционально — это часть конвейера.</li><li><strong>Один проход вместо цикла в проде.</strong> Скелет линеен; реальный агент петляет reason→act→observe (Ф7). Не приняв это, получишь «однократный» процесс там, где нужен итеративный.</li><li><strong>Дать инструменту прямой доступ без MCP-гейта.</strong> В проде инструмент идёт через MCP с контролем прав (6.5, 11.5), а не дергает БД напрямую из <code>run</code>.</li><li><strong>Выкатывать без фича-флага и fallback.</strong> Интеграция в живой инструмент без флага и отката (10.1) — риск: нечем быстро выключить, если пойдёт не так.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="12.2"></div><h2>Материалы</h2><ul><li><a href="https://www.anthropic.com/research/building-effective-agents" target="_blank" rel="noopener">Anthropic — Building Effective Agents</a> — паттерны сборки агентных систем.</li><li><a href="https://platform.claude.com/docs/en/agent-sdk/overview" target="_blank" rel="noopener">Anthropic — Agent SDK overview</a> — agent loop, инструменты, контекст.</li><li><a href="https://modelcontextprotocol.io/specification/2025-11-25" target="_blank" rel="noopener">MCP — Specification 2025-11-25</a> — актуальная спека подключения инструментов и данных.</li><li><a href="https://www.anthropic.com/engineering/building-agents-with-the-claude-agent-sdk" target="_blank" rel="noopener">Anthropic — Building agents with the Claude Agent SDK</a> — как реально собрать агента: context engineering через структуру файлов, дизайн инструментов, память на длинных задачах, субагенты.</li><li><a href="https://cdn.openai.com/business-guides-and-resources/a-practical-guide-to-building-agents.pdf" target="_blank" rel="noopener">OpenAI — A Practical Guide to Building Agents (PDF)</a> — мульти-провайдерный разбор: 3 компонента агента, выбор модели accuracy→cost/latency, дизайн инструментов, guardrails, multi-agent.</li><li><a href="https://github.com/humanlayer/12-factor-agents" target="_blank" rel="noopener">humanlayer — 12-Factor Agents</a> — 12 принципов надёжной сборки прод-агента: «агент — это просто софт», модульность, контроль над стейтом и промптами.</li><li><a href="https://github.com/anthropics/claude-cookbooks/tree/main/patterns/agents" target="_blank" rel="noopener">Anthropic — Claude Cookbooks: agent patterns</a> — минимальные рабочие реализации паттернов из Building Effective Agents (референс-код для сборки по образцу).</li><li><a href="https://huyenchip.com/2025/01/07/agents.html" target="_blank" rel="noopener">Chip Huyen — Agents</a> — эссе про tools + planning + failure modes с разбором «почему и как», а не только паттерны.</li><li><a href="https://docs.langchain.com/oss/python/langgraph/overview" target="_blank" rel="noopener">LangGraph — overview</a> — открытый (MIT) фреймворк оркестрации: short-/long-term memory, human-in-the-loop, durable execution.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-12-capstone-12-building-the-solution-code-test-solution-py" open data-test="1"><summary><span class="fname">code/test_solution.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>import pytest
+from solution import Capstone, classify
+
+
+def test_classify_routes_by_complexity():
+    assert classify("сделай саммари") == "low"
+    assert classify("проведи анализ кода") == "high"
+
+
+def test_run_routes_cheap_for_simple():
+    res = Capstone().run("переведи фразу")
+    assert res["model"] == "haiku-4.5"
+    assert res["level"] == "low"
+
+
+def test_run_routes_top_for_complex():
+    res = Capstone().run("сложный анализ архитектуры")
+    assert res["model"] == "opus-4.8"
+
+
+def test_memory_and_telemetry_recorded():
+    cap = Capstone()
+    cap.run("задача один")
+    cap.run("анализ задачи два")
+    assert len(cap.memory) == 2
+    assert len(cap.telemetry) == 2
+    assert cap.total_cost() &gt; 0
+
+
+def test_empty_task_blocked_by_guardrail():
+    with pytest.raises(ValueError):
+        Capstone().run("   ")
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-12-capstone-12-building-the-solution-code-solution-py"><summary><span class="fname">code/solution.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Сборка решения: end-to-end процесс из кирпичей курса — Build It для урока 12.2.
+
+Без зависимостей. Capstone собирает изученное в один процесс: маршрутизация по
+сложности (Фаза 9) → guardrail (Фаза 7) → вызов инструмента (Фаза 6) → запись в
+память (Фазы 4/7) → телеметрия токенов/стоимости (Фаза 10). В проде инструмент —
+через MCP, модель — реальная; здесь детерминированные стабы.
+"""
+
+
+def classify(task):
+    """Роутинг по сложности (Фаза 9)."""
+    return "high" if any(w in task.lower() for w in ("анализ", "код", "сложн", "стратег")) else "low"
+
+
+# (модель, цена входа, цена выхода за 1M) — как в Фазе 9
+ROUTE = {"low": ("haiku-4.5", 1.0, 5.0), "high": ("opus-4.8", 5.0, 25.0)}
+
+
+class Capstone:
+    """End-to-end процесс: роутинг → guardrail → инструмент → память → телеметрия."""
+
+    def __init__(self):
+        self.memory = {}
+        self.telemetry = []
+
+    def _tool(self, task):
+        """Инструмент (в проде — через MCP, Фаза 6)."""
+        return f"результат: {task}"
+
+    def run(self, task):
+        if not task.strip():                                  # guardrail (Фаза 7)
+            raise ValueError("пустая задача")
+        level = classify(task)                                # роутинг (Фаза 9)
+        model, p_in, p_out = ROUTE[level]
+        result = self._tool(task)                             # действие (Фаза 6)
+        n_in, n_out = len(task.split()) * 3, 20
+        cost = round((n_in * p_in + n_out * p_out) / 1e6, 6)  # стоимость (Фаза 9)
+        self.memory[task] = result                            # память (Фазы 4/7)
+        self.telemetry.append({"task": task, "model": model,  # телеметрия (Фаза 10)
+                               "level": level, "cost": cost})
+        return {"result": result, "model": model, "level": level, "cost": cost}
+
+    def total_cost(self):
+        return round(sum(t["cost"] for t in self.telemetry), 6)
+
+
+if __name__ == "__main__":
+    cap = Capstone()
+    print(cap.run("сделай саммари письма"))           # простое → haiku
+    print(cap.run("проведи анализ архитектуры кода"))  # сложное → opus
+    print("в памяти задач:", len(cap.memory), "| итого $:", cap.total_cost())
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-12-capstone-12-building-the-solution-outputs-solution-py" open><summary><span class="fname">outputs/solution.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Сборка решения: end-to-end процесс из кирпичей курса — Build It для урока 12.2.
+
+Без зависимостей. Capstone собирает изученное в один процесс: маршрутизация по
+сложности (Фаза 9) → guardrail (Фаза 7) → вызов инструмента (Фаза 6) → запись в
+память (Фазы 4/7) → телеметрия токенов/стоимости (Фаза 10). В проде инструмент —
+через MCP, модель — реальная; здесь детерминированные стабы.
+"""
+
+
+def classify(task):
+    """Роутинг по сложности (Фаза 9)."""
+    return "high" if any(w in task.lower() for w in ("анализ", "код", "сложн", "стратег")) else "low"
+
+
+# (модель, цена входа, цена выхода за 1M) — как в Фазе 9
+ROUTE = {"low": ("haiku-4.5", 1.0, 5.0), "high": ("opus-4.8", 5.0, 25.0)}
+
+
+class Capstone:
+    """End-to-end процесс: роутинг → guardrail → инструмент → память → телеметрия."""
+
+    def __init__(self):
+        self.memory = {}
+        self.telemetry = []
+
+    def _tool(self, task):
+        """Инструмент (в проде — через MCP, Фаза 6)."""
+        return f"результат: {task}"
+
+    def run(self, task):
+        if not task.strip():                                  # guardrail (Фаза 7)
+            raise ValueError("пустая задача")
+        level = classify(task)                                # роутинг (Фаза 9)
+        model, p_in, p_out = ROUTE[level]
+        result = self._tool(task)                             # действие (Фаза 6)
+        n_in, n_out = len(task.split()) * 3, 20
+        cost = round((n_in * p_in + n_out * p_out) / 1e6, 6)  # стоимость (Фаза 9)
+        self.memory[task] = result                            # память (Фазы 4/7)
+        self.telemetry.append({"task": task, "model": model,  # телеметрия (Фаза 10)
+                               "level": level, "cost": cost})
+        return {"result": result, "model": model, "level": level, "cost": cost}
+
+    def total_cost(self):
+        return round(sum(t["cost"] for t in self.telemetry), 6)
+
+
+if __name__ == "__main__":
+    cap = Capstone()
+    print(cap.run("сделай саммари письма"))           # простое → haiku
+    print(cap.run("проведи анализ архитектуры кода"))  # сложное → opus
+    print("в памяти задач:", len(cap.memory), "| итого $:", cap.total_cost())
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~10 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/process-selection-and-spec/"><small>← 12.1</small>Выбор процесса и спецификация</a><a href="../../lessons/presentation-and-defense/" style="text-align:right"><small>12.3 →</small>Презентация и защита</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

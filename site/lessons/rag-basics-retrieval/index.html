@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>3.3 Основы RAG: retrieval — AI Native</title>
+  <meta name="description" content="RAG — это «найди нужное, потом ответь»: retrieval решает, что модель вообще увидит.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/rag-basics-retrieval/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="3.3 Основы RAG: retrieval — AI Native">
+  <meta property="og:description" content="RAG — это «найди нужное, потом ответь»: retrieval решает, что модель вообще увидит.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/rag-basics-retrieval/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="3.3">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 3.3 · Основы RAG: retrieval</h1><p><strong>Фаза 3 — Текст и документы</strong> · <strong>Результат фазы:</strong> Строить пайплайны резюмирования и редактуры; собрать базовый RAG над своим корпусом.</p><p><strong>Requires (только для USE IT):</strong> платный API-ключ одного из провайдеров. BUILD IT работает офлайн, без ключей и без сети.</p><p><strong>Этот урок — про то, как дать модели знание твоих документов.</strong> Модель не знает твой корпус и придумывает (урок 1.4), а целиком он в окно не влезает (3.2). <strong>RAG</strong> решает это так: на запрос находим релевантные куски и кладём их в промпт. Сердце RAG — <strong>retrieval</strong> (поиск нужного), и мы соберём его сами на TF-IDF, чтобы понять механизм, прежде чем брать нейроэмбеддинги.</p><blockquote><strong>MOTTO.</strong> RAG — это «найди нужное, потом ответь»: retrieval решает, что модель вообще увидит.</blockquote><h2>PROBLEM</h2><p>Спросишь модель про свои внутренние документы — она либо не знает, либо уверенно выдумывает. Положить весь корпус в контекст нельзя: не влезет и дорого (3.2). Значит, на каждый запрос нужно <strong>достать только релевантные куски</strong> и подложить их в промпт. Вопрос — как из тысяч кусков найти те самые. Это и есть retrieval, и от его качества зависит весь RAG: подложишь мусор — получишь мусор.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>RAG — это <strong>экзамен с открытой книгой</strong>: не зубрить весь учебник, а быстро найти нужную страницу и ответить по ней. «Найти страницу» = retrieval. Чтобы искать по смыслу, тексты переводят в <strong>векторы</strong> (эмбеддинги) так, что близкое по смыслу оказывается рядом в пространстве, — и берут ближайшие к запросу.</p><h3>Как это работает</h3><pre><code>корпус → эмбеддинги (вектор на документ)
+запрос → эмбеддинг запроса
+            │ косинусная близость
+            ▼
+     топ-k ближайших кусков → в промпт модели</code></pre><p>В Build It роль эмбеддинга играет <strong>TF-IDF</strong> — классический способ превратить текст в вектор по важности слов:</p><ul><li><strong>TF (term frequency)</strong> — как часто слово встречается в <strong>этом</strong> документе (доля от всех слов).</li><li><strong>IDF (inverse document frequency)</strong> — насколько слово <strong>редкое</strong> по корпусу: <code>log((n+1)/(df+1)) + 1</code>, где <code>n</code> — число документов, <code>df</code> — в скольких из них слово есть. Редкое слово (<code>df</code> мал) → большой idf; «общее» слово вроде «и», «для» → маленький.</li><li><strong>TF-IDF = TF × IDF.</strong> Слово важно, если часто встречается здесь, но редко вообще. Так вектор документа выделяет его характерные слова.</li></ul><p><strong>Косинусная близость</strong> сравнивает направления двух векторов: <code>1.0</code> — смотрят в одну сторону (тексты делят важные слова), <code>0.0</code> — общих значимых слов нет. <code>search</code> считает косинус запроса к каждому документу и берёт топ-k.</p><blockquote><strong>Косинус на пальцах.</strong> Возьмём два крошечных вектора по двум словам: <code>a = [1, 0]</code> и <code>b = [1, 1]</code>. Косинус = скалярное произведение / произведение длин = <code>(1·1 + 0·1) / (√1 · √2) = 1 / 1.41 ≈ 0.71</code>. Одно общее ненулевое слово из двух → близость ~0.71; будь все слова общими, вышло бы <code>1.0</code>, ни одного общего — <code>0.0</code>. В уроке векторы длиннее (по компоненте на каждое значимое слово) и взвешены tf-idf, но арифметика ровно та же — поэтому числа в разборе ниже можно принять на веру или пересчитать этим же способом.</blockquote><p>В проде TF-IDF меняют на <strong>нейроэмбеддинги</strong>: они ловят <strong>смысл</strong>, а не точное совпадение слов, поэтому «питомцы» найдут документ про «животных», а TF-IDF — нет (он лексический). Но принцип «вектор + близость + топ-k» ровно тот же.</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Возьмём корпус из 4 документов и прогоним <code>search</code> (реальные косинус-скоры):</p><pre><code>1. Python — язык программирования общего назначения.
+2. Кошки — домашние животные, любят спать днём.
+3. Машинное обучение использует данные для предсказаний.
+4. Собаки — верные домашние животные и любят прогулки.</code></pre><p><strong>Запрос «язык программирования»:</strong></p><pre><code>0.632  Python — язык программирования…     ← делит редкие слова «язык», «программирования»
+0.000  остальные                           ← общих значимых слов нет</code></pre><p><strong>Запрос «домашние животные»:</strong></p><pre><code>0.505  Кошки — домашние животные…
+0.460  Собаки — … домашние животные…
+0.000  Python / Машинное обучение</code></pre><p>Оба «животных» документа всплыли выше Python и ML. Заметь: score тут ~0.5, ниже, чем 0.632 у Python. Почему? Слова «домашние»/«животные» встречаются в <strong>двух</strong> документах (их idf ниже), а «программирования» — только в <strong>одном</strong> (idf выше), поэтому редкое совпадение весит сильнее.</p><p><strong>Запрос «квантовая криптография блокчейн»:</strong></p><pre><code>0.000  все документы</code></pre><p>Ни одного из этих слов в корпусе нет → нет пересечения → score <code>0</code>. Это важный урок RAG: retrieval <strong>может ничего не найти</strong>, и это надо ловить, а не подкладывать модели нерелевантный кусок.</p><h2>BUILD IT</h2><p><strong>Задание: собери TF-IDF ретривер с нуля</strong> — стандартная библиотека (<code>math</code>, <code>re</code>, <code>collections</code>), без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/3.3-rag-retrieval/</code>), а файлы урока клади в подпапку <code>code/</code> (как в 0.1). Нужен только <strong>Python 3</strong>, всё офлайн (для теста ещё <code>pytest</code>).</blockquote><p>Создай <code>retriever.py</code> и реализуй:</p><ul><li><strong><code>_tokens(text)</code></strong> — слова в нижнем регистре (<code>re.findall(r"\w+", text.lower())</code>).</li><li><strong><code>_tfidf(tokens, idf)</code></strong> — посчитай TF (частоту каждого слова как долю от всех) и верни вектор-словарь <code>{слово: tf * idf.get(слово, 0)}</code>.</li><li><strong><code>build_index(docs)</code></strong> — токенизируй документы; посчитай <code>df</code> (в скольких документах встречается слово); <code>idf = log((n+1)/(df+1)) + 1</code>; верни <code>{"docs": [...], "idf": {...}, "vectors": [tf-idf каждого дока]}</code>.</li><li><strong><code>_cosine(a, b)</code></strong> — косинус двух разреженных векторов-словарей: скалярное произведение по общим словам, делённое на произведение норм; <code>0.0</code>, если норма нулевая.</li><li><strong><code>search(query, index, k=3)</code></strong> — посчитай tf-idf запроса, оцени косинус к каждому документу, верни топ-k по убыванию как <code>[{"doc": ..., "score": ...}]</code>.</li></ul><p><strong>Готово, когда</strong> тест <code>test_retriever.py</code> зелёный — он проверяет, что на «язык программирования» первым идёт Python, что top-k ограничивает выдачу, что запрос про животных поднимает оба «животных» документа, а бессмысленный запрос даёт score <code>0</code>.</p><pre><code>pytest code -q            # красное → реализуй функции → зелёное
+python code/retriever.py  # демо: топ-документы на разные запросы</code></pre><p><strong>Подсказка.</strong> <code>df</code> удобно собрать через <code>Counter</code>, обновляя его <code>set(tokens)</code> каждого дока (слово считается раз на документ). В <code>_cosine</code> бери только <code>set(a) &amp; set(b)</code> — по разреженным словарям это быстро.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>Тот же retrieval — через нейроэмбеддинги и готовое хранилище (мульти-провайдер):</p><pre><code># Эмбеддинги: OpenAI text-embedding-3-* / Google text-embedding / Voyage (для Anthropic)
+emb = OpenAI().embeddings.create(model="text-embedding-3-small", input=docs)
+# Хранилище: Chroma берёт индексацию и поиск на себя
+import chromadb
+col = chromadb.Client().create_collection("docs")
+col.add(ids=ids, documents=docs)            # Chroma сам считает эмбеддинги
+hits = col.query(query_texts=["мой вопрос"], n_results=3)</code></pre><p>Принцип не изменился — поменялись только «эмбеддинг» (нейросеть вместо TF-IDF, ловит смысл, а не точные слова) и «индекс» (БД вместо словаря).</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Мини-RAG скрипт → <a href="#f-phases-03-text-and-documents-03-rag-basics-retrieval-outputs-mini-rag-py"><code>outputs/mini_rag.py</code></a></p><p>Готовый <code>retrieve → augment → (generate)</code>: находит топ-k кусков и собирает промпт с контекстом. Полноценное хранилище — урок 3.4; первоисточник идеи — <a href="https://arxiv.org/abs/2005.11401" target="_blank" rel="noopener">RAG, Lewis et al. 2020</a>.</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Класть в промпт весь корпус.</strong> Не влезет и дорого (3.2). Смысл RAG — достать <strong>только</strong> топ-k релевантных кусков.</li><li><strong>Игнорировать «ничего не нашлось».</strong> Если лучший score близок к 0 — релевантного нет; подложить случайный кусок хуже, чем честно сказать «не нашёл» (привет границам доверия из 1.4).</li><li><strong>Ждать от лексического поиска понимания синонимов.</strong> TF-IDF матчит точные слова: «питомцы» не найдут «животных». Для смысла нужны нейроэмбеддинги (USE IT) или гибрид (урок 3.5).</li><li><strong>Грузить документы без чанкинга.</strong> Искать по гигантским документам бесполезно — режь их на куски (урок 3.2), а индексируй и ищи уже по кускам.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="3.3"></div><h2>Материалы</h2><ul><li><a href="https://arxiv.org/abs/2005.11401" target="_blank" rel="noopener">Lewis et al., 2020 — Retrieval-Augmented Generation</a> — первоисточник RAG.</li><li><a href="https://platform.openai.com/docs/guides/embeddings" target="_blank" rel="noopener">OpenAI — Embeddings guide</a> — нейроэмбеддинги и косинусная близость.</li><li><a href="https://docs.trychroma.com/docs/overview/introduction" target="_blank" rel="noopener">Chroma — Introduction</a> — готовое хранилище для retrieval.</li><li><a href="https://arxiv.org/abs/2004.04906" target="_blank" rel="noopener">Karpukhin et al., 2020 — Dense Passage Retrieval (DPR)</a> — seminal плотного ретрива: как обучают эмбеддинги под поиск (пара к Lewis RAG).</li><li><a href="https://huggingface.co/spaces/mteb/leaderboard" target="_blank" rel="noopener">MTEB Leaderboard (Hugging Face)</a> — актуальный рейтинг эмбеддинг-моделей: как выбрать, что класть в ретривер.</li><li><a href="https://vickiboykis.com/what_are_embeddings/" target="_blank" rel="noopener">Vicki Boykis — What are embeddings (2023)</a> — глубокий разбор эмбеддингов «с нуля», созвучно Build It.</li><li><a href="https://www.sbert.net/" target="_blank" rel="noopener">Sentence-Transformers (SBERT)</a> — практическая библиотека для эмбеддингов и косинусного поиска.</li><li><a href="https://ai.google.dev/gemini-api/docs/embeddings" target="_blank" rel="noopener">Google Gemini — Embeddings</a> — эмбеддинги у Google (мульти-провайдер).</li><li><a href="https://medium.com/data-science/text-embeddings-comprehensive-guide-afd97fce8fb5" target="_blank" rel="noopener">Mariya Mansurova — Text Embeddings: Comprehensive Guide (Medium/TDS)</a> — BoW → TF-IDF → BERT с кодом, прямо в тему TF-IDF-ретривера урока.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-03-text-and-documents-03-rag-basics-retrieval-code-test-retriever-py" open data-test="1"><summary><span class="fname">code/test_retriever.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from retriever import build_index, search
+
+CORPUS = [
+    "Python — язык программирования общего назначения.",
+    "Кошки домашние животные и любят спать днём.",
+    "Машинное обучение использует данные для предсказаний.",
+    "Собаки верные домашние животные и любят прогулки.",
+]
+
+
+def test_relevant_doc_ranked_first():
+    index = build_index(CORPUS)
+    hits = search("язык программирования", index, k=1)
+    assert "Python" in hits[0]["doc"]
+
+
+def test_topk_limits_results():
+    index = build_index(CORPUS)
+    assert len(search("животные", index, k=2)) == 2
+
+
+def test_animals_query_prefers_animal_docs():
+    index = build_index(CORPUS)
+    top2 = [h["doc"] for h in search("домашние животные", index, k=2)]
+    assert all("животные" in d for d in top2)     # кошки и собаки выше Python/ML
+
+
+def test_no_match_scores_zero():
+    index = build_index(CORPUS)
+    hits = search("квантовая криптография блокчейн", index, k=1)
+    assert hits[0]["score"] == 0.0
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-03-text-and-documents-03-rag-basics-retrieval-code-retriever-py"><summary><span class="fname">code/retriever.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""RAG retrieval: TF-IDF ретривер с нуля — Build It для урока 3.3.
+
+Без зависимостей. «Эмбеддинг» здесь — TF-IDF вектор слова; близость — косинус.
+Принцип тот же, что у настоящего RAG: представить тексты числами и найти
+ближайшие к запросу. В USE IT TF-IDF заменяется на нейроэмбеддинги.
+"""
+import math
+import re
+from collections import Counter
+
+
+def _tokens(text):
+    return re.findall(r"\w+", text.lower())
+
+
+def _tfidf(tokens, idf):
+    tf = Counter(tokens)
+    total = sum(tf.values()) or 1
+    return {w: (c / total) * idf.get(w, 0.0) for w, c in tf.items()}
+
+
+def build_index(docs):
+    """docs: list[str] -&gt; индекс с idf и tf-idf векторами документов."""
+    toks = [_tokens(d) for d in docs]
+    df = Counter()
+    for t in toks:
+        df.update(set(t))
+    n = len(docs)
+    idf = {w: math.log((n + 1) / (c + 1)) + 1 for w, c in df.items()}
+    return {"docs": list(docs), "idf": idf, "vectors": [_tfidf(t, idf) for t in toks]}
+
+
+def _cosine(a, b):
+    common = set(a) &amp; set(b)
+    dot = sum(a[w] * b[w] for w in common)
+    na = math.sqrt(sum(v * v for v in a.values()))
+    nb = math.sqrt(sum(v * v for v in b.values()))
+    return dot / (na * nb) if na and nb else 0.0
+
+
+def search(query, index, k=3):
+    """Топ-k документов по косинусной близости к запросу."""
+    qv = _tfidf(_tokens(query), index["idf"])
+    scored = sorted(
+        ((_cosine(qv, v), i) for i, v in enumerate(index["vectors"])),
+        key=lambda x: x[0], reverse=True,
+    )
+    return [{"doc": index["docs"][i], "score": round(s, 4)} for s, i in scored[:k]]
+
+
+if __name__ == "__main__":
+    corpus = [
+        "Python — язык программирования общего назначения.",
+        "Кошки — домашние животные, любят спать днём.",
+        "Машинное обучение использует данные для предсказаний.",
+        "Собаки — верные домашние животные и любят прогулки.",
+    ]
+    index = build_index(corpus)
+    for q in ["домашние животные", "язык программирования"]:
+        print(f"\nЗапрос: {q}")
+        for hit in search(q, index, k=2):
+            print(f"  {hit['score']:.3f}  {hit['doc']}")
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-03-text-and-documents-03-rag-basics-retrieval-outputs-mini-rag-py" open><summary><span class="fname">outputs/mini_rag.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""mini_rag.py — артефакт урока 3.3: самодостаточный RAG-скелет (retrieve → augment).
+
+Без зависимостей и без сети. TF-IDF retrieval + сборка промпта с контекстом.
+Шаг generate оставлен заглушкой: подставь вызов модели (Claude/OpenAI/Gemini).
+
+Запуск:  python mini_rag.py
+"""
+import math
+import re
+from collections import Counter
+
+
+def _tokens(t):
+    return re.findall(r"\w+", t.lower())
+
+
+def _tfidf(tokens, idf):
+    tf = Counter(tokens)
+    total = sum(tf.values()) or 1
+    return {w: (c / total) * idf.get(w, 0.0) for w, c in tf.items()}
+
+
+def build_index(docs):
+    toks = [_tokens(d) for d in docs]
+    df = Counter()
+    for t in toks:
+        df.update(set(t))
+    n = len(docs)
+    idf = {w: math.log((n + 1) / (c + 1)) + 1 for w, c in df.items()}
+    return {"docs": list(docs), "idf": idf, "vectors": [_tfidf(t, idf) for t in toks]}
+
+
+def _cosine(a, b):
+    dot = sum(a[w] * b[w] for w in set(a) &amp; set(b))
+    na = math.sqrt(sum(v * v for v in a.values()))
+    nb = math.sqrt(sum(v * v for v in b.values()))
+    return dot / (na * nb) if na and nb else 0.0
+
+
+def retrieve(query, index, k=3):
+    qv = _tfidf(_tokens(query), index["idf"])
+    scored = sorted(((_cosine(qv, v), i) for i, v in enumerate(index["vectors"])),
+                    key=lambda x: x[0], reverse=True)
+    return [index["docs"][i] for s, i in scored[:k] if s &gt; 0]
+
+
+def build_prompt(query, contexts):
+    """augment: собрать промпт с найденным контекстом и требованием отвечать по нему."""
+    ctx = "\n".join(f"- {c}" for c in contexts) or "(контекст не найден)"
+    return (f"Ответь на вопрос ТОЛЬКО по контексту ниже. "
+            f"Если ответа в контексте нет — скажи «не знаю».\n\n"
+            f"Контекст:\n{ctx}\n\nВопрос: {query}\nОтвет:")
+
+
+def answer(query, index, generate=None, k=3):
+    """retrieve → augment → generate. generate(prompt)-&gt;str; по умолчанию вернёт промпт."""
+    contexts = retrieve(query, index, k)
+    prompt = build_prompt(query, contexts)
+    if generate is None:
+        return prompt                      # без модели показываем готовый промпт
+    return generate(prompt)
+
+
+if __name__ == "__main__":
+    corpus = [
+        "Возврат товара возможен в течение 14 дней с момента покупки.",
+        "Гарантия на электронику составляет 12 месяцев.",
+        "Доставка по городу занимает 1-2 рабочих дня.",
+    ]
+    index = build_index(corpus)
+    print(answer("сколько дней на возврат?", index))
+    # с моделью:  answer(q, index, generate=lambda p: client.messages.create(...))
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/long-context-and-files/"><small>← 3.2</small>Длинный контекст и работа с файлами</a><a href="../../lessons/vector-stores/" style="text-align:right"><small>3.4 →</small>Векторные хранилища</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

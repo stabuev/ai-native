@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>6.4 Тест и подключение — AI Native</title>
+  <meta name="description" content="Сначала прогони сервер инспектором, потом подключай к клиенту — не наоборот.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/testing-and-connecting/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="6.4 Тест и подключение — AI Native">
+  <meta property="og:description" content="Сначала прогони сервер инспектором, потом подключай к клиенту — не наоборот.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/testing-and-connecting/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="6.4">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 6.4 · Тест и подключение</h1><p><strong>Фаза 6 — Инструменты и протоколы (MCP)</strong> · <strong>Результат фазы:</strong> Объяснить tool use изнутри и поднять собственный MCP-сервер с контролем доступа.</p><p><strong>Requires (только для USE IT):</strong> Node/npx (MCP Inspector) и клиент (Claude Desktop / Cursor). BUILD IT работает офлайн, без зависимостей и без сети.</p><p><strong>Сервер из 6.3 написан — но работает ли он по протоколу?</strong> Прежде чем подключать его к Claude или Cursor, сервер тестируют <strong>изолированно</strong>. Иначе при ошибке непонятно, что виновато: сам сервер, транспорт или конфиг клиента.</p><blockquote><strong>MOTTO.</strong> Сначала прогони сервер инспектором, потом подключай к клиенту — не наоборот.</blockquote><h2>PROBLEM</h2><p>Классика: «подключил свой сервер к Claude Desktop — инструменты не появились». Где сломалось? Сервер не отвечает на <code>initialize</code>? Транспорт не настроен? Опечатка в конфиге клиента? Когда переменных три, отладка превращается в гадание.</p><p>Решение — <strong>разделить проверки</strong>. Сначала прогнать сервер по протоколу в изоляции (это делает <strong>MCP Inspector</strong>): отвечает ли он на <code>initialize</code>, отдаёт ли <code>tools/list</code> со схемами, корректно ли возвращает ошибки. Зелёный отчёт → проблема не в сервере, и можно спокойно подключать к клиенту. Соберём мини-инспектор и поймём, что именно он проверяет.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Инспектор — это <strong>стендовая проверка перед установкой</strong>, как прозвонить плату до того, как ставить её в корпус. Ты не подключаешь непроверенный сервер к «живому» клиенту и не гадаешь по симптомам — ты гоняешь сервер по чек-листу протокола в стерильных условиях и получаешь отчёт «конформен / вот что не так». Сломанное видно сразу и в одном месте.</p><h3>Как это работает</h3><p>Инспектору достаточно, чтобы сервер был функцией <code>handle(request) -&gt; response</code> (JSON-RPC из 6.3). Он шлёт типовые запросы и проверяет ответы:</p><pre><code>сервер handle(request)
+   │ инспектор гоняет протокол:
+   ├─ initialize         → есть result? serverInfo? protocolVersion?
+   ├─ tools/list         → список? у инструментов есть name + inputSchema?
+   ├─ неизвестный метод  → корректный error с кодом -32601?
+   └─ tools/call (опц.)  → result содержит content?
+   ▼
+отчёт: [(проверка, ok), ...] + общий вердикт → потом подключение к клиенту</code></pre><p>Каждая проверка — пара «что проверяли / прошло ли». Общий вердикт <code>ok</code> — это «все проверки зелёные». Важно: инспектор проверяет <strong>соответствие протоколу</strong>, а не бизнес-логику; он ловит «сервер отвечает неправильно по форме», а не «инструмент посчитал не то».</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Прогоним <code>inspect(demo_handle, call=("ping", {}))</code> по конформному серверу:</p><pre><code>[OK] initialize → result            (вернулся непустой result)
+[OK] есть serverInfo                 (сервер представился)
+[OK] есть protocolVersion            (объявил версию протокола)
+[OK] tools/list → список             (отдал массив инструментов)
+[OK] у инструментов есть name + inputSchema
+[OK] неизвестный метод → error -32601
+[OK] tools/call ping → content       (результат обёрнут в content)
+→ ok: True  (сервер конформен)</code></pre><p>Теперь «сломанный» сервер, который на всё отвечает <code>{"result": {}}</code>:</p><pre><code>[FAIL] есть serverInfo               (initialize пустой)
+[FAIL] tools/list → список           (нет tools)
+[FAIL] неизвестный метод → error -32601  (вернул result вместо error)
+→ ok: False  (есть проблемы)</code></pre><p>Отчёт точно указывает, <strong>что</strong> не так, ещё до подключения к Claude. Это и есть смысл: локализовать поломку в сервере, прежде чем добавлять переменные транспорта и клиента.</p><h2>BUILD IT</h2><p><strong>Задание: собери мини-инспектор протокола</strong> — функцию, гоняющую любой MCP-сервер по чек-листу. Только стандартная библиотека, без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/6.4-testing/</code>), а файлы урока клади в подпапку <code>code/</code> (как в 0.1). Нужен только <strong>Python 3</strong> (для теста ещё <code>pytest</code>).</blockquote><p>Создай файл <code>mcp_inspector.py</code>:</p><ul><li><strong><code>inspect(handle, call=None)</code></strong> — прогнать сервер <code>handle</code> и вернуть <code>{"checks": [(label, ok), ...], "ok": bool}</code>. Проверки: <code>initialize</code> даёт непустой <code>result</code>; в нём есть <code>serverInfo</code> и <code>protocolVersion</code>; <code>tools/list</code> возвращает список; у каждого инструмента есть <code>name</code> и <code>inputSchema</code>; неизвестный метод возвращает <code>error</code> с кодом <code>-32601</code>; если задан <code>call=(name, args)</code> — <code>tools/call</code> возвращает <code>result</code> с <code>content</code>. Общий <code>ok</code> = все проверки прошли.</li><li><strong><code>demo_handle(request)</code></strong> — минимально конформный сервер (отвечает на <code>initialize</code> / <code>tools/list</code> / <code>tools/call</code>, на прочее — <code>error -32601</code>), чтобы было что инспектировать.</li></ul><p><strong>Готово, когда</strong> все тесты в <code>test_mcp_inspector.py</code> зелёные — они проверяют: конформный сервер проходит (<code>ok is True</code>); сломанный (без <code>serverInfo</code> и обработки ошибок) — нет, и в отчёте видно, какая проверка упала; чек-лист покрывает <code>initialize</code>/<code>tools/list</code>/<code>-32601</code>.</p><pre><code>pytest code -q             # красное → реализуй inspect → зелёное
+python code/mcp_inspector.py # демо: отчёт по конформному серверу</code></pre><p><strong>Подсказка.</strong> Собери хелпер <code>_req(method, rid, params)</code> для запросов. Каждую проверку добавляй парой <code>(label, bool)</code> в список <code>checks</code>; в конце <code>ok = all(ok for _, ok in checks)</code>. Инспектор не должен падать — он фиксирует <code>False</code>, а не бросает исключение.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>Готовый MCP Inspector и подключение к клиенту:</p><pre><code>npx @modelcontextprotocol/inspector node build/index.js   # UI на localhost:6274
+mcp dev server.py                                          # быстрый инспектор (Python SDK)
+mcp install server.py                                      # установить сервер в Claude Desktop</code></pre><ul><li><strong>MCP Inspector</strong> — UI с вкладками Tools / Resources / Prompts / Logs: видно реальные запросы и ответы, можно вызвать инструмент руками.</li><li><strong>Claude Desktop / Cursor</strong> — добавить сервер в конфиг MCP; клиент сделает discovery и покажет инструменты. Порядок один: сначала зелёный инспектор, потом подключение.</li></ul><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Документированный сервер с примерами → <a href="#f-phases-06-tools-and-protocols-mcp-06-testing-and-connecting-outputs-mcp-server-guide-md"><code>outputs/mcp-server-guide.md</code></a></p><p>Гайд: как протестировать сервер инспектором, как подключить к Claude Desktop / Cursor, примеры запросов и типовые ошибки. Последний шаг фазы — закрыть сервер аутентификацией и правами (6.5).</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Подключать к клиенту непроверенный сервер.</strong> Тогда при ошибке три подозреваемых сразу (сервер/транспорт/конфиг). Сначала изолированный инспектор — он убирает две переменные.</li><li><strong>Путать тест протокола и тест логики.</strong> Инспектор проверяет форму ответов (есть <code>serverInfo</code>, корректный код ошибки), а не правильность вычислений. Бизнес-логику покрывай отдельными тестами.</li><li><strong>Игнорировать проверку ошибок.</strong> Сервер, который на неизвестный метод отвечает <code>result</code> вместо <code>error -32601</code>, формально «работает», но ломает клиентов. Ошибочные пути тоже конформность.</li><li><strong>Тестировать сразу через UI клиента.</strong> Логи клиента скупы. Инспектор показывает сырые запросы/ответы — отлаживать на нём быстрее.</li><li><strong>Считать зелёный инспектор гарантией безопасности.</strong> Он про корректность протокола, не про доступ. Что сервер отдаёт модели и кому он доступен — отдельный вопрос (6.5).</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="6.4"></div><h2>Материалы</h2><ul><li><a href="https://modelcontextprotocol.io/docs/tools/inspector" target="_blank" rel="noopener">MCP — Inspector</a> — визуальный тест-инструмент.</li><li><a href="https://github.com/modelcontextprotocol/inspector" target="_blank" rel="noopener">modelcontextprotocol/inspector</a> — исходники и CLI-режим.</li><li><a href="https://modelcontextprotocol.io/docs/develop/build-server" target="_blank" rel="noopener">MCP — Build an MCP server</a> — установка сервера в Claude Desktop.</li><li><a href="https://code.claude.com/docs/en/mcp" target="_blank" rel="noopener">Claude Code — Connect via MCP</a> — подключение MCP-сервера к Claude Code (STDIO/HTTP, scopes).</li><li><a href="https://cursor.com/docs/mcp" target="_blank" rel="noopener">Cursor — Model Context Protocol</a> — подключение сервера к Cursor через <code>mcp.json</code> (STDIO и Streamable HTTP).</li><li><a href="https://medium.com/@UshioShizuku/integrating-model-context-protocol-mcp-with-cursor-a-comprehensive-guide-a3396e65c66b" target="_blank" rel="noopener">Integrating MCP with Cursor: A Comprehensive Guide (Medium)</a> — практическая настройка и подводные камни.</li><li><a href="https://www.youtube.com/watch?v=Y0tZ35dFFx4" target="_blank" rel="noopener">MCP Inspector: Test and Debug your MCP Server Locally (YouTube)</a> — видео-прогон тестирования сервера через Inspector.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-06-tools-and-protocols-mcp-06-testing-and-connecting-code-test-mcp-inspector-py" open data-test="1"><summary><span class="fname">code/test_mcp_inspector.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from mcp_inspector import inspect, demo_handle
+
+
+def test_conformant_server_passes():
+    report = inspect(demo_handle, call=("ping", {}))
+    assert report["ok"] is True
+
+
+def test_broken_server_fails():
+    # сервер без serverInfo и без обработки неизвестного метода
+    def broken(request):
+        return {"jsonrpc": "2.0", "id": request.get("id"), "result": {}}
+    report = inspect(broken)
+    assert report["ok"] is False
+    names = dict(report["checks"])
+    assert names["есть serverInfo"] is False
+
+
+def test_checks_cover_protocol_basics():
+    labels = [name for name, _ in inspect(demo_handle)["checks"]]
+    assert any("initialize" in s for s in labels)
+    assert any("tools/list" in s for s in labels)
+    assert any("-32601" in s for s in labels)
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-06-tools-and-protocols-mcp-06-testing-and-connecting-code-mcp-inspector-py"><summary><span class="fname">code/mcp_inspector.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Тест и подключение MCP: мини-инспектор — Build It для урока 6.4.
+
+Без зависимостей. Инспектор гоняет MCP-сервер по протоколу (initialize →
+tools/list → tools/call) и проверяет, что ответы валидны — как делает MCP
+Inspector перед подключением сервера к Claude Desktop / Cursor. Работает с любым
+сервером вида `handle(request) -&gt; response` (JSON-RPC 2.0).
+"""
+
+
+def _req(method, rid=1, params=None):
+    r = {"jsonrpc": "2.0", "id": rid, "method": method}
+    if params is not None:
+        r["params"] = params
+    return r
+
+
+def inspect(handle, call=None):
+    """Проверить соответствие протоколу. call=(name, args) — опц. проверка вызова.
+
+    Возвращает {checks: [(имя, ok)], ok: bool}.
+    """
+    checks = []
+
+    init = handle(_req("initialize")).get("result", {})
+    checks.append(("initialize → result", bool(init)))
+    checks.append(("есть serverInfo", "serverInfo" in init))
+    checks.append(("есть protocolVersion", "protocolVersion" in init))
+
+    tools = handle(_req("tools/list")).get("result", {}).get("tools")
+    checks.append(("tools/list → список", isinstance(tools, list)))
+    checks.append(("у инструментов есть name + inputSchema",
+                   bool(tools) and all("name" in t and "inputSchema" in t for t in tools)))
+
+    unknown = handle(_req("no/such/method"))
+    checks.append(("неизвестный метод → error -32601",
+                   unknown.get("error", {}).get("code") == -32601))
+
+    if call:
+        name, args = call
+        res = handle(_req("tools/call", params={"name": name, "arguments": args}))
+        checks.append((f"tools/call {name} → content",
+                       "content" in res.get("result", {})))
+
+    return {"checks": checks, "ok": all(ok for _, ok in checks)}
+
+
+# --- демо-сервер (минимально конформный) ---
+def demo_handle(request):
+    rid, method = request.get("id"), request.get("method")
+    if method == "initialize":
+        return {"jsonrpc": "2.0", "id": rid, "result": {
+            "protocolVersion": "2024-11-05", "serverInfo": {"name": "demo", "version": "0.1"}}}
+    if method == "tools/list":
+        return {"jsonrpc": "2.0", "id": rid, "result": {"tools": [
+            {"name": "ping", "inputSchema": {"type": "object", "properties": {}}}]}}
+    if method == "tools/call":
+        return {"jsonrpc": "2.0", "id": rid,
+                "result": {"content": [{"type": "text", "text": "pong"}]}}
+    return {"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": "not found"}}
+
+
+if __name__ == "__main__":
+    report = inspect(demo_handle, call=("ping", {}))
+    for name, ok in report["checks"]:
+        print(f"  [{'OK' if ok else 'FAIL'}] {name}")
+    print("Итог:", "сервер конформен" if report["ok"] else "есть проблемы")
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-06-tools-and-protocols-mcp-06-testing-and-connecting-outputs-mcp-server-guide-md" open><summary><span class="fname">outputs/mcp-server-guide.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: документированный MCP-сервер с примерами
+
+Как протестировать сервер и подключить к клиенту. Инспектор — [`code/mcp_inspector.py`](../code/mcp_inspector.py); сервер — урок 6.3.
+
+## 1. Тест протокола (свой инспектор)
+
+```python
+from mcp_inspector import inspect
+from mini_mcp_server import server          # из урока 6.3
+report = inspect(server.handle, call=("add", {"a": 2, "b": 3}))
+assert report["ok"], report["checks"]
+```
+
+## 2. Тест готовым MCP Inspector
+
+```bash
+mcp dev server.py                                          # Python SDK: поднимет инспектор
+npx @modelcontextprotocol/inspector node build/index.js   # любой сервер; UI на :6274
+```
+
+Проверь вкладки: **Tools** (вызови с аргументами), **Resources**, **Prompts**, **Logs** (реальные JSON-RPC сообщения).
+
+## 3. Подключение к клиенту
+
+```bash
+mcp install server.py --name my-server -v API_KEY=...      # в Claude Desktop
+```
+
+- **Claude Desktop / Claude Code** — сервер появится в списке инструментов после рестарта клиента.
+- **Cursor** — добавить сервер в настройки MCP.
+- Транспорт: STDIO (локально), Streamable HTTP (удалённо).
+
+## Примеры запросов (JSON-RPC)
+
+```json
+{"jsonrpc":"2.0","id":1,"method":"initialize"}
+{"jsonrpc":"2.0","id":2,"method":"tools/list"}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"add","arguments":{"a":2,"b":3}}}
+```
+
+## Типовые ошибки
+
+| Симптом | Причина | Решение |
+|---|---|---|
+| `-32601` | метод не реализован | проверь обработку initialize/tools-list/tools-call |
+| Сервер не виден в клиенте | неверный конфиг/транспорт | сверь путь и transport; рестарт клиента |
+| Таймаут на вызове | долгий tool | увеличь timeout инспектора/клиента |
+| Пустой tools/list | инструменты не зарегистрированы | проверь декораторы `@tool` |
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/build-mcp-server-fastmcp/"><small>← 6.3</small>Свой MCP-сервер на FastMCP</a><a href="../../lessons/security-and-access/" style="text-align:right"><small>6.5 →</small>Безопасность и доступ</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

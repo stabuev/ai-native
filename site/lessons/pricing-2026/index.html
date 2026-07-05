@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>9.1 Цены 2026 и за что платишь — AI Native</title>
+  <meta name="description" content="Платишь за токены, а не за запросы; стоимость надо уметь считать до отправки.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/pricing-2026/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="9.1 Цены 2026 и за что платишь — AI Native">
+  <meta property="og:description" content="Платишь за токены, а не за запросы; стоимость надо уметь считать до отправки.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/pricing-2026/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="9.1">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 9.1 · Цены 2026 и за что платишь</h1><p><strong>Фаза 9 — Экономика и оркестрация моделей (FinOps)</strong> · <strong>Результат фазы:</strong> Спроектировать маршрутизацию моделей и посчитать бюджет «до/после».</p><p><strong>Requires (только для USE IT):</strong> платный API-ключ одного из провайдеров. BUILD IT работает офлайн, без ключей и без сети.</p><p><strong>Это вход в Фазу 9 — деньги.</strong> Мы умеем строить агентов и мульти-агентов; теперь научимся не разоряться на них. А начинается экономика с базового навыка: считать стоимость запроса <strong>до</strong> отправки.</p><blockquote><strong>MOTTO.</strong> Платишь за токены, а не за запросы; стоимость надо уметь считать до отправки.</blockquote><h2>PROBLEM</h2><p>«Сколько это будет стоить в проде на 100k запросов в день?» — без калькулятора это гадание, а ошибка тут стоит реальных денег. Цена зависит от трёх вещей: какой модели, сколько входных и выходных токенов, и в каком режиме (обычный / кэш / batch).</p><p>Не считая заранее, легко словить счёт в 10× из-за одной неоптимальной модели или невключённого кэша. И наоборот: понимая формулу, видишь, где главный рычаг (спойлер — выбор модели), и режешь расходы осознанно. Соберём калькулятор, который считает доллары из токенов.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Думай про API как про <strong>такси с поминутной тарификацией</strong>, а не фиксированной ценой за поездку. Платишь не «за запрос», а за <strong>пробег в токенах</strong> — и вход, и выход тарифицируются отдельно, причём выход обычно в разы дороже входа (у Claude — впятеро: вход $X, выход $5X). Разные модели — это разные классы такси: разброс цен между «эконом» (Flash) и «бизнес» (Opus) — на порядки. Поэтому первый и главный вопрос экономии — не «как короче ехать», а «на какой машине».</p><p>Два режима дают скидку: <strong>prompt caching</strong> (повторно используемый кусок входа читается из кэша за 10% цены) и <strong>batch API</strong> (асинхронная пачка — −50% на всё).</p><h3>Как это работает</h3><pre><code>стоимость = (вход × цена_вход + выход × цена_выход) / 1M
+   модификаторы (стэкаются):
+   - prompt caching: чтение из кэша ≈ 0.1× цены входа (но запись кэша стоит 1.25×/2×)
+   - batch API: −50% на вход и выход</code></pre><ul><li><code>PRICES</code> — карта цен ($/1M токенов, вход/выход) по моделям.</li><li><code>cost(model, n_in, n_out, cached_in, batch)</code> — стоимость вызова: свежий вход по полной цене, кэшированный — за 10%, выход по своей цене, всё × 0.5 в batch.</li><li><code>compare(models, n_in, n_out)</code> — отсортировать модели по цене того же запроса.</li></ul><p>Главный вывод формулы: множитель <code>цена_вход</code>/<code>цена_выход</code> различается между моделями <strong>на порядки</strong>, а число токенов — нет. Значит, выбор модели двигает счёт сильнее любой микрооптимизации промпта — это фундамент маршрутизации (9.2–9.3).</p><h2>РАЗБОР ПО ШАГАМ</h2><p><strong>Рычаг №1 — модель.</strong> Один и тот же запрос <code>1000</code> вход / <code>500</code> выход, считаем <code>(вход×цена_вход + выход×цена_выход) / 1e6</code>:</p><pre><code>Opus 4.8 ($5/$25):           (1000×5  + 500×25)  / 1e6 = 17500/1e6 = $0.01750
+DeepSeek V4-Flash ($0.14/$0.28): (1000×0.14 + 500×0.28)/1e6 =   280/1e6 = $0.00028
+                                                   отношение ≈ 62×</code></pre><p>Тот же текст — в <strong>~62 раза</strong> дороже на топ-модели. Вот почему выбор модели — рычаг №1.</p><p><strong>Рычаг №2 — кэш.</strong> Sonnet 4.6 ($3/$15), запрос <code>10000</code> вход / <code>500</code> выход, из них <code>8000</code> входных — повторяемый контекст (системный промпт, документ):</p><pre><code>без кэша: (10000×3 + 500×15) / 1e6 = 37500/1e6 = $0.03750
+с кэшем:  свежие 2000×3 + кэш 8000×3×0.1 + выход 500×15, всё /1e6
+        = (6000 + 2400 + 7500)/1e6 = 15900/1e6 = $0.01590   (−58%)</code></pre><p>Кэш срезал больше половины, потому что огромный повторяемый вход поехал по 10% цены. <strong>Batch</strong> добавил бы ещё −50% поверх. Важная тонкость: запись в кэш стоит <strong>дороже</strong> обычного входа (1.25× для 5-минутного, 2× для часового), поэтому кэш окупается только при <strong>повторном</strong> использовании — после одного чтения для 5-минутного окна, после двух для часового. На один разовый запрос кэш не выгоден.</p><h2>BUILD IT</h2><p><strong>Задание: собери калькулятор стоимости</strong> — токены → доллары, с кэшем и batch. Только стандартная библиотека, без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/9.1-pricing/</code>), а файлы урока клади в подпапку <code>code/</code> (как в 0.1). Нужен только <strong>Python 3</strong> (для теста ещё <code>pytest</code>).</blockquote><p>Создай файл <code>cost_calculator.py</code>:</p><ul><li><strong><code>PRICES</code></strong> — словарь <code>{model: (цена_вход, цена_выход)}</code> в $/1M токенов (актуальные цены — в USE IT ниже).</li><li><strong><code>cost(model, n_in, n_out, cached_in=0, batch=False)</code></strong> — стоимость вызова в $. Неизвестная модель → <code>KeyError</code>. Свежий вход = <code>n_in − cached_in</code> по полной цене; кэшированный = <code>cached_in × цена_вход × 0.1</code>; выход по своей цене; сумма <code>/ 1e6</code>; если <code>batch</code> — × 0.5.</li><li><strong><code>compare(models, n_in, n_out)</code></strong> — список <code>(model, стоимость)</code> по возрастанию.</li></ul><p><strong>Готово, когда</strong> все тесты в <code>test_cost_calculator.py</code> зелёные — они проверяют: базовый расчёт (Sonnet 1M+1M = $18); Opus дороже Haiku; кэш снижает цену; batch ровно вдвое дешевле; неизвестная модель → <code>KeyError</code>; <code>compare</code> ставит дешёвую модель первой.</p><pre><code>pytest code -q             # красное → реализуй cost → зелёное
+python code/cost_calculator.py # демо: сравнение моделей + эффект кэша/batch</code></pre><p><strong>Подсказка.</strong> <code>fresh_in = max(0, n_in - cached_in)</code>. Формула: <code>(fresh_in×p_in + cached_in×p_in×0.1 + n_out×p_out) / 1e6</code>, затем <code>× 0.5</code> при batch. <code>compare</code> — <code>sorted(..., key=lambda x: x[1])</code>.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>Сверка с реальными тарифами (мульти-провайдер) — держи карту цен в одном месте и сверяйся с официальными страницами, цены меняются.</p><p><strong>Цены на 2026-06 ($/1M, вход/выход):</strong></p><ul><li><strong>Anthropic:</strong> Opus 4.8 — $5 / $25 · Sonnet 4.6 — $3 / $15 · Haiku 4.5 — $1 / $5. Prompt caching: чтение <strong>0.1×</strong>, запись <strong>1.25×</strong> (5 мин) / <strong>2×</strong> (1 ч); Batch API — <strong>−50%</strong> на вход и выход; скидки стэкаются.</li><li><strong>DeepSeek V4-Flash</strong> (open-weight, MIT) — <strong>$0.14 / $0.28</strong> (cache-hit входа — <strong>$0.0028</strong>): самый дешёвый frontier-class, в десятки раз ниже закрытых топов.</li><li><strong>OpenAI / Google</strong> — свои тарифы и кэш/batch; подставляй актуальные.</li></ul><p>Реальный якорь масштаба (Anthropic): 10 000 тикетов поддержки по ~3 700 токенов на Haiku 4.5 ≈ <strong>$37</strong>. Та же нагрузка на Opus была бы кратно дороже — отсюда вся Фаза 9.</p><p>⚠️ Цены и модели быстро устаревают — это снимок на 2026-06-30. Перед расчётами сверься с актуальными страницами тарифов. Учти и нюанс токенайзера: Opus 4.7+ использует новый токенайзер и может тратить до <strong>35% больше токенов</strong> на тот же текст — это тоже влияет на эффективную стоимость.</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Бюджет-калькулятор → <a href="#f-phases-09-model-economics-finops-09-pricing-2026-outputs-cost-calculator-py"><code>outputs/cost_calculator.py</code></a></p><p>Переиспользуемый калькулятор (токены → $, с кэшем/batch) — основа для маршрутизации (9.2–9.3) и FinOps-учёта (9.4). Связан с <code>prompt-token-budgeter</code> из урока 1.1: тот считает токены, этот — деньги.</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Считать «за запрос», а не за токены.</strong> Платишь за вход + выход раздельно, и выход дороже входа в разы. Длинный ответ дороже длинного вопроса при том же числе токенов.</li><li><strong>Игнорировать выбор модели как рычаг.</strong> Разброс цен между моделями — на порядки (десятки раз). Это двигает счёт сильнее любой правки промпта; модель выбирают под задачу (9.2).</li><li><strong>Думать, что кэш бесплатен.</strong> Запись в кэш стоит 1.25×/2× входа. Кэш окупается только при повторном использовании — на разовый запрос он в минус.</li><li><strong>Забывать про batch на нетерминальных задачах.</strong> Асинхронная пачка — это −50% на всё. Для несрочного (отчёты, разметка) не использовать batch — переплата вдвое.</li><li><strong>Брать устаревшую карту цен.</strong> Цены и модели меняются ежемесячно. Держи <code>PRICES</code> в одном месте и сверяй с официальными тарифами, а не с числами из памяти.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="9.1"></div><h2>Материалы</h2><ul><li><a href="https://platform.claude.com/docs/en/about-claude/pricing" target="_blank" rel="noopener">Anthropic — Pricing</a> — тарифы, prompt caching, batch.</li><li><a href="https://openai.com/api/pricing/" target="_blank" rel="noopener">OpenAI — API pricing</a> — цены моделей OpenAI.</li><li><a href="https://platform.claude.com/docs/en/build-with-claude/prompt-caching" target="_blank" rel="noopener">Anthropic — Prompt caching</a> — как кэш режет стоимость входа.</li><li><a href="https://api-docs.deepseek.com/quick_start/pricing" target="_blank" rel="noopener">DeepSeek — Models &amp; Pricing</a> — open-weight модель с ценой в разы ниже закрытых.</li><li><a href="https://ai.google.dev/gemini-api/docs/pricing" target="_blank" rel="noopener">Google Gemini — Pricing</a> — мульти-провайдер: cached input ~10%, batch −50%, tiered &gt;200k токенов, «thinking tokens» по output-ставке.</li><li><a href="https://platform.claude.com/docs/en/build-with-claude/token-counting" target="_blank" rel="noopener">Anthropic — Token counting</a> — посчитать токены до отправки (кормит калькулятор урока; отдельные rate-limits).</li><li><a href="https://github.com/AgentOps-AI/tokencost" target="_blank" rel="noopener">tokencost (AgentOps)</a> — готовая оценка стоимости для 400+ LLM: <code>calculate_prompt_cost</code> / <code>calculate_completion_cost</code>.</li><li><a href="https://artificialanalysis.ai/" target="_blank" rel="noopener">Artificial Analysis</a> — независимое сравнение цена / качество / скорость (cost per task).</li><li><a href="https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json" target="_blank" rel="noopener">LiteLLM — model_prices_and_context_window.json</a> — каноничная машиночитаемая база цен 100+ моделей (cache/reasoning/tiered), с чем сверять калькулятор.</li><li><a href="https://medium.com/@iamchetansharma8/the-hidden-economics-of-llm-apis-costs-beyond-the-token-6ef389b23ed6" target="_blank" rel="noopener">Chetan Sharma — The Hidden Economics of LLM APIs (Medium)</a> — скрытые расходы за пределами токена: reasoning-токены, различие токенизаторов, ретраи, TCO.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-09-model-economics-finops-09-pricing-2026-code-test-cost-calculator-py" open data-test="1"><summary><span class="fname">code/test_cost_calculator.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>import pytest
+from cost_calculator import cost, compare, PRICES
+
+
+def test_basic_cost():
+    # sonnet 1M вход + 1M выход = 3 + 15 = 18$
+    assert cost("sonnet-4.6", 1_000_000, 1_000_000) == 18.0
+
+
+def test_opus_more_expensive_than_haiku():
+    assert cost("opus-4.8", 1000, 500) &gt; cost("haiku-4.5", 1000, 500)
+
+
+def test_cache_reduces_cost():
+    full = cost("sonnet-4.6", 10000, 500)
+    cached = cost("sonnet-4.6", 10000, 500, cached_in=8000)
+    assert cached &lt; full
+
+
+def test_batch_halves_cost():
+    assert cost("sonnet-4.6", 1000, 500, batch=True) == cost("sonnet-4.6", 1000, 500) / 2
+
+
+def test_unknown_model_raises():
+    with pytest.raises(KeyError):
+        cost("gpt-9000", 100, 100)
+
+
+def test_compare_sorted_cheapest_first():
+    ranking = compare(PRICES, 1000, 500)
+    assert ranking[0][0] == "deepseek-v4-flash"   # open-weight, самый дешёвый frontier-class
+    assert ranking[-1][0] == "opus-4.8"
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-09-model-economics-finops-09-pricing-2026-code-cost-calculator-py"><summary><span class="fname">code/cost_calculator.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Цены 2026 и за что платишь: калькулятор стоимости — Build It для урока 9.1.
+
+Без зависимостей. Считает стоимость запроса по токенам ввода/вывода с учётом
+prompt caching (кэшированный вход дешевле) и batch API (−50%). Платишь за токены,
+а не за запросы — поэтому стоимость надо уметь считать ДО отправки.
+"""
+
+# Цены 2026, $ за 1M токенов (вход, выход). См. README, «Карта моделей и цен».
+PRICES = {
+    "deepseek-v4-flash": (0.14, 0.28),   # open-weight (MIT), reasoning через thinking-mode
+    "gemini-flash": (0.30, 2.50),
+    "haiku-4.5": (1.00, 5.00),
+    "gpt-5.x": (2.50, 15.00),
+    "sonnet-4.6": (3.00, 15.00),
+    "opus-4.8": (5.00, 25.00),
+}
+
+CACHE_DISCOUNT = 0.1     # кэшированный вход ≈ 10% от цены (−90%)
+BATCH_DISCOUNT = 0.5     # batch API ≈ −50%
+
+
+def cost(model, n_in, n_out, cached_in=0, batch=False):
+    """Стоимость одного вызова в $.
+
+    cached_in — сколько входных токенов взяты из кэша (дешевле).
+    batch — пакетный режим (−50%).
+    """
+    if model not in PRICES:
+        raise KeyError(f"нет цены для модели: {model}")
+    p_in, p_out = PRICES[model]
+    fresh_in = max(0, n_in - cached_in)
+    total = (fresh_in * p_in + cached_in * p_in * CACHE_DISCOUNT + n_out * p_out) / 1e6
+    return total * (BATCH_DISCOUNT if batch else 1.0)
+
+
+def compare(models, n_in, n_out):
+    """Стоимость одного запроса по моделям, по возрастанию."""
+    return sorted(((m, round(cost(m, n_in, n_out), 6)) for m in models), key=lambda x: x[1])
+
+
+if __name__ == "__main__":
+    print("Запрос 1000/500 токенов:")
+    for m, c in compare(PRICES, 1000, 500):
+        print(f"  {m:&lt;14} ${c:.5f}")
+    base = cost("sonnet-4.6", 10000, 500)
+    print(f"\nSonnet 10k/500: ${base:.5f}")
+    print(f"  с кэшем 8k:   ${cost('sonnet-4.6', 10000, 500, cached_in=8000):.5f}")
+    print(f"  batch:        ${cost('sonnet-4.6', 10000, 500, batch=True):.5f}")
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-09-model-economics-finops-09-pricing-2026-outputs-cost-calculator-py" open><summary><span class="fname">outputs/cost_calculator.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Цены 2026 и за что платишь: калькулятор стоимости — Build It для урока 9.1.
+
+Без зависимостей. Считает стоимость запроса по токенам ввода/вывода с учётом
+prompt caching (кэшированный вход дешевле) и batch API (−50%). Платишь за токены,
+а не за запросы — поэтому стоимость надо уметь считать ДО отправки.
+"""
+
+# Цены 2026, $ за 1M токенов (вход, выход). См. README, «Карта моделей и цен».
+PRICES = {
+    "deepseek-v4-flash": (0.14, 0.28),   # open-weight (MIT), reasoning через thinking-mode
+    "gemini-flash": (0.30, 2.50),
+    "haiku-4.5": (1.00, 5.00),
+    "gpt-5.x": (2.50, 15.00),
+    "sonnet-4.6": (3.00, 15.00),
+    "opus-4.8": (5.00, 25.00),
+}
+
+CACHE_DISCOUNT = 0.1     # кэшированный вход ≈ 10% от цены (−90%)
+BATCH_DISCOUNT = 0.5     # batch API ≈ −50%
+
+
+def cost(model, n_in, n_out, cached_in=0, batch=False):
+    """Стоимость одного вызова в $.
+
+    cached_in — сколько входных токенов взяты из кэша (дешевле).
+    batch — пакетный режим (−50%).
+    """
+    if model not in PRICES:
+        raise KeyError(f"нет цены для модели: {model}")
+    p_in, p_out = PRICES[model]
+    fresh_in = max(0, n_in - cached_in)
+    total = (fresh_in * p_in + cached_in * p_in * CACHE_DISCOUNT + n_out * p_out) / 1e6
+    return total * (BATCH_DISCOUNT if batch else 1.0)
+
+
+def compare(models, n_in, n_out):
+    """Стоимость одного запроса по моделям, по возрастанию."""
+    return sorted(((m, round(cost(m, n_in, n_out), 6)) for m in models), key=lambda x: x[1])
+
+
+if __name__ == "__main__":
+    print("Запрос 1000/500 токенов:")
+    for m, c in compare(PRICES, 1000, 500):
+        print(f"  {m:&lt;14} ${c:.5f}")
+    base = cost("sonnet-4.6", 10000, 500)
+    print(f"\nSonnet 10k/500: ${base:.5f}")
+    print(f"  с кэшем 8k:   ${cost('sonnet-4.6', 10000, 500, cached_in=8000):.5f}")
+    print(f"  batch:        ${cost('sonnet-4.6', 10000, 500, batch=True):.5f}")
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/frameworks-vs-nocode/"><small>← 8.4</small>Оркестрация: фреймворки vs no-code</a><a href="../../lessons/model-per-task/" style="text-align:right"><small>9.2 →</small>Какую модель под какую задачу</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

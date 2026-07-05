@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>11.2 Фактчекинг и борьба с галлюцинациями — AI Native</title>
+  <meta name="description" content="Доверяй, но заземляй: каждое фактическое утверждение должно опираться на источник.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/fact-checking-hallucinations/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="11.2 Фактчекинг и борьба с галлюцинациями — AI Native">
+  <meta property="og:description" content="Доверяй, но заземляй: каждое фактическое утверждение должно опираться на источник.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/fact-checking-hallucinations/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="11.2">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 11.2 · Фактчекинг и борьба с галлюцинациями</h1><p><strong>Фаза 11 — Этика, безопасность, governance</strong> · <strong>Результат фазы:</strong> Оценить риски, настроить приватность и написать политику использования ИИ.</p><p><strong>Requires (только для USE IT):</strong> платный API-ключ одного из провайдеров. BUILD IT работает офлайн, без ключей и без сети.</p><p><strong>В 11.1 мы закрыли утечку данных. Теперь — второй governance-риск: выдуманные факты.</strong> Модель уверенно генерирует то, чего нет в источниках (урок 1.4), и в отчёте или письме клиенту это стоит дорого.</p><blockquote><strong>MOTTO.</strong> Доверяй, но заземляй: каждое фактическое утверждение должно опираться на источник.</blockquote><h2>PROBLEM</h2><p>Модель звучит одинаково уверенно, права она или галлюцинирует. Неверная цифра в отчёте, выдуманная ссылка в письме, несуществующий пункт договора — всё это выглядит правдоподобно и потому опасно (та же ловушка, что в 5.5 с данными).</p><p>«Перечитать глазами» не масштабируется. Нужен <strong>пайплайн фактчекинга</strong>: разложить ответ на отдельные утверждения и проверить каждое на <strong>заземлённость</strong> (grounding) — есть ли под ним опора в доверенных источниках. Незаземлённое = кандидат в галлюцинации и в ручную проверку. Соберём такой пайплайн.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Фактчекинг — это работа <strong>редактора-проверяющего</strong>, а не «верю/не верю». Редактор берёт текст, разбивает на конкретные утверждения и под каждым ищет ссылку на источник: есть опора — ок, нет опоры — на полях ставит «проверить». Он не решает, правда ли это «в принципе», — он проверяет, <strong>подкреплено ли это тем, чему мы доверяем</strong>.</p><p>Ключевой сдвиг: галлюцинация — это не «модель соврала», а <strong>утверждение без опоры</strong>. Поэтому фокус не на «звучит ли убедительно», а на «есть ли источник».</p><h3>Как это работает</h3><pre><code>ответ → extract_claims (разбить на утверждения)
+           │ для каждого:
+   verify_claim(claim, sources): есть ли заземление в источниках?
+           │
+   supported / unsupported → отчёт (что проверять руками)</code></pre><ul><li><code>extract_claims(text)</code> — разбить ответ на отдельные утверждения (по предложениям).</li><li><code>verify_claim(claim, sources)</code> — заземлено ли утверждение: считаем перекрытие слов с каждым источником (Jaccard), и если максимум ≥ порога → <code>supported</code>, иначе <code>unsupported</code>.</li><li><code>fact_check(text, sources)</code> — отчёт по всем утверждениям: что заземлено, что под вопросом.</li></ul><p>Это <strong>грубое лексическое</strong> заземление — по совпадению слов. Оно ловит явное (выдуманный факт не пересекается с источниками), но у него есть фундаментальный предел, который мы увидим в разборе. В проде заземление делают <strong>NLI/entailment</strong>-моделью (проверяет логическое следование, а не слова) или эмбеддингами.</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Источник: «Возврат товара возможен в течение 14 дней… Гарантия на электронику — 12 месяцев». Проверяем ответ <code>"Возврат возможен в течение 14 дней. Гарантия длится 100 лет."</code> (порог 0.4):</p><pre><code>claim 1: "Возврат возможен в течение 14 дней"
+   Jaccard с источником = 0.6 ≥ 0.4 → supported   (реально заземлено)
+
+claim 2: "Гарантия длится 100 лет"
+   Jaccard ≈ 0.111 &lt; 0.4 → unsupported            (выдумка поймана)</code></pre><p>Пока всё хорошо: выдуманные «100 лет» не пересеклись с источником и помечены на проверку. Но вот <strong>предел лексического метода</strong>:</p><pre><code>claim: "Возврат НЕВОЗМОЖЕН в течение 14 дней"   (прямое отрицание источника!)
+   Jaccard ≈ 0.455 ≥ 0.4 → supported  ← ЛОЖНО заземлено</code></pre><p>Утверждение, <strong>противоречащее</strong> источнику, делит с ним почти все слова (<code>возврат</code>, <code>в течение 14 дней</code>) и проходит порог — хотя смысл обратный. Это и есть граница: <strong>совпадение слов ≠ логическое следование</strong>. Лексический фактчекер ловит «не из источника», но слеп к отрицаниям и подменам чисел. Поэтому он — первый дешёвый фильтр, а решает entailment-модель (NLI) или человек. Поменяй Jaccard на NLI — контракт «извлеки → проверь заземление → пометь» не изменится.</p><h2>BUILD IT</h2><p><strong>Задание: собери пайплайн фактчекинга</strong> — извлечение утверждений, проверка заземления, отчёт. Только стандартная библиотека (<code>re</code>), без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/11.2-fact-check/</code>), а файлы урока клади в подпапку <code>code/</code> (как в 0.1). Нужен только <strong>Python 3</strong> (для теста ещё <code>pytest</code>).</blockquote><p>Создай файл <code>fact_check.py</code>:</p><ul><li><strong><code>extract_claims(text)</code></strong> — разбить текст на утверждения по <code>[.!?]</code> (пустые отбросить).</li><li><strong><code>verify_claim(claim, sources, threshold=0.4)</code></strong> — для каждого источника посчитать Jaccard слов (<code>|A∩B| / |A∪B|</code>); если максимум ≥ <code>threshold</code> → <code>"supported"</code>, иначе <code>"unsupported"</code>.</li><li><strong><code>fact_check(text, sources)</code></strong> — вернуть список <code>{claim, status}</code> по всем утверждениям.</li></ul><p><strong>Готово, когда</strong> все тесты в <code>test_fact_check.py</code> зелёные — они проверяют: разбиение на утверждения; заземлённое утверждение → <code>supported</code>; выдуманное → <code>unsupported</code>; отчёт содержит и то, и другое.</p><pre><code>pytest code -q          # красное → реализуй пайплайн → зелёное
+python code/fact_check.py # демо: «14 дней» supported, «100 лет» unsupported</code></pre><p><strong>Подсказка.</strong> Слова — <code>set(re.findall(r"\w+", text.lower()))</code>. Jaccard — <code>len(a &amp; b) / len(a | b)</code> (защити от деления на ноль). Статус — по максимуму перекрытия среди всех источников.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>Перекрёстная проверка моделями и источниками (мульти-провайдер):</p><ul><li><strong>Grounding/цитаты</strong> — проси модель цитировать источник под каждый факт (Anthropic «reduce hallucinations»): без цитаты факт не считается заземлённым.</li><li><strong>Перекрёстная проверка</strong> — задай тот же вопрос другой модели; расхождение ответов = красный флаг на ручную проверку.</li><li><strong>RAG как источник истины</strong> — отвечать только по найденным документам (Фаза 3) и явно помечать незаземлённое.</li><li><strong>Право на «не знаю»</strong> — разреши модели отказаться, это снижает выдумывание (1.4).</li><li><strong>Entailment вместо слов</strong> — для серьёзного фактчекинга бери NLI-модель (проверяет следование), а не лексическое перекрытие: оно слепо к отрицаниям и подменам чисел.</li></ul><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Чек-лист фактчекинга → <a href="#f-phases-11-ethics-safety-governance-11-fact-checking-hallucinations-outputs-fact-check-checklist-md"><code>outputs/fact-check-checklist.md</code></a></p><p>Чек-лист: что заземлять, как просить цитаты, когда перекрёстно проверять, что эскалировать человеку. Связь с Фазой 5 (валидация данных) и Фазой 3 (RAG). Дальше: реестр рисков (11.3), политика ИИ (11.4).</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Принимать уверенный тон за правду.</strong> Модель звучит одинаково, права она или нет. Фактчек проверяет <strong>опору на источник</strong>, а не убедительность формулировки.</li><li><strong>Считать лексическое совпадение доказательством.</strong> Совпадение слов ≠ логическое следование: утверждение с отрицанием («невозможен») или подменой числа делит слова с источником и ложно проходит. Для серьёзного — NLI/entailment.</li><li><strong>Проверять ответ целиком, а не по утверждениям.</strong> Длинный ответ смешивает верное и выдуманное. Разбивай на отдельные claims — иначе одна галлюцинация прячется среди фактов.</li><li><strong>Не давать право на «не знаю».</strong> Если модель обязана ответить, она выдумает. Явное разрешение отказаться + grounding снижают галлюцинации (1.4).</li><li><strong>Доверять одному источнику/модели.</strong> Перекрёстная проверка (другая модель, другой источник) ловит то, что один прогон пропустит; расхождение — сигнал к ручной проверке.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="11.2"></div><h2>Материалы</h2><ul><li><a href="https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations" target="_blank" rel="noopener">Anthropic — Reduce hallucinations</a> — цитаты, «не знаю», низкая температура.</li><li><a href="https://github.com/anthropics/courses/blob/master/prompt_engineering_interactive_tutorial/Anthropic%201P/08_Avoiding_Hallucinations.ipynb" target="_blank" rel="noopener">anthropics/courses — Avoiding Hallucinations</a> — практика.</li><li><a href="https://arxiv.org/abs/2202.03629" target="_blank" rel="noopener">Ji et al., 2022 — Survey of Hallucination in NLG</a> — типы и причины галлюцинаций.</li><li><a href="https://arxiv.org/abs/2303.08896" target="_blank" rel="noopener">Manakul et al., 2023 — SelfCheckGPT</a> — детект галлюцинаций сэмплированием нескольких ответов (кросс-проверка модели с собой, без внешней БД).</li><li><a href="https://arxiv.org/abs/2305.14251" target="_blank" rel="noopener">Min et al., 2023 — FActScore (EMNLP)</a> — разбить ответ на атомарные факты и проверить каждый по надёжному источнику.</li><li><a href="https://arxiv.org/abs/2309.11495" target="_blank" rel="noopener">Dhuliawala et al., 2023 — Chain-of-Verification (CoVe)</a> — модель сама генерит вопросы-проверки, отвечает независимо и уточняет ответ.</li><li><a href="https://arxiv.org/abs/2307.13528" target="_blank" rel="noopener">Chern et al., 2023 — FacTool</a> — tool-augmented фреймворк фактчекинга (QA / код / математика / наука).</li><li><a href="https://arxiv.org/abs/2401.00396" target="_blank" rel="noopener">Niu et al., 2024 — RAGTruth</a> — первый крупный бенчмарк галлюцинаций в RAG (span-level аннотации).</li><li><a href="https://platform.claude.com/docs/en/build-with-claude/citations" target="_blank" rel="noopener">Anthropic — Citations</a> — обоснованные ответы со ссылками на конкретные предложения источника (кросс-проверка источниками).</li><li><a href="https://ai.google.dev/gemini-api/docs/google-search" target="_blank" rel="noopener">Google Gemini — Grounding with Google Search</a> — грондинг ответа в реальном вебе + цитаты (мульти-провайдер).</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-11-ethics-safety-governance-11-fact-checking-hallucinations-code-test-fact-check-py" open data-test="1"><summary><span class="fname">code/test_fact_check.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from fact_check import extract_claims, verify_claim, fact_check
+
+SOURCES = [
+    "Возврат товара возможен в течение 14 дней с момента покупки.",
+    "Гарантия на электронику составляет 12 месяцев.",
+]
+
+
+def test_extract_claims_splits_sentences():
+    claims = extract_claims("Первое утверждение. Второе утверждение!")
+    assert len(claims) == 2
+
+
+def test_grounded_claim_supported():
+    assert verify_claim("Возврат возможен в течение 14 дней", SOURCES) == "supported"
+
+
+def test_ungrounded_claim_unsupported():
+    assert verify_claim("Гарантия длится 100 лет на всё", SOURCES) == "unsupported"
+
+
+def test_fact_check_report():
+    report = fact_check("Возврат возможен в течение 14 дней. Доставка на Марс бесплатна.", SOURCES)
+    statuses = {r["claim"]: r["status"] for r in report}
+    assert any(s == "supported" for s in statuses.values())
+    assert any(s == "unsupported" for s in statuses.values())
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-11-ethics-safety-governance-11-fact-checking-hallucinations-code-fact-check-py"><summary><span class="fname">code/fact_check.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Фактчекинг: проверка утверждений на заземление — Build It для урока 11.2.
+
+Без зависимостей. Разбиваем ответ на утверждения и проверяем каждое на
+заземлённость в источниках (grounding): есть ли утверждение в нашей базе фактов.
+Незаземлённое — кандидат в галлюцинации. В USE IT — перекрёстная проверка
+моделями и реальными источниками.
+"""
+import re
+
+
+def _tokens(text):
+    return set(re.findall(r"\w+", text.lower()))
+
+
+def extract_claims(text):
+    """Разбить текст на утверждения (по предложениям)."""
+    return [s.strip() for s in re.split(r"[.!?]\s*", text) if s.strip()]
+
+
+def verify_claim(claim, sources, threshold=0.4):
+    """Заземлено ли утверждение в источниках. 'supported' | 'unsupported'."""
+    c = _tokens(claim)
+    if not c:
+        return "unsupported"
+    best = 0.0
+    for src in sources:
+        s = _tokens(src)
+        jaccard = len(c &amp; s) / len(c | s) if (c | s) else 0.0
+        best = max(best, jaccard)
+    return "supported" if best &gt;= threshold else "unsupported"
+
+
+def fact_check(text, sources):
+    """Отчёт по утверждениям: что заземлено, что нет."""
+    return [{"claim": cl, "status": verify_claim(cl, sources)}
+            for cl in extract_claims(text)]
+
+
+if __name__ == "__main__":
+    sources = [
+        "Возврат товара возможен в течение 14 дней с момента покупки.",
+        "Гарантия на электронику составляет 12 месяцев.",
+    ]
+    answer = "Возврат возможен в течение 14 дней. Гарантия длится 100 лет."
+    for r in fact_check(answer, sources):
+        print(f"[{r['status']}] {r['claim']}")
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-11-ethics-safety-governance-11-fact-checking-hallucinations-outputs-fact-check-checklist-md" open><summary><span class="fname">outputs/fact-check-checklist.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: чек-лист фактчекинга
+
+Перед тем как выпустить ответ ИИ наружу. Пайплайн в коде — [`code/fact_check.py`](../code/fact_check.py).
+
+## Когда фактчекать обязательно
+
+- [ ] Ответ содержит **числа, даты, имена, цитаты, ссылки**.
+- [ ] Ответ уходит **наружу** (клиент, отчёт, публикация).
+- [ ] **Высокая цена ошибки** (юр./фин./мед.).
+
+## Как проверять
+
+- [ ] **Разложи на утверждения** (`extract_claims`) и проверь каждое.
+- [ ] **Заземление**: каждое фактическое утверждение опирается на источник (`verify_claim`).
+- [ ] **Цитаты/ссылки**: модель приводит источник для каждого факта.
+- [ ] **Перекрёстная проверка**: тот же вопрос на другой модели/прогоне — расхождения = флаг.
+- [ ] **RAG как истина**: отвечать только по найденным документам (Фаза 3).
+- [ ] **«Не знаю» разрешено** — лучше воздержаться, чем выдумать (урок 1.4).
+
+## Что эскалировать человеку
+
+- [ ] Незаземлённые утверждения (`unsupported`).
+- [ ] Противоречия между источниками/моделями.
+- [ ] Критичные решения с высокой ценой ошибки.
+
+## Применение (код)
+
+```python
+from fact_check import fact_check
+report = fact_check(answer, sources)
+unsupported = [r["claim"] for r in report if r["status"] == "unsupported"]
+if unsupported:
+    flag_for_human_review(unsupported)
+```
+
+## Связи
+
+- Галлюцинации и доверие → урок 1.4 · Валидация данных → урок 5.5 · RAG → Фаза 3
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~3 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/privacy-and-corporate-data/"><small>← 11.1</small>Конфиденциальность и корпоративные данные</a><a href="../../lessons/bias-and-legal-risks/" style="text-align:right"><small>11.3 →</small>Предвзятость и юридические риски</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

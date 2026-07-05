@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>0.1 Карта инструментов ИИ 2026 — AI Native</title>
+  <meta name="description" content="Не «одна модель на всё», а правильная модель под конкретную задачу.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/ai-tools-map/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="0.1 Карта инструментов ИИ 2026 — AI Native">
+  <meta property="og:description" content="Не «одна модель на всё», а правильная модель под конкретную задачу.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/ai-tools-map/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="0.1">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 0.1 · Карта инструментов ИИ 2026</h1><p><strong>Фаза 0 — Setup &amp; Tooling</strong> · <strong>Результат фазы:</strong> Настроить окружение, ключи и агента; осознанно выбрать модель под задачу.</p><p><strong>Это первый урок курса AI Native</strong> — технического, self-paced, без видео. Принцип в каждом уроке один: сначала <strong>собираешь механизм с нуля</strong> (Build It), потом запускаешь то же через реальный инструмент или API (Use It) и забираешь готовый <strong>артефакт</strong> (Ship It) — промпт, скилл, агент или MCP. Полный формат и входные требования — на странице <a href="../../prereqs.html" target="_blank" rel="noopener">«Требования и формат»</a>, вся программа из 13 фаз — в <a href="../../catalog.html" target="_blank" rel="noopener">Каталоге</a>.</p><p><strong>Фаза 0 «Setup &amp; Tooling»</strong> готовит площадку для всего курса: сейчас (0.1) разбираемся в карте инструментов и учимся выбирать модель под задачу; дальше заведём ключи и окружение (0.2), поставим агента (0.3) и зафиксируем соглашения курса (0.4). К концу фазы у тебя рабочее окружение и понимание, чем Claude, GPT и Gemini отличаются на практике.</p><blockquote><strong>MOTTO.</strong> Не «одна модель на всё», а правильная модель под конкретную задачу.</blockquote><h2>PROBLEM</h2><p>Ты открываешь список моделей и инструментов 2026 и теряешься. Claude, GPT, Gemini, Copilot, Perplexity, DeepSeek, и у каждого ещё по несколько версий. С чего вообще начать?</p><p>Тут можно угодить в две ловушки. Ты можешь гонять всё через самую дорогую модель «чтоб получить нужное решение наверняка»: счёт за API улетает в космос на задачах, где хватило бы модели попроще. Или наоборот, всё через самую дешёвый вариант: качество проседает там, где нужна была сильная модель. Без карты «что для чего» выбор превращается в гадание, а различия между Claude, GPT, Gemini, Copilot и Perplexity сливаются в кашу.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Выбор модели похож на выбор транспорта под поездку. За хлебом в соседний магазин ты не вызываешь грузовик. Перевезти холодильник на велосипеде тоже не выйдет. Навык не в том, чтобы всегда брать самое мощное или всегда самое дешёвое, а в том, чтобы подобрать подходящее средство под конкретную поездку.</p><p>С моделями так же: есть целый «автопарк» — от дешёвых и быстрых до дорогих и умных. И ещё важно различать два слоя инструментов:</p><ul><li><strong>Модели через API</strong> — то, что вызываешь кодом (Claude, GPT, Gemini). Платишь за токены или подписку, выбираешь нужную модель под задачу. Этому посвящен наш курс.</li><li><strong>Готовые продукты</strong> — обёртки вокруг моделей под конкретный сценарий. Copilot пишет код прямо в IDE, Perplexity ищет в интернете с источниками, чат-интерфейсы дают «поговорить». Внутри у них всё равно модель, просто завёрнутая в удобный сценарий.</li></ul><h3>Как это работает</h3><p>Главная ось выбора модели — <strong>сложность × объём × цена × задержка</strong>. Чем сложнее задача, тем более сильная (и дорогая) модель нужна. Чем больше вызовов на потоке, тем важнее цена за каждый. Модели удобно представить лесенкой по «тирам», от дешёвого к топовому:</p><pre><code>       дорого / умно
+            ▲
+  Opus 4.8  │ тир 4 · сложное рассуждение, код, анализ
+ Sonnet 4.6 │ тир 3 · рабочая лошадка на каждый день
+   GPT-5.x  │ тир 3 · универсальный baseline
+  Haiku 4.5 │ тир 2 · рутина, черновики, извлечение
+Gemini Flash│ тир 1 · массовое, классификация
+DeepSeek V4 │ тир 1 · дёшево + reasoning + open-weight
+            └─────────────────────► дёшево / быстро / массово</code></pre><p>Главное правило: брать <strong>самую дешёвую модель, которая справляется</strong>, и поднимайся по лесенке вверх только когда не хватает качества. Это мост к Фазе 9, где мы соберём автоматическую маршрутизацию и разберемся с FinOps.</p><p>Есть и вторая ось — <strong>открытость весов</strong>. Закрытые модели (Claude, GPT, Gemini) доступны только через API провайдера. Open-weight модели (DeepSeek под лицензией MIT, Llama, Qwen, Mistral) можно скачать и запустить у себя. Self-host выгоден обычно не только по деньгам, а ради приватности и контроля над данными — это наш мостик к Фазе 11.</p><h3>А как понять, сложная задача или простая</h3><p>Самый частый вопрос: а как вообще отнести задачу к низкой, средней или высокой сложности? Сложность — это не «про что задача», а <strong>сколько шагов рассуждения</strong> она требует и <strong>какова цена ошибки</strong>. Грубый ориентир по уровням:</p><ul><li><strong>Простая (low).</strong> Один шаг, короткий предсказуемый ответ, часто есть готовый список вариантов или формат: классификация, извлечение поля, перевод короткой фразы, переформулировка. Результат проверяется одним взглядом, ошибка дёшева.</li><li><strong>Средняя (medium).</strong> Несколько шагов или умеренное рассуждение, надо связать факты, формат свободный: черновик письма, разбор требований, резюме документа, простой код-сниппет. Модели заметно различаются, но цена ошибки терпимая.</li><li><strong>Сложная (high).</strong> Длинная цепочка рассуждений или многошаговое планирование, строгая корректность важнее всего: рефакторинг и архитектура, разбор кода, аналитика и математика, длинный контекст. Слабая модель тут «правдоподобно врёт», а ошибка стоит дорого.</li></ul><p>Три вопроса быстро относят задачу к уровню: сколько шагов надо удержать в голове, легко ли проверить ответ и во что обойдётся ошибка. Чем больше шагов, чем труднее проверка и чем дороже ошибка — тем выше тир.</p><p>И главный практичный приём: <strong>не угадывай — измерь</strong>. Возьми самую дешёвую кандидат-модель, прогони на 5–10 своих реальных примерах и посмотри, стабильно ли качество. Держится — задача для тебя простая, оставайся внизу; плывёт — поднимай тир на ступеньку. Сложность относительна: по сути это тот тир, с которого модель <strong>перестаёт ошибаться на твоих данных</strong>. Этот замер мы автоматизируем в уроке 2.5 (eval) и закрепим в матрице из Ship It.</p><blockquote><strong>Врезка: AI Fluency (4D).</strong> Чтобы работать с ИИ осознанно, держи в голове четыре компетенции (Anthropic Academy): <strong>Delegation</strong> — что отдать ИИ, а что оставить человеку; <strong>Description</strong> — как описать задачу и поведение модели; <strong>Discernment</strong> — как критически оценить результат; <strong>Diligence</strong> — ответственность, прозрачность, проверка. Эти 4D проходят сквозь весь курс: Description ≈ Фаза 2, Discernment ≈ eval (2.5) и фактчекинг (11.2), Diligence ≈ guardrails (7.3) и этика (Фаза 11). См. <a href="../../glossary.html">глоссарий</a> и <a href="https://anthropic.skilljar.com/ai-fluency-framework-foundations" target="_blank" rel="noopener">курс AI Fluency</a>.</blockquote><h2>РАЗБОР ПО ШАГАМ</h2><p>Применим это правило вручную на конкретном примере: <strong>разметим 10 000 тикетов поддержки по категориям</strong>.</p><p>Сначала опишем профиль задачи:</p><ul><li>сложность — <strong>низкая</strong> (классификация по готовому списку категорий);</li><li>объём — <strong>большой</strong> (10 000 вызовов);</li><li>код не нужен.</li></ul><p>По правилу «самая дешёвая, которая справляется» спускаемся в самый нижний тир: для простой массовой классификации берём <strong>Gemini Flash</strong>. Теперь посчитаем, во что это нам обойдётся, и сравним с топовой моделью.</p><p>Пусть на один тикет уходит около 200 токенов на вход (текст тикета и инструкция) и около 20 на выход (название категории). Что такое токен, мы обсудим дальше, пока грубо можно считать, что 1 слово = 1 токен. На 10 000 тикетов это 2 000 000 входных и 200 000 выходных токенов. Цены берём из таблицы (за 1M токенов):</p><pre><code>Gemini Flash (вход 0.30, выход 2.50):
+  вход:  2.0M / 1M × 0.30  = $0.60
+  выход: 0.2M / 1M × 2.50  = $0.50
+  итого ≈ $1.10
+
+Claude Opus 4.8 (вход 5.00, выход 25.00):
+  вход:  2.0M / 1M × 5.00  = $10.00
+  выход: 0.2M / 1M × 25.00 = $5.00
+  итого  = $15.00</code></pre><p>$1.10 против $15 — примерно в 14 раз дороже за один и тот же результат, потому что простую классификацию обе модели делают одинаково хорошо. Вот цена привычки «бери всегда топ».</p><p>А теперь противоположная задача: <strong>отрефакторить модуль на 300 строк и объяснить, что изменилось</strong>. Сложность высокая, нужен код. Здесь экономия на дешёвой модели обманчива: неверный рефакторинг сломает прод, и стоимость ошибки куда больше сэкономленных центов. Поэтому просто поднимаемся наверх и берём Opus.</p><p>Стоимость каждого варианта не обязательно считать руками. Можно сделать это с помощью функции <code>estimate_cost()</code> которую мы построим в Build It этого урока: тут получаем $0.00011 у Flash против $0.0015 у Opus за вызов, которые мы умножали на 10 000. Автоматизацию выбор модели под задачу (роутер) мы реализуем в Фазе 9.</p><h2>BUILD IT</h2><p><strong>Задание: напиши калькулятор стоимости запроса.</strong> Карта моделей дана — твоя задача одна функция <code>estimate_cost</code>, которая считает, во что обойдётся вызов. Это первый код, который ты пишешь сам.</p><blockquote><strong>Первый запуск — настроим один раз, дальше по всему курсу так же.</strong> Курс ты проходишь на сайте, поэтому весь свой код держи в одной папке (например <code>ai-native/</code>), а под каждый урок заводи вложенную с подпапкой <code>code/</code> внутри: <code>ai-native/0.1-tools-map/code/</code>. Именно в <code>code/</code> кладёшь и своё решение, и скопированный тест — тогда команды ниже (<code>pytest code -q</code>, <code>python code/…</code>) сработают как есть, и эта раскладка одинакова во всех уроках.</blockquote><ol><li>Поставь <strong>Python 3</strong> и <code>pytest</code> (нужен только для тестов): <code>pip install pytest</code>. Больше сейчас ничего не надо — код на стандартной библиотеке, без ключей и интернета; окружение с ключами настроим в уроке 0.2.</li><li>Создай файл решения <code>code/model_map.py</code> и напиши в нём свою функцию.</li><li>Возьми тест внизу страницы, в <a href="#lesson-files">«Исходниках урока»</a>: раскрой «Тесты — это твоё ТЗ», нажми «Копировать» и сохрани как <code>code/test_model_map.py</code> рядом с решением.</li><li>Запусти <code>pytest code -q</code> из папки урока. Пока функция не дописана — красное, так и надо. Если файла ещё нет вовсе, pytest ругнётся <code>ImportError</code> — это тоже нормально: создай файл с пустой функцией <code>def estimate_cost(...): ...</code> и увидишь уже настоящие красные тесты.</li><li>Доводи до зелёного — зелёные тесты значат, что задача принята.</li></ol><blockquote><strong>Как читать тест (пригодится на всех уроках).</strong> Тест — это исполняемое ТЗ. Строка <code>assert estimate_cost(flash, 200, 20) == approx(0.00011)</code> читается как «вызови функцию с такими аргументами и жди примерно <code>0.00011</code>»; <code>approx</code> — «примерно равно» (удобно для дробей). Конструкция <code>with pytest.raises(KeyError):</code> значит «тут код обязан упасть с ошибкой». Упавший <code>assert</code> показывает, что пришло и что ожидалось, — по этому и правишь код.</blockquote><p>Создай <code>model_map.py</code>. Каркас бери готовым — это просто данные (карта цен и поиск модели по имени):</p><pre><code>from dataclasses import dataclass
+
+@dataclass(frozen=True)
+class Model:
+    name: str
+    provider: str
+    price_in: float    # $ за 1M входных токенов
+    price_out: float   # $ за 1M выходных токенов
+    tier: int
+    good_for: tuple
+
+REGISTRY = (
+    Model("DeepSeek V4-Flash","DeepSeek",  0.14,  0.28, 1, ("дёшево", "reasoning", "open-weight/self-host")),
+    Model("Gemini Flash",     "Google",    0.30,  2.50, 1, ("массовые задачи", "классификация")),
+    Model("Claude Haiku 4.5", "Anthropic", 1.00,  5.00, 2, ("рутина", "черновики", "извлечение")),
+    Model("GPT-5.x",          "OpenAI",    2.50, 15.00, 3, ("универсальные задачи",)),
+    Model("Claude Sonnet 4.6","Anthropic", 3.00, 15.00, 3, ("рабочая лошадка",)),
+    Model("Claude Opus 4.8",  "Anthropic", 5.00, 25.00, 4, ("сложное рассуждение", "код", "анализ")),
+)
+
+def by_name(name):
+    for m in REGISTRY:
+        if m.name == name:
+            return m
+    raise KeyError(name)</code></pre><p>Тебе нужно дописать <strong>одну функцию</strong> по формуле «токены входа × цена входа + токены выхода × цена выхода» (цены — за 1M токенов):</p><pre><code>def estimate_cost(model, n_in, n_out):
+    ...  # верни стоимость одного вызова в долларах</code></pre><p><strong>Готово, когда</strong> тест <code>test_model_map.py</code> (см. «Исходники урока» внизу) зелёный — это твоя приёмка. Он проверяет арифметику: вызов классификации (~200 токенов вход / ~20 выход) стоит ≈ $0.00011, а на 10 000 тикетов выходит ровно $1.10 у Flash против $15 у Opus — числа из разбора выше.</p><pre><code>pytest code -q             # сейчас красное → допиши estimate_cost → стало зелёным
+python code/model_map.py   # демо: во что обойдётся запрос по каждой модели</code></pre><p><strong>Подсказка.</strong> Цены в <code>Model</code> даны за 1M токенов, поэтому число токенов дели на <code>1e6</code>, умножай на цену и складывай вход с выходом.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ), тесты-ТЗ и полная карта моделей. Третий путь — «делегируй ИИ»: на этом уроке агента ещё нет, поэтому промпт вставляй в любой веб-чат (Claude / ChatGPT / Gemini), а полноценного агента поставим в уроке 0.3.</p><h2>USE IT</h2><p>Лучший способ почувствовать разницу — прогнать <strong>один и тот же запрос</strong> через разные инструменты и сравнить ответ, скорость и уместность. Ключи пока не нужны: открой веб-чаты и просто попробуй (настройку API сделаем в уроке 0.2).</p><ul><li><strong>Claude</strong> (Opus 4.8; выше него есть Mythos-тир семейства Claude 5, доступен не всем) — сложное рассуждение, длинный контекст, код;</li><li><strong>GPT-5.x</strong> — универсальный baseline;</li><li><strong>Gemini</strong> — массовые задачи, мультимодальность, дешёвый Flash;</li><li><strong>Copilot</strong> — код прямо в IDE и в M365 (это продукт, не голый API);</li><li><strong>Perplexity</strong> — вопросы, где нужен поиск с источниками (тоже продукт).</li></ul><p>На что смотреть при сравнении: насколько ответ точен и полон, как быстро пришёл, ссылается ли на источники и не переплатил ли ты за простой вопрос.</p><p>Когда дойдёшь до кода (урок 0.2), увидишь, что вызов модели по форме почти одинаков у всех провайдеров:</p><pre><code># Anthropic
+from anthropic import Anthropic
+Anthropic().messages.create(model="claude-opus-4-8", max_tokens=300,
+    messages=[{"role": "user", "content": "Сравни 2 подхода к кэшированию"}])
+
+# OpenAI
+from openai import OpenAI
+OpenAI().responses.create(model="gpt-5.x", input="Сравни 2 подхода к кэшированию")
+
+# Google
+from google import genai
+genai.Client().models.generate_content(model="gemini-2.x-flash",
+    contents="Сравни 2 подхода к кэшированию")</code></pre><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Личная матрица «задача → модель» → <a href="#f-phases-00-setup-and-tooling-00-ai-tools-map-outputs-task-to-model-matrix-md"><code>outputs/task-to-model-matrix.md</code></a></p><p>Заполняешь под свои реальные задачи (какую модель берёшь по умолчанию и почему), а <code>estimate_cost()</code> из Build It помогает прикинуть бюджет каждого варианта. Матрица возвращается в Фазе 9, когда будем строить автоматический роутер.</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>«Бери всегда самую умную модель».</strong> На простом и массовом это переплата в разы (вспомни $15 против $1.10) — там, где топ ничем не лучше дешёвой.</li><li><strong>«Бери всегда самую дешёвую».</strong> Обратная крайность: на сложной задаче слабая модель ошибётся, и стоимость ошибки перекроет всю экономию. Дёшево хорошо ровно до тех пор, пока модель справляется.</li><li><strong>Путать модель и продукт.</strong> Copilot и Perplexity — это обёртки со своей моделью внутри. «Claude или Perplexity» — вопрос не о моделях, а о сценарии: вызов кодом или готовый продукт.</li><li><strong>Считать цену только по входу.</strong> Выходные токены часто в разы дороже входных (у Opus 25 против 5 за 1M). Оценивай обе части, иначе занизишь бюджет.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="0.1"></div><h2>Материалы</h2><ul><li><a href="https://platform.claude.com/docs/en/about-claude/models/overview" target="_blank" rel="noopener">Claude models overview</a> — официальная карта моделей Anthropic и их сильные стороны.</li><li><a href="https://openai.com/api/pricing/" target="_blank" rel="noopener">OpenAI API pricing</a> — актуальные цены моделей OpenAI за токены.</li><li><a href="https://ai.google.dev/gemini-api/docs" target="_blank" rel="noopener">Gemini API — models</a> — модели Google и когда брать Flash.</li><li><a href="https://api-docs.deepseek.com/quick_start/pricing" target="_blank" rel="noopener">DeepSeek — Models &amp; Pricing</a> — дешёвый open-weight вариант (V4-Flash/Pro).</li><li><a href="https://anthropic.skilljar.com/ai-fluency-framework-foundations" target="_blank" rel="noopener">Anthropic Academy — AI Fluency (4D)</a> — рамка Delegation/Description/Discernment/Diligence: как осознанно работать с ИИ.</li><li><a href="https://artificialanalysis.ai/" target="_blank" rel="noopener">Artificial Analysis</a> — независимая живая панель сравнения моделей по качеству, цене и скорости (Intelligence Index, cost per task); прямо кормит артефакт «задача → модель».</li><li><a href="https://arena.ai/leaderboard/text/" target="_blank" rel="noopener">Arena — Text Leaderboard</a> (ex-LMArena, UC Berkeley) — рейтинг моделей по слепому парному голосованию людей; дополняет бенчмарки «живым предпочтением» (Elo-разрыв &lt; 30 — процедурный шум, не разница в качестве).</li><li><a href="https://simonwillison.net/2025/Dec/31/the-year-in-llms/" target="_blank" rel="noopener">Simon Willison — «2025: The year in LLMs»</a> — образцовый годовой обзор ландшафта LLM от практика: reasoning-модели, агенты, коддинг, open-weight.</li><li><a href="https://thesequence.substack.com/" target="_blank" rel="noopener">The Sequence</a> — рассылка Jesus Rodriguez: модели, ресёрч и тренды — чтобы не отставать от ландшафта.</li><li><a href="https://www.latent.space/" target="_blank" rel="noopener">Latent Space</a> — рассылка и подкаст «The AI Engineer»: модели, инфраструктура, агенты и инструментарий.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-00-setup-and-tooling-00-ai-tools-map-code-test-model-map-py" open data-test="1"><summary><span class="fname">code/test_model_map.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from model_map import by_name, estimate_cost
+
+
+def test_estimate_cost_math():
+    flash = by_name("Gemini Flash")
+    # 200 вход × 0.30 + 20 выход × 2.50, цены за 1M токенов
+    assert abs(estimate_cost(flash, 200, 20) - 0.00011) &lt; 1e-9
+
+
+def test_batch_10k_tickets():
+    # разметка 10 000 тикетов (200/20 токенов на вызов): Flash ≈ $1.10, Opus = $15
+    flash = estimate_cost(by_name("Gemini Flash"), 200, 20) * 10_000
+    opus = estimate_cost(by_name("Claude Opus 4.8"), 200, 20) * 10_000
+    assert abs(flash - 1.10) &lt; 1e-6
+    assert abs(opus - 15.00) &lt; 1e-6
+
+
+def test_pricier_tier_costs_more():
+    cheap = estimate_cost(by_name("Claude Haiku 4.5"), 1000, 500)
+    pricey = estimate_cost(by_name("Claude Opus 4.8"), 1000, 500)
+    assert pricey &gt; cheap
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-00-setup-and-tooling-00-ai-tools-map-code-model-map-py"><summary><span class="fname">code/model_map.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Карта моделей ИИ 2026 + калькулятор стоимости запроса — Build It для урока 0.1.
+
+Без внешних зависимостей. Хранит реестр моделей (провайдер, цена входа/выхода,
+тир, сильные стороны) и считает, во что обойдётся вызов, ДО отправки в API.
+Идея урока: цена запроса предсказуема — её можно прикинуть заранее и не платить
+за топ-модель там, где справится дешёвая. (Автоматический выбор модели — тема Фазы 9.)
+
+Цены — ориентировочные, $ за 1M токенов (см. README, «Карта моделей и цен 2026»).
+"""
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class Model:
+    name: str
+    provider: str
+    price_in: float      # $ за 1M входных токенов
+    price_out: float     # $ за 1M выходных токенов
+    tier: int            # 1 — дешёвый/быстрый ... 4 — топ
+    good_for: tuple      # короткие подсказки «когда брать»
+
+
+# Реестр отсортирован по тиру (от дешёвого к топовому).
+REGISTRY = (
+    Model("DeepSeek V4-Flash","DeepSeek",  0.14,  0.28, 1, ("дёшево", "reasoning", "open-weight/self-host")),
+    Model("Gemini Flash",     "Google",    0.30,  2.50, 1, ("массовые задачи", "классификация")),
+    Model("Claude Haiku 4.5", "Anthropic", 1.00,  5.00, 2, ("рутина", "черновики", "извлечение")),
+    Model("GPT-5.x",          "OpenAI",    2.50, 15.00, 3, ("универсальные задачи",)),
+    Model("Claude Sonnet 4.6","Anthropic", 3.00, 15.00, 3, ("рабочая лошадка",)),
+    Model("Claude Opus 4.8",  "Anthropic", 5.00, 25.00, 4, ("сложное рассуждение", "код", "анализ")),
+)
+
+
+def by_name(name):
+    """Найти модель в реестре по имени."""
+    for m in REGISTRY:
+        if m.name == name:
+            return m
+    raise KeyError(name)
+
+
+def estimate_cost(model, n_in, n_out):
+    """Стоимость одного вызова в $ по числу токенов входа/выхода."""
+    return n_in / 1e6 * model.price_in + n_out / 1e6 * model.price_out
+
+
+if __name__ == "__main__":
+    # «Будет ли дорого?» — прикидка ДО отправки запроса.
+    # Пример из урока: классификация одного тикета ~200 токенов вход / ~20 выход.
+    n_in, n_out, batch = 200, 20, 10_000
+    print(f"Один тикет: {n_in} ток. вход / {n_out} ток. выход · партия {batch:,}\n")
+    for m in REGISTRY:
+        per_call = estimate_cost(m, n_in, n_out)
+        print(f"  {m.name:18} ${per_call:.5f}/вызов   ${per_call * batch:7.2f} на {batch:,}")
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-00-setup-and-tooling-00-ai-tools-map-outputs-task-to-model-matrix-md" open><summary><span class="fname">outputs/task-to-model-matrix.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: личная матрица «задача → модель»
+
+Под свои реальные задачи фиксируешь, какую модель берёшь по умолчанию и почему.
+Модель выбираешь по правилу «самая дешёвая, которая справляется», а прикинуть бюджет любого варианта помогает `estimate_cost()` из [`code/model_map.py`](../code/model_map.py).
+
+## Карта моделей (2026, $ за 1M токенов)
+
+| Модель | Провайдер | Вход | Выход | Тир | Когда брать |
+|---|---|---|---|---|---|
+| DeepSeek V4-Flash | DeepSeek | 0.14 | 0.28 | 1 | дёшево, reasoning, open-weight (self-host) |
+| Gemini Flash | Google | 0.30 | ≈низкий | 1 | массовые простые задачи, классификация |
+| Claude Haiku 4.5 | Anthropic | 1 | 5 | 2 | рутина, черновики, извлечение данных |
+| GPT-5.x | OpenAI | 2.5 | 15 | 3 | универсальные задачи |
+| Claude Sonnet 4.6 | Anthropic | 3 | 15 | 3 | основная рабочая лошадка |
+| Claude Opus 4.8 | Anthropic | 5 | 25 | 4 | сложное рассуждение, код, анализ |
+
+## Моя матрица (заполнить)
+
+| Моя задача | Профиль (сложность/объём/код?) | Модель по умолчанию | Эскалация на… | Почему |
+|---|---|---|---|---|
+| Разметка тикетов по категориям | низкая / массовый | Gemini Flash | Haiku при спорных | дёшево на потоке |
+| Черновик письма/ответа | низкая / разовый | Claude Haiku 4.5 | Sonnet для важных | быстро и дёшево |
+| Разбор требований, план | средняя / разовый | Claude Sonnet 4.6 | Opus на сложном | баланс цена/качество |
+| Рефакторинг и ревью кода | высокая / разовый | Claude Opus 4.8 | — | код требует топ-модели |
+| _&lt;твоя задача&gt;_ | | | | |
+
+## Как переиспользовать
+
+```python
+from model_map import by_name, estimate_cost
+m = by_name("Gemini Flash")                  # классификация тикета ~200/20 токенов
+print(estimate_cost(m, 200, 20))             # ~$0.00011 за вызов
+print(estimate_cost(m, 200, 20) * 10_000)    # ~$1.10 на 10 000 тикетов
+```
+
+- Начни с самого дешёвого тира, замеряй качество на своих кейсах и поднимай тир только если не дотягивает.
+- Матрица — вход для **Фазы 9 (FinOps)**: там превратим её в автоматический роутер с каскадом и quality-gate.
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~2 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><span></span><a href="../../lessons/accounts-keys-env/" style="text-align:right"><small>0.2 →</small>Аккаунты, тарифы, API-ключи, окружение</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

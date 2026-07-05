@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>9.4 FinOps для ИИ — AI Native</title>
+  <meta name="description" content="Нельзя оптимизировать то, что не измеряешь: тегируй запросы, считай по разрезам, меряй ROI.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/finops-for-ai/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="9.4 FinOps для ИИ — AI Native">
+  <meta property="og:description" content="Нельзя оптимизировать то, что не измеряешь: тегируй запросы, считай по разрезам, меряй ROI.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/finops-for-ai/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="9.4">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 9.4 · FinOps для ИИ</h1><p><strong>Фаза 9 — Экономика и оркестрация моделей (FinOps)</strong> · <strong>Результат фазы:</strong> Спроектировать маршрутизацию моделей и посчитать бюджет «до/после».</p><p><strong>Requires (только для USE IT):</strong> платный API-ключ / биллинг провайдера. BUILD IT работает офлайн, без ключей и без сети.</p><p><strong>Это финал Фазы 9 — учёт.</strong> Маршрутизация и каскад (9.2–9.3) экономят, но как узнать, <strong>сработало ли</strong> и где именно уходят деньги? Без измерения оптимизация слепа. Этот урок — про FinOps-контур: тегирование, агрегация, бюджеты и ROI.</p><blockquote><strong>MOTTO.</strong> Нельзя оптимизировать то, что не измеряешь: тегируй запросы, считай по разрезам, меряй ROI.</blockquote><h2>PROBLEM</h2><p>Ты включил роутер и кэш — счёт вроде упал. Но на сколько? Какая команда жжёт больше всех? Окупилась ли автоматизация процесса вообще? Без учёта это ощущения, а не цифры — и в следующем месяце расход неожиданно вырастет, а ты не поймёшь почему.</p><p>Нужен <strong>FinOps-контур</strong>: каждый запрос логируется с тегами (команда, модель, cache-hit, стоимость), расходы агрегируются по разрезам, на бюджеты ставятся алерты, а у автоматизации считается ROI «до/после». Это превращает «вроде дешевле» в управляемые числа. Соберём такой учёт.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>FinOps для ИИ — это <strong>бухгалтерия с аналитикой по статьям</strong>, а не одна строчка «потрачено $N». Бизнес не спрашивает «сколько всего ушло» — он спрашивает «<strong>кто</strong> потратил, <strong>на что</strong>, и <strong>окупилось</strong> ли». Поэтому каждый расход помечают тегами (как чек с категорией), а потом режут по разрезам: по команде, по модели, по фиче.</p><p>Три функции FinOps: <strong>видимость</strong> (куда уходят деньги), <strong>ответственность</strong> (кому отнести расход) и <strong>оптимизация</strong> (что улучшить). И метрика зрелости — не «cost per inference» (стоимость вызова), а <strong>cost per outcome</strong> (стоимость результата): дешёвый вызов, который не решил задачу, — это не экономия.</p><h3>Как это работает</h3><pre><code>запрос → лог с тегами {team, model, cache_hit, cost}
+              │ агрегация
+   по команде / по модели / cache-hit rate
+              │
+   бюджет + алерт при превышении
+   ROI = (экономия + выгода) / затраты   ← «до/после»</code></pre><ul><li><code>Ledger.record(cost, **tags)</code> — записать расход с произвольными тегами.</li><li><code>by_tag(key)</code> — суммарная стоимость в разрезе значения тега (по команде, по модели…).</li><li><code>cache_hit_rate()</code> — доля запросов с попаданием в кэш (здоровье кэширования).</li><li><code>over_budget(limit)</code> — флаг превышения бюджета (основа алерта).</li><li><code>roi(before, after, value)</code> — окупаемость автоматизации: <code>(сэкономлено + выгода) / затраты</code>.</li></ul><p>Ключ — <strong>теги</strong>: без них есть общая сумма, но нет attribution (кто и на что), а значит, нечего оптимизировать адресно.</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Залогируем три запроса и снимем метрики:</p><pre><code>record 0.02,  team=analytics, model=sonnet-4.6, cache_hit=False
+record 0.002, team=analytics, model=haiku-4.5,  cache_hit=True
+record 0.05,  team=support,   model=opus-4.8,   cache_hit=False</code></pre><p>Агрегации:</p><pre><code>total()              → 0.02 + 0.002 + 0.05 = 0.072
+by_tag("team")       → {analytics: 0.022, support: 0.05}   ← кто тратит
+by_tag("model")      → {sonnet: 0.02, haiku: 0.002, opus: 0.05}  ← на чём
+cache_hit_rate()     → 1 из 3 с кэшем = 0.333
+over_budget(0.05)    → 0.072 &gt; 0.05 → True  ← алерт</code></pre><p>И ROI автоматизации: процесс стоил <code>100</code>, после ИИ стал стоить <code>20</code>, плюс выгода <code>50</code>:</p><pre><code>roi(100, 20, 50): сэкономлено 80, выгода 80+50=130, /20 → 6.5</code></pre><p>Видно три функции FinOps разом. <strong>Видимость</strong>: <code>by_tag("model")</code> показывает, что Opus у support — главная статья. <strong>Ответственность</strong>: <code>by_tag("team")</code> относит расход на команду. <strong>Оптимизация</strong>: низкий <code>cache_hit_rate</code> (0.333) — сигнал включить кэш шире, а <code>over_budget</code> — повод для алерта. ROI <code>6.5</code> переводит «дешевле» в «окупается в 6.5 раза». Без тегов всё это схлопнулось бы в одну цифру <code>0.072</code> — и оптимизировать было бы нечего.</p><h2>BUILD IT</h2><p><strong>Задание: собери FinOps-учёт</strong> — журнал с тегами, агрегации, бюджет и ROI. Только стандартная библиотека, без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/9.4-finops/</code>), а файлы урока клади в подпапку <code>code/</code> (как в 0.1). Нужен только <strong>Python 3</strong> (для теста ещё <code>pytest</code>).</blockquote><p>Создай файл <code>finops.py</code>:</p><ul><li><strong><code>Ledger</code></strong> — <code>records = []</code>.</li><li><strong><code>record(cost, **tags)</code></strong> — добавить <code>{"cost", "tags"}</code>.</li><li><strong><code>total()</code></strong> — сумма всех <code>cost</code>.</li><li><strong><code>by_tag(key)</code></strong> — словарь <code>{значение_тега: суммарная_стоимость}</code> (нет тега → ключ <code>"—"</code>).</li><li><strong><code>cache_hit_rate()</code></strong> — доля записей с <code>tags["cache_hit"]</code> истинным (пустой журнал → 0.0).</li><li><strong><code>over_budget(limit)</code></strong> — <code>total() &gt; limit</code>.</li><li><strong><code>roi(before_cost, after_cost, value_gained)</code></strong> — <code>(before − after + value_gained) / after</code> (округли до 2; <code>after == 0</code> → <code>inf</code>).</li></ul><p><strong>Готово, когда</strong> все тесты в <code>test_finops.py</code> зелёные — они проверяют: <code>total</code> = 0.072; агрегация по <code>team</code> (analytics 0.022, support 0.05) и по <code>model</code> (opus 0.05); <code>cache_hit_rate</code> = 1/3; <code>over_budget</code> (0.05 → True, 1.0 → False); <code>roi(100,20,50)</code> = 6.5.</p><pre><code>pytest code -q       # красное → реализуй Ledger/roi → зелёное
+python code/finops.py # демо: расходы по разрезам, cache-hit, бюджет, ROI</code></pre><p><strong>Подсказка.</strong> <code>by_tag</code> — накапливай в словаре по <code>r["tags"].get(key, "—")</code>. <code>cache_hit_rate</code> — <code>hits/len</code>. ROI: сэкономлено = <code>before − after</code>, выгода = <code>сэкономлено + value_gained</code>, делишь на <code>after</code>.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>Лимиты, алерты, мониторинг токенов в проде (мульти-провайдер):</p><ul><li><strong>Тегируй каждый запрос</strong> — команда / фича / модель / cache-hit. Без тегов нет attribution, а значит, нет адресной оптимизации.</li><li><strong>Лимиты и алерты</strong> — потолок бюджета на команду/фичу + уведомление при приближении (как <code>over_budget</code>), чтобы не узнавать о перерасходе из счёта.</li><li><strong>Дашборд</strong> — расходы по разрезам + cache-hit rate + <strong>cost per outcome</strong>; недельный/месячный форкаст (расходы на ИИ растут нелинейно с нагрузкой).</li><li><strong>ROI «до/после»</strong> — стоимость процесса до автоматизации vs после плюс полученная выгода (это и есть capstone Фазы 12).</li></ul><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Бюджет-дашборд + расчёт ROI → <a href="#f-phases-09-model-economics-finops-09-finops-for-ai-outputs-finops-dashboard-md"><code>outputs/finops-dashboard.md</code></a></p><p>Шаблон дашборда (разрезы, метрики, алерты) + формула ROI. Это <strong>завершает Фазу 9</strong>: спроектированная маршрутизация (9.2–9.3) плюс измеренный бюджет «до/после» — теперь экономия не на ощущениях, а в числах.</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Логировать без тегов.</strong> Общая сумма есть, attribution нет — нечего оптимизировать адресно. Тегируй командой/моделью/фичей/cache-hit с первого запроса.</li><li><strong>Мерить cost per inference вместо cost per outcome.</strong> Дешёвый вызов, не решивший задачу, — не экономия. Метрика зрелости — стоимость результата, а не вызова.</li><li><strong>Бюджет без алерта.</strong> Потолок, о превышении которого узнаёшь из месячного счёта, бесполезен. Алерт — при приближении, а не постфактум.</li><li><strong>Считать расходы ИИ линейными.</strong> Они растут нелинейно с нагрузкой (длиннее контексты, больше шагов агентов). Форкастируй, а не экстраполируй прошлый месяц.</li><li><strong>Экономить без ROI.</strong> Срезать расход в ущерб результату — ложная экономия. ROI «до/после» показывает, окупается ли автоматизация вообще, а не только «стало дешевле».</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="9.4"></div><h2>Материалы</h2><ul><li><a href="https://www.finops.org/wg/finops-for-ai-overview/" target="_blank" rel="noopener">FinOps Foundation — FinOps for AI</a> — фреймворк управления стоимостью ИИ.</li><li><a href="https://www.cloudzero.com/blog/finops-for-ai/" target="_blank" rel="noopener">CloudZero — FinOps for AI</a> — почему ИИ меняет cost management.</li><li><a href="https://platform.claude.com/docs/en/about-claude/pricing" target="_blank" rel="noopener">Anthropic — Pricing</a> — компоненты стоимости для учёта.</li><li><a href="https://platform.claude.com/docs/en/api/usage-cost-api" target="_blank" rel="noopener">Anthropic — Usage &amp; Cost API</a> — программный учёт токенов с разбивкой по model/workspace/key/tier и uncached/cached/creation (ровно тегирование урока).</li><li><a href="https://platform.openai.com/docs/api-reference/usage" target="_blank" rel="noopener">OpenAI — Usage &amp; Cost API</a> — программный мониторинг расходов для своего дашборда.</li><li><a href="https://docs.helicone.ai/guides/cookbooks/cost-tracking" target="_blank" rel="noopener">Helicone</a> — open-source LLM-обсервабилити: custom properties (тегирование), cost tracking, sessions.</li><li><a href="https://docs.litellm.ai/docs/proxy/tag_budgets" target="_blank" rel="noopener">LiteLLM — Tag Budgets &amp; Spend Tracking</a> — теги + бюджеты с жёсткими лимитами (reject при превышении): лимиты и алерты.</li><li><a href="https://www.cloudzero.com/state-of-ai-costs/" target="_blank" rel="noopener">CloudZero — State of AI Costs 2025</a> — данные: расходы +36%, лишь 22% привязывают AI-spend к бизнес-результату (зачем учёт и теги).</li><li><a href="https://www.finops.org/framework/capabilities/unit-economics/" target="_blank" rel="noopener">FinOps Foundation — Unit Economics</a> — cost per outcome / cost per successful output — метрика для ROI урока.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-09-model-economics-finops-09-finops-for-ai-code-test-finops-py" open data-test="1"><summary><span class="fname">code/test_finops.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from finops import Ledger, roi
+
+
+def _ledger():
+    led = Ledger()
+    led.record(0.02, team="analytics", model="sonnet-4.6", cache_hit=False)
+    led.record(0.002, team="analytics", model="haiku-4.5", cache_hit=True)
+    led.record(0.05, team="support", model="opus-4.8", cache_hit=False)
+    return led
+
+
+def test_total():
+    assert _ledger().total() == 0.072
+
+
+def test_by_team_aggregation():
+    by_team = _ledger().by_tag("team")
+    assert by_team["analytics"] == 0.022
+    assert by_team["support"] == 0.05
+
+
+def test_by_model_aggregation():
+    assert _ledger().by_tag("model")["opus-4.8"] == 0.05
+
+
+def test_cache_hit_rate():
+    assert _ledger().cache_hit_rate() == round(1 / 3, 3)
+
+
+def test_over_budget():
+    led = _ledger()
+    assert led.over_budget(0.05) is True
+    assert led.over_budget(1.0) is False
+
+
+def test_roi():
+    # было 100, стало 20 (экономия 80) + выгода 50 = 130; / 20 = 6.5
+    assert roi(100, 20, 50) == 6.5
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-09-model-economics-finops-09-finops-for-ai-code-finops-py"><summary><span class="fname">code/finops.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""FinOps для ИИ: тегирование, учёт, ROI — Build It для урока 9.4.
+
+Без зависимостей. Каждый запрос логируется с тегами (команда, модель, cache-hit) и
+стоимостью; затем агрегируем по тегам, считаем ROI автоматизации и проверяем бюджет.
+Нельзя оптимизировать то, что не измеряешь.
+"""
+
+
+class Ledger:
+    """Журнал запросов с тегами и стоимостью."""
+
+    def __init__(self):
+        self.records = []
+
+    def record(self, cost, **tags):
+        self.records.append({"cost": cost, "tags": tags})
+
+    def total(self):
+        return round(sum(r["cost"] for r in self.records), 6)
+
+    def by_tag(self, key):
+        """Суммарная стоимость в разрезе значения тега key."""
+        out = {}
+        for r in self.records:
+            val = r["tags"].get(key, "—")
+            out[val] = round(out.get(val, 0.0) + r["cost"], 6)
+        return out
+
+    def cache_hit_rate(self):
+        if not self.records:
+            return 0.0
+        hits = sum(1 for r in self.records if r["tags"].get("cache_hit"))
+        return round(hits / len(self.records), 3)
+
+    def over_budget(self, limit):
+        return self.total() &gt; limit
+
+
+def roi(before_cost, after_cost, value_gained):
+    """ROI автоматизации: (выгода − затраты) / затраты. before/after — стоимость процесса."""
+    saved = before_cost - after_cost
+    benefit = saved + value_gained
+    return round(benefit / after_cost, 2) if after_cost else float("inf")
+
+
+if __name__ == "__main__":
+    led = Ledger()
+    led.record(0.02, team="analytics", model="sonnet-4.6", cache_hit=False)
+    led.record(0.002, team="analytics", model="haiku-4.5", cache_hit=True)
+    led.record(0.05, team="support", model="opus-4.8", cache_hit=False)
+    print("Итого:", led.total())
+    print("По командам:", led.by_tag("team"))
+    print("По моделям:", led.by_tag("model"))
+    print("Cache hit rate:", led.cache_hit_rate())
+    print("Над бюджетом 0.05?", led.over_budget(0.05))
+    print("ROI (было 100, стало 20, выгода 50):", roi(100, 20, 50))
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-09-model-economics-finops-09-finops-for-ai-outputs-finops-dashboard-md" open><summary><span class="fname">outputs/finops-dashboard.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: бюджет-дашборд + расчёт ROI
+
+Шаблон FinOps-контура для ИИ. Код учёта — [`code/finops.py`](../code/finops.py).
+
+## Что тегировать в каждом запросе
+
+```
+{team, feature, model, cache_hit, input_tokens, output_tokens, cost}
+```
+
+Без тегов нет attribution — невозможно понять, куда уходят деньги.
+
+## Разрезы дашборда
+
+| Разрез | Метрика | Зачем |
+|---|---|---|
+| По команде/фиче | сумма $, доля | кому отнести расход |
+| По модели | сумма $, доля вызовов | где гонять дешевле (роутинг 9.2) |
+| Cache-hit rate | % попаданий в кэш | потенциал prompt caching (9.3) |
+| Cost per outcome | $ / результат | главная метрика зрелости (не cost per inference) |
+| Тренд/форкаст | $/день, прогноз | расходы ИИ нелинейны — нужен форкаст |
+
+## Лимиты и алерты
+
+- Потолок бюджета на команду/фичу → алерт при приближении (`over_budget`).
+- Алерт на скачок (новая фича/модель может удвоить расход за ночь).
+
+## Расчёт ROI «до/после»
+
+```python
+from finops import roi
+# было: процесс стоил 100; стало с ИИ: 20; доп. выгода (скорость/качество): 50
+print(roi(before_cost=100, after_cost=20, value_gained=50))   # 6.5
+```
+
+ROI = (экономия + выгода) / затраты. Это финальная метрика capstone (Фаза 12).
+
+## Правила
+
+- **Измеряй до оптимизации** — иначе не докажешь эффект.
+- **Тегируй на входе**, агрегируй на выходе (`Ledger.by_tag`).
+- **Cost per outcome &gt; cost per inference** — считай стоимость результата, а не вызова.
+- Связывай с маршрутизацией (9.2), каскадом и кэшем (9.3): дашборд показывает, сработали ли они.
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/cost-saving-patterns/"><small>← 9.3</small>Паттерны экономии</a><a href="../../lessons/integration-into-workspaces/" style="text-align:right"><small>10.1 →</small>Интеграция в рабочие пакеты</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>10.1 Интеграция в рабочие пакеты — AI Native</title>
+  <meta name="description" content="ИИ полезен, когда встроен в работу: фича-флаг + fallback делают встраивание безопасным.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/integration-into-workspaces/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="10.1 Интеграция в рабочие пакеты — AI Native">
+  <meta property="og:description" content="ИИ полезен, когда встроен в работу: фича-флаг + fallback делают встраивание безопасным.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/integration-into-workspaces/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="10.1">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 10.1 · Интеграция в рабочие пакеты</h1><p><strong>Фаза 10 — Production и интеграция</strong> · <strong>Результат фазы:</strong> Встроить ИИ в рабочий инструмент с мониторингом токенов и стоимости.</p><p><strong>Requires (только для USE IT):</strong> лицензия Copilot/Gemini или API-ключ. BUILD IT работает офлайн, без ключей и без сети.</p><p><strong>Это вход в Фазу 10 — прод.</strong> Мы умеем строить агентов, считать их стоимость, оркестрировать. Но ИИ полезен, только когда встроен в реальную работу — и встроен <strong>безопасно</strong>, чтобы сбой модели не положил рабочий инструмент.</p><blockquote><strong>MOTTO.</strong> ИИ полезен, когда встроен в работу: фича-флаг + fallback делают встраивание безопасным.</blockquote><h2>PROBLEM</h2><p>Демо в чате — это не прод. В демо модель «обычно отвечает», и если разок выдала чушь — не страшно. В рабочем процессе (CRM, поддержка, документы) всё иначе: если AI-шаг упал по таймауту или выдал мусор, <strong>весь процесс не должен встать</strong>. Менеджер не может «подождать, пока модель оживёт» — ему нужно закрыть тикет сейчас.</p><p>Значит, встраивая ИИ, закладывай две вещи сразу: <strong>фича-флаг</strong> (мгновенно выключить ИИ, не выкатывая релиз) и <strong>graceful fallback</strong> (модель упала или выключена → процесс деградирует на старый детерминированный путь, а не падает). ИИ должен быть <strong>заменяемой деталью</strong>, а не точкой отказа. Соберём такую безопасную обёртку.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Думай про AI-шаг как про <strong>раздвижную дверь с ручным режимом</strong>. В норме она открывается автоматически (ИИ работает). Отключили питание или заклинило — она не запирает людей внутри, а переходит в ручной режим (fallback). И есть рубильник (фича-флаг), которым охрана мгновенно переводит её в ручной, если что-то не так. Дверь полезна автоматикой, но безопасна тем, что <strong>всегда есть запасной путь</strong>.</p><p>ИИ в проде — такая дверь: ценность от автоматики, безопасность от запасного пути и рубильника.</p><h3>Как это работает</h3><pre><code>существующий процесс
+   └─ [ AI-шаг ]
+        enabled? ──нет──► fallback (старый детерминированный путь)
+        try AI ──ошибка──► fallback
+        ok ──► AI-результат</code></pre><ul><li><code>AIFeature(fn, fallback, enabled)</code> — обёртка: <code>fn</code> (вызов модели), <code>fallback</code> (детерминированный запасной путь), <code>enabled</code> (фича-флаг).</li><li><code>run(x)</code> — если фича выключена → сразу <code>fallback</code>; иначе <code>try fn(x)</code>, при <strong>любом</strong> исключении → <code>fallback</code>. Прод не падает из-за ИИ.</li><li><code>run_pipeline(steps, x)</code> — ИИ как <strong>один из шагов</strong> существующего пайплайна, а не его центр.</li></ul><p>Две независимые защиты: фича-флаг (управляемое отключение — для инцидента или раскатки) и try/except (защита от непредвиденного сбоя). Точки встраивания ищут там, где ИИ даёт ценность (черновик, классификация, саммари), но <strong>всегда</strong> с запасным путём — это делает откат безрисковым.</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Прогоним <code>AIFeature.run</code> в трёх состояниях (ИИ-саммари падает на тексте со словом «ошибка», fallback — наивная выжимка):</p><pre><code>1. enabled=True,  вход "длинный текст для пересказа"
+   fn не падает → "AI-саммари: длинный текст для ..."          (ИИ сработал)
+
+2. enabled=True,  вход "текст с ошибкой внутри"
+   fn кидает RuntimeError → except → fallback → "первые слова: текст с ошибкой"  (мягкая деградация)
+
+3. enabled=False, вход "любой текст"
+   фича выключена → сразу fallback → "первые слова: любой текст"  (рубильник)</code></pre><p>Все три исхода дали <strong>результат</strong>, ни один не уронил процесс. И в пайплайне <code>[strip, feat.run, upper]</code> на входе <code>"  hi "</code>: <code>strip</code> → <code>"hi"</code>, <code>feat.run</code> → <code>"AI:hi"</code>, <code>upper</code> → <code>"AI:HI"</code> — AI-шаг встроен в цепочку как обычный шаг, и если он деградирует, цепочка всё равно дойдёт до конца. Это и есть «ИИ — заменяемая деталь»: поменяй <code>fn</code> на реальный вызов модели — контракт безопасности не изменится.</p><h2>BUILD IT</h2><p><strong>Задание: собери безопасную обёртку AI-шага</strong> — фича-флаг + graceful fallback. Только стандартная библиотека, без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/10.1-integration/</code>), а файлы урока клади в подпапку <code>code/</code> (как в 0.1). Нужен только <strong>Python 3</strong> (для теста ещё <code>pytest</code>).</blockquote><p>Создай файл <code>integration.py</code>:</p><ul><li><strong><code>AIFeature(fn, fallback, enabled=True)</code></strong> — класс-обёртка.</li><li><strong><code>run(x)</code></strong> — если <code>not enabled</code> → <code>fallback(x)</code>; иначе <code>try: return fn(x)</code> / <code>except Exception: return fallback(x)</code>.</li><li><strong><code>run_pipeline(steps, x)</code></strong> — прогнать <code>x</code> через список <code>steps</code> (каждый шаг — функция; AI-шаг — один из них) и вернуть результат.</li></ul><p><strong>Готово, когда</strong> все тесты в <code>test_integration.py</code> зелёные — они проверяют: при <code>enabled</code> используется <code>fn</code>; при выключенной фиче — <code>fallback</code>; при исключении в <code>fn</code> — <code>fallback</code> (прод не падает); <code>run_pipeline</code> встраивает AI-шаг в цепочку.</p><pre><code>pytest code -q           # красное → реализуй AIFeature → зелёное
+python code/integration.py # демо: ИИ работает / упал → fallback / выключен → fallback</code></pre><p><strong>Подсказка.</strong> Лови <strong>широкий</strong> <code>except Exception</code> намеренно: в проде AI-шаг не должен ронять процесс никаким исключением. Порядок в <code>run</code>: сначала проверь флаг, потом try/except.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>Встраивание через рабочие пакеты (мульти-провайдер):</p><ul><li><strong>Microsoft 365 Copilot</strong> — ИИ в Word / Excel / Outlook / Teams поверх Microsoft Graph внутри Microsoft 365 service boundary: по доке Microsoft, «Copilot can't access data that the user doesn't have permission to access» — доступ всегда ограничен правами вошедшего пользователя, плюс соблюдаются Conditional Access и MFA, а данные не покидают периметр тенанта.</li><li><strong>Gemini for Google Workspace</strong> — ИИ в Gmail / Docs / Sheets; данные организации не уходят на обучение и не покидают периметр.</li><li><strong>Свой инструмент через API</strong> — AI-шаг за фича-флагом и fallback (как в Build It), с мониторингом (10.2) и телеметрией (10.3).</li></ul><p>Везде принцип один: ИИ <strong>рядом с данными процесса</strong> + контроль доступа (наследует права пользователя) + откат. Встраивают ИИ туда, где он даёт ценность, не ломая существующий контроль доступа.</p><blockquote><strong>Врезка (2026): self-hosted агент-рантайм и многоканальность.</strong> Агента можно деплоить не только за корпоративный API, но и на локальную платформу — <strong>OpenClaw / Hermes</strong> (MIT): скиллы, память, мульти-модельная оркестрация и подключение к мессенджер-каналам (Telegram, Slack, Signal). Удобно для персонального агента с многоканальным доступом (подробно — урок 4.5). Те же гарантии — фича-флаг, fallback, контроль доступа — остаются обязательными.</blockquote><h2>SHIP IT</h2><p><strong>Артефакт:</strong> План интеграции для команды → <a href="#f-phases-10-production-and-integration-10-integration-into-workspaces-outputs-integration-plan-md"><code>outputs/integration-plan.md</code></a></p><p>Шаблон: где встроить ИИ, какой fallback, как включать (rollout/флаги), что мониторить. Дальше: деплой и мониторинг (10.2), телеметрия и воспроизводимость (10.3), трейсинг агентов (10.4).</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Встраивать ИИ без fallback.</strong> Модель упадёт по таймауту или лимиту — и весь процесс встанет. Запасной детерминированный путь обязателен: ИИ деградирует, процесс работает.</li><li><strong>Нет фича-флага.</strong> Если выключить ИИ можно только релизом, инцидент тянется часами. Флаг гасит фичу мгновенно — и для аварии, и для постепенной раскатки.</li><li><strong>Ловить только «ожидаемые» ошибки.</strong> В проде AI-шаг падает непредсказуемо (сеть, лимиты, кривой ответ). Лови широкий <code>except</code> вокруг вызова модели — процесс важнее «чистоты» обработки.</li><li><strong>Делать ИИ центром процесса, а не шагом.</strong> Если всё завязано на модель, нет куда деградировать. ИИ — один из шагов пайплайна с запасным путём, а не его ядро.</li><li><strong>Игнорировать контроль доступа при встраивании.</strong> ИИ рядом с данными процесса должен <strong>наследовать</strong> права пользователя, а не обходить их. Встраивание не должно открывать модели больше, чем видит сам пользователь.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="10.1"></div><h2>Материалы</h2><ul><li><a href="https://learn.microsoft.com/en-us/copilot/microsoft-365/microsoft-365-copilot-overview" target="_blank" rel="noopener">Microsoft 365 Copilot — Overview</a> — ИИ в рабочих приложениях.</li><li><a href="https://support.google.com/docs/answer/13952129" target="_blank" rel="noopener">Gemini for Google Workspace</a> — ИИ в Gmail/Docs/Sheets.</li><li><a href="https://learn.microsoft.com/en-us/microsoft-365/copilot/microsoft-365-copilot-architecture" target="_blank" rel="noopener">Microsoft 365 Copilot — архитектура</a> — данные, доступ, границы безопасности.</li><li><a href="https://www.anthropic.com/product/enterprise" target="_blank" rel="noopener">Anthropic — Claude for Enterprise</a> — третий провайдер: governance, интеграции (GitHub/Google Workspace), MCP-коннекторы, SSO/audit.</li><li><a href="https://openai.com/index/introducing-chatgpt-enterprise/" target="_blank" rel="noopener">OpenAI — ChatGPT Enterprise</a> — ещё провайдер: seats, admin-консоль, SSO, коннекторы (SharePoint/GitHub/Drive/Box); не тренируют на данных.</li><li><a href="https://knowledge.workspace.google.com/admin/gemini/google-workspace-with-gemini" target="_blank" rel="noopener">Google Workspace — Gemini (admin deploy)</a> — включение и управление Gemini по OU, лицензии, granular-контроль.</li><li><a href="https://learn.microsoft.com/en-us/microsoft-copilot-studio/" target="_blank" rel="noopener">Microsoft — Copilot Studio</a> — low-code сборка/расширение агентов в M365 (MCP, коннекторы) — встраивание под свои процессы.</li><li><a href="https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ai/strategy" target="_blank" rel="noopener">Microsoft — Cloud Adoption Framework: AI strategy</a> — авторитетный фреймворк стратегии и внедрения (для «плана интеграции»).</li><li><a href="https://digitaleconomy.stanford.edu/publication/enterprise-ai-playbook/" target="_blank" rel="noopener">Stanford — The Enterprise AI Playbook (51 внедрений, 2026)</a> — эмпирика: 77% сложностей «невидимые» (change management, данные, процессы), модель часто взаимозаменяема, 61% успешных имели прошлый провал.</li><li><a href="https://www.digitalapplied.com/blog/change-management-ai-adoption-2026-overcoming-resistance-playbook" target="_blank" rel="noopener">Change Management for AI Adoption: 2026 Playbook</a> — человеческая сторона: лидерство, чемпионы, quick wins, метрики результата (а не «числа запросов»).</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-10-production-and-integration-10-integration-into-workspaces-code-test-integration-py" open data-test="1"><summary><span class="fname">code/test_integration.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from integration import AIFeature, run_pipeline
+
+
+def _feat(enabled=True):
+    return AIFeature(
+        fn=lambda t: f"AI:{t}",
+        fallback=lambda t: f"FB:{t}",
+        enabled=enabled,
+    )
+
+
+def test_enabled_uses_ai():
+    assert _feat().run("x") == "AI:x"
+
+
+def test_disabled_uses_fallback():
+    assert _feat(enabled=False).run("x") == "FB:x"
+
+
+def test_error_falls_back():
+    def boom(_):
+        raise RuntimeError("down")
+    feat = AIFeature(fn=boom, fallback=lambda t: f"FB:{t}")
+    assert feat.run("x") == "FB:x"          # прод не падает
+
+
+def test_pipeline_integrates_ai_step():
+    steps = [str.strip, _feat().run, str.upper]
+    assert run_pipeline(steps, "  hi ") == "AI:HI"
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-10-production-and-integration-10-integration-into-workspaces-code-integration-py"><summary><span class="fname">code/integration.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Интеграция в рабочие пакеты: безопасное встраивание ИИ — Build It для урока 10.1.
+
+Без зависимостей. Встраивая ИИ в существующий процесс, нужны две вещи: фича-флаг
+(можно мгновенно выключить) и fallback (если модель упала или выключена — процесс
+не падает, а деградирует мягко). Так ИИ становится заменяемой деталью пайплайна.
+"""
+
+
+class AIFeature:
+    """Обёртка над ИИ-шагом: фича-флаг + graceful fallback."""
+
+    def __init__(self, fn, fallback, enabled=True):
+        self.fn = fn                 # вызов модели (в проде)
+        self.fallback = fallback     # детерминированный запасной путь
+        self.enabled = enabled
+
+    def run(self, x):
+        if not self.enabled:
+            return self.fallback(x)          # фича выключена — старый путь
+        try:
+            return self.fn(x)
+        except Exception:                     # noqa: BLE001 — прод не должен падать из-за ИИ
+            return self.fallback(x)
+
+
+def run_pipeline(steps, x):
+    """Прогнать значение через шаги пайплайна (ИИ — один из шагов)."""
+    for step in steps:
+        x = step(x)
+    return x
+
+
+if __name__ == "__main__":
+    def ai_summary(text):
+        if "ошибк" in text:                       # стем: ловит «ошибка/ошибкой/...»
+            raise RuntimeError("модель недоступна")
+        return f"AI-саммари: {text[:20]}..."
+
+    def naive_summary(text):
+        return f"первые слова: {' '.join(text.split()[:3])}"
+
+    feat = AIFeature(ai_summary, naive_summary, enabled=True)
+    print(feat.run("длинный текст для краткого пересказа"))     # ИИ
+    print(feat.run("текст с ошибкой внутри"))                   # упал → fallback
+    feat.enabled = False
+    print(feat.run("любой текст"))                              # выключено → fallback
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-10-production-and-integration-10-integration-into-workspaces-outputs-integration-plan-md" open><summary><span class="fname">outputs/integration-plan.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: план интеграции ИИ для команды
+
+Где и как встроить ИИ в существующий процесс безопасно. Код-обёртка — [`code/integration.py`](../code/integration.py).
+
+## Шаги плана
+
+1. **Выбрать точку встраивания** — где ИИ даёт ценность: черновик ответа, классификация тикета, саммари, извлечение.
+2. **Определить fallback** — детерминированный запасной путь (шаблон, правило, ручной режим).
+3. **Фича-флаг** — включение по сегментам/проценту трафика; мгновенный откат.
+4. **Доступ к данным** — ИИ видит только то, что разрешено пользователю (как Copilot/Graph).
+5. **Мониторинг** — error_rate, latency, токены/стоимость (уроки 10.2–10.3).
+6. **Rollout** — пилот → расширение → дефолт; на каждом этапе сверка метрик.
+
+## Шаблон встраивания (код)
+
+```python
+from integration import AIFeature
+feature = AIFeature(fn=call_model, fallback=old_logic, enabled=flags.ai_summary)
+result = feature.run(record)        # упадёт ИИ — вернётся old_logic, процесс жив
+```
+
+## Чек-лист готовности к интеграции
+
+- [ ] Есть fallback на случай сбоя/выключения ИИ.
+- [ ] Фича за флагом, откат за секунды.
+- [ ] Доступ к данным ограничен правами пользователя.
+- [ ] Логирование и алерты настроены (10.2).
+- [ ] Токены/стоимость считаются на процесс (10.3, FinOps 9.4).
+- [ ] Качество измеряется (eval, урок 2.5).
+
+## Платформы
+
+- **M365 Copilot** / **Gemini for Workspace** — готовое встраивание в офисные приложения.
+- **Свой инструмент** — через API с обёрткой `AIFeature` + мониторинг.
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/finops-for-ai/"><small>← 9.4</small>FinOps для ИИ</a><a href="../../lessons/deploy-and-monitoring/" style="text-align:right"><small>10.2 →</small>Деплой и мониторинг</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

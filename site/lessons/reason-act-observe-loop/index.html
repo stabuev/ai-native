@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>7.1 Цикл reason → act → observe — AI Native</title>
+  <meta name="description" content="Агент — это не модель, а цикл: подумал → сделал → посмотрел на результат → повторил.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/reason-act-observe-loop/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="7.1 Цикл reason → act → observe — AI Native">
+  <meta property="og:description" content="Агент — это не модель, а цикл: подумал → сделал → посмотрел на результат → повторил.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/reason-act-observe-loop/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="7.1">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 7.1 · Цикл reason → act → observe</h1><p><strong>Фаза 7 — Agent Engineering</strong> · <strong>Результат фазы:</strong> Собрать надёжного агента с памятью, планированием, human-in-the-loop и guardrails.</p><p><strong>Это вход в Фазу 7 — момент, когда ИИ начинает действовать сам.</strong> Всё, что мы строили (промпты, RAG, память, инструменты, MCP), сходится здесь в одну конструкцию — <strong>агента</strong>. И в основе агента не модель, а простой цикл, который мы разберём до винтика.</p><blockquote><strong>MOTTO.</strong> Агент — это не модель, а цикл: подумал → сделал → посмотрел на результат → повторил.</blockquote><h2>PROBLEM</h2><p>«Агент» звучит как магия, пока не видишь цикл изнутри. И эта непрозрачность стоит дорого: нельзя отладить зависание, понять, почему агент крутится в петле или зовёт несуществующий инструмент. А ещё кажется, будто для агента обязателен дорогой LLM с API-ключом.</p><p>На деле «агентность» — это <strong>инженерия цикла</strong>, а не сама модель. Модель лишь играет роль «того, кто решает, что делать дальше». Сам механизм — выбрать действие, выполнить, посмотреть на результат, повторить — от модели не зависит и собирается на голом Python. Соберём его, и магия исчезнет.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Агент работает как человек, решающий задачу с <strong>калькулятором и блокнотом</strong>. Он не выдаёт ответ мгновенно — он действует шагами: смотрит, что уже посчитано (блокнот), решает следующее действие (reason), нажимает кнопку калькулятора (act), записывает результат в блокнот (observe) — и снова смотрит. Так до готового ответа.</p><p>Два участника: <strong>policy</strong> — «мозг», который на каждом шаге решает, что делать (это и есть роль модели); <strong>инструменты</strong> — «руки», которые делают конкретное (посчитать, сходить в БД, отправить письмо). Ключевой момент: результат каждого шага дописывается в историю — и это <strong>память</strong> агента в простейшем виде.</p><h3>Как это работает</h3><pre><code>        ┌──────────────────────────────────────┐
+        │                                       │
+   goal ▼            (reason)                    │
+        policy ── Action(tool, args) ──► tool ──┘
+        ▲                                  │
+        │            (observe)             │ (act)
+        └────────── observation ◄──────────┘
+                         │
+              Action(final) ──► ответ</code></pre><ul><li><strong>reason</strong> — <code>policy(goal, history)</code> смотрит на цель и историю и возвращает <code>Action</code>: либо вызвать инструмент (<code>tool</code> + аргументы), либо завершить (<code>final</code> + ответ).</li><li><strong>act</strong> — если <code>Action</code> это вызов, выполняется <code>tool(*args)</code>.</li><li><strong>observe</strong> — результат (<code>observation</code>) дописывается в <code>history</code>; на следующем витке policy его уже «видит».</li></ul><p>Петля крутится до финала или до лимита шагов. Два <strong>guardrail</strong> встроены сразу: лимит <code>max_steps</code> (защита от бесконечной петли → <code>AgentError</code>) и проверка неизвестного инструмента. Это не украшение — без них агент зависает или зовёт несуществующее.</p><p>Именно этот цикл отличает <strong>агента</strong> от <strong>workflow</strong>. Anthropic проводит границу так: workflow — это «системы, где LLM и инструменты оркестрируются по заранее заданным путям в коде», а агент — «системы, где LLM сам динамически направляет свой процесс и использование инструментов». В нашем <code>run_agent</code> путь не зашит: его на каждом витке выбирает <code>policy</code>. Плата за автономию реальна — Anthropic прямо предупреждает, что «агентные системы обычно меняют задержку и стоимость на качество решения», поэтому начинают с простого, а агента берут под открытые задачи, где число шагов нельзя предсказать заранее.</p><blockquote><strong>Врезка: три режима человек–ИИ (AI Fluency).</strong> <strong>Automation</strong> — ИИ делает задачу по чётким инструкциям; <strong>Augmentation</strong> — человек и ИИ работают итеративно как партнёры; <strong>Agency</strong> — ИИ действует автономно по заданным правилам и целям. Агент из этого урока — переход к <strong>Agency</strong>: ты задаёшь цель, инструменты и guardrails, а не каждый шаг. Чем выше автономия, тем важнее подтверждения и заслоны (урок 7.3).</blockquote><h2>РАЗБОР ПО ШАГАМ</h2><p>Прогоним цикл на цели <code>(2 + 3) * 4 - 1</code> — это <code>{start: 2, ops: [(add,3), (mul,4), (sub,1)]}</code>. <code>RuleBasedPolicy</code> на каждом шаге берёт текущее значение и применяет следующую операцию:</p><pre><code>шаг 0: history пуст → value = start = 2; op = (add, 3)
+        reason → Action(tool=add, args=(2,3));  act → 5;  observe → history=[5]
+шаг 1: value = 5 (прошлый результат); op = (mul, 4)
+        reason → Action(tool=mul, args=(5,4));  act → 20; observe → history=[5,20]
+шаг 2: value = 20; op = (sub, 1)
+        reason → Action(tool=sub, args=(20,1)); act → 19; observe → history=[5,20,19]
+шаг 3: операции кончились (i=3 ≥ 3) → Action(final, answer=19)</code></pre><p>Итог: <code>19</code> за <strong>три вызова инструментов</strong>. Главное здесь — <code>observation</code> каждого шага становится <code>value</code> следующего: 2 → 5 → 20 → 19. Это и есть «память в цикле»: policy не держит состояние в себе, оно живёт в <code>history</code>. Поменяй <code>RuleBasedPolicy</code> на LLM — структура витка не изменится ни на байт.</p><h2>BUILD IT</h2><p><strong>Задание: собери цикл агента reason→act→observe с нуля</strong> — с guardrails. Только стандартная библиотека, без сети и без LLM.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/7.1-agent-loop/</code>), а файлы урока клади в подпапку <code>code/</code> (как в 0.1). Нужен только <strong>Python 3</strong> (для теста ещё <code>pytest</code>).</blockquote><p>Создай файл <code>agent_loop.py</code>:</p><ul><li><strong><code>Action</code></strong> — dataclass решения: <code>kind</code> (<code>"tool"</code> | <code>"final"</code>), <code>tool</code>, <code>args</code>, <code>answer</code>.</li><li><strong><code>run_agent(goal, tools, policy, max_steps=10)</code></strong> — цикл до <code>max_steps</code>: вызвать <code>policy(goal, history)</code>; если <code>kind == "final"</code> → вернуть <code>(answer, history)</code>; если инструмент не в <code>tools</code> → <code>raise AgentError</code> (guardrail); иначе выполнить <code>tools[tool](*args)</code>, дописать <code>Step(action, observation)</code> в <code>history</code>. Не пришли к финалу за <code>max_steps</code> → <code>raise AgentError</code> (guardrail против петель).</li><li><strong><code>TOOLS</code></strong> — <code>{"add", "sub", "mul"}</code> (простые функции двух аргументов).</li><li><strong><code>RuleBasedPolicy</code></strong> — детерминированная policy для цели <code>{start, ops}</code>: берёт текущее значение (<code>start</code> или прошлый <code>observation</code>), применяет <code>ops[i]</code>; когда операции кончились — <code>Action(final)</code>.</li></ul><p><strong>Готово, когда</strong> все тесты в <code>test_agent_loop.py</code> зелёные — они проверяют: цепочку операций (<code>(2+3)*4</code> = 20 за 2 шага); что <code>observation</code> кормит следующий шаг; пустые <code>ops</code> → возврат <code>start</code>; срабатывание guardrail по <code>max_steps</code>; ошибку на неизвестном инструменте.</p><pre><code>pytest code -q          # красное → реализуй цикл → зелёное
+python code/agent_loop.py # демо: (2 + 3) * 4 - 1 = 19 за три вызова</code></pre><p><strong>Подсказка.</strong> <code>history</code> — список <code>Step</code>. В <code>RuleBasedPolicy</code> индекс шага = <code>len(history)</code>; текущее значение = <code>goal["start"]</code> при пустой истории, иначе <code>history[-1].observation</code>. Guardrail max_steps — это просто выход из <code>for</code>-цикла в <code>raise</code>.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>То же самое — с настоящей моделью. Меняется <strong>только policy</strong>: вместо правил решения принимает LLM через function calling (6.1), а форма <code>Action</code> и сам <code>run_agent</code> остаются (мульти-провайдер).</p><pre><code># набросок LLM-policy под тот же run_agent(...)  — Requires: API-ключ
+def llm_policy(goal, history):
+    resp = client.messages.create(
+        model="claude-haiku-4-5",      # дешёвая модель на роль «рассуждателя»
+        tools=TOOL_SCHEMAS,             # схемы add/sub/mul (как в 6.1)
+        messages=build_messages(goal, history),
+    )
+    block = resp.content[0]
+    if block.type == "tool_use":
+        return Action("tool", block.name, tuple(block.input.values()))
+    return Action("final", answer=block.text)</code></pre><p>Вывод урока: агентность — это инженерия цикла и инструментов, а модель — <strong>заменяемая деталь</strong> на роли policy. Отсюда мост к Фазе 9: на «рассуждателя» часто берут модель подешевле.</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> <code>agent-loop</code> (skill) → <a href="#f-phases-07-agent-engineering-07-reason-act-observe-loop-outputs-skill-agent-loop-md"><code>outputs/skill-agent-loop.md</code></a></p><p>Переиспользуемый каркас цикла с guardrails: подставляешь свои инструменты и policy. Дальше в фазе наращиваем память и планирование (7.2), human-in-the-loop и guardrails (7.3), разбор поломок (7.4), evals (7.5).</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Считать агентом саму модель.</strong> Агент — это цикл вокруг policy и инструментов. Модель лишь играет policy; без цикла, инструментов и guardrails это просто чат.</li><li><strong>Цикл без лимита шагов.</strong> Policy может никогда не вернуть <code>final</code> — нужен <code>max_steps</code>, иначе агент крутится в петле бесконечно (и жжёт токены). Лимит — обязательный guardrail.</li><li><strong>Не проверять имя инструмента.</strong> Policy (особенно LLM) может назвать несуществующий инструмент. Без проверки — падение посреди цикла; лови и возвращай понятную ошибку.</li><li><strong>Не возвращать observation в историю.</strong> Если результат шага не дописать в <code>history</code>, policy его «не увидит» и будет повторять вызов или галлюцинировать — цепочка рассыпется.</li><li><strong>Сразу брать фреймворк, не поняв цикл.</strong> LangGraph/CrewAI удобны, но если не понимаешь reason→act→observe, отладить зависание в них невозможно. Сначала механизм, потом фреймворк (8.4).</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="7.1"></div><h2>Материалы</h2><ul><li><a href="https://arxiv.org/abs/2210.03629" target="_blank" rel="noopener">ReAct: Reasoning + Acting (arXiv 2210.03629)</a> — первоисточник цикла reason→act→observe.</li><li><a href="https://www.anthropic.com/research/building-effective-agents" target="_blank" rel="noopener">Anthropic — Building Effective Agents</a> — агент как LLM с инструментами в цикле; когда он вообще нужен.</li><li><a href="https://www.anthropic.com/engineering/writing-tools-for-agents" target="_blank" rel="noopener">Anthropic — Writing effective tools for agents</a> — как проектировать инструменты и интерфейс агент↔среда.</li><li><a href="https://ampcode.com/how-to-build-an-agent" target="_blank" rel="noopener">Thorsten Ball — How to Build an Agent</a> — агент-редактор кода в ~300 строк на голом reason-act цикле (ровно Build It урока).</li><li><a href="https://www.anthropic.com/engineering/building-agents-with-the-claude-agent-sdk" target="_blank" rel="noopener">Anthropic — Building agents with the Claude Agent SDK</a> — «тот же агент через фреймворк»: встроенный agent loop, tools, контекст.</li><li><a href="https://lilianweng.github.io/posts/2023-06-23-agent/" target="_blank" rel="noopener">Lilian Weng — LLM Powered Autonomous Agents (2023)</a> — каноничная карта агента: planning + memory + tool use.</li><li><a href="https://huyenchip.com/2025/01/07/agents.html" target="_blank" rel="noopener">Chip Huyen — Agents (эссе, 2025)</a> — обстоятельный разбор: планирование, инструменты, типичные провалы.</li><li><a href="https://github.com/humanlayer/12-factor-agents" target="_blank" rel="noopener">12-factor agents (HumanLayer)</a> — принципы надёжных агентов для прода (own your context / loop / prompts).</li><li><a href="https://huggingface.co/learn/agents-course/en/unit0/introduction" target="_blank" rel="noopener">Hugging Face — AI Agents Course</a> — бесплатный курс с практикой (smolagents / LangGraph / LlamaIndex), финал на GAIA.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-07-agent-engineering-07-reason-act-observe-loop-code-test-agent-loop-py" open data-test="1"><summary><span class="fname">code/test_agent_loop.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>import pytest
+from agent_loop import run_agent, RuleBasedPolicy, Action, AgentError, TOOLS
+
+
+def test_chains_operations():
+    goal = {"start": 2, "ops": [("add", 3), ("mul", 4)]}
+    answer, history = run_agent(goal, TOOLS, RuleBasedPolicy())
+    assert answer == 20            # (2 + 3) * 4
+    assert len(history) == 2       # ровно два вызова инструментов
+
+
+def test_observation_feeds_next_step():
+    goal = {"start": 10, "ops": [("sub", 4), ("mul", 2)]}
+    answer, history = run_agent(goal, TOOLS, RuleBasedPolicy())
+    assert history[0].observation == 6     # 10 - 4
+    assert answer == 12                    # 6 * 2
+
+
+def test_no_ops_returns_start():
+    answer, history = run_agent({"start": 7, "ops": []}, TOOLS, RuleBasedPolicy())
+    assert answer == 7
+    assert history == []
+
+
+def test_max_steps_guardrail():
+    # policy, которая никогда не финиширует -&gt; должен сработать guardrail
+    loop_policy = lambda goal, history: Action(kind="tool", tool="add", args=(1, 1))
+    with pytest.raises(AgentError):
+        run_agent({"start": 0, "ops": []}, TOOLS, loop_policy, max_steps=3)
+
+
+def test_unknown_tool_raises():
+    bad = lambda goal, history: Action(kind="tool", tool="divide", args=(1, 1))
+    with pytest.raises(AgentError):
+        run_agent({"start": 0, "ops": []}, TOOLS, bad)
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-07-agent-engineering-07-reason-act-observe-loop-code-agent-loop-py"><summary><span class="fname">code/agent_loop.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Цикл агента reason -&gt; act -&gt; observe с нуля — Build It для урока 7.1.
+
+Без внешних зависимостей. Показывает суть любого агента: модель (policy)
+на каждом шаге выбирает действие — вызвать инструмент или дать финальный
+ответ; результат инструмента возвращается в историю, и шаг повторяется.
+
+Здесь policy детерминированная (RuleBasedPolicy), чтобы урок запускался
+офлайн и тесты были воспроизводимы. В USE IT та же policy заменяется на
+вызов LLM через function calling — форма Action не меняется.
+"""
+from dataclasses import dataclass, field
+from typing import Callable
+
+
+# ---- Действие, которое выбирает policy на каждом шаге ----
+@dataclass
+class Action:
+    kind: str                 # "tool" | "final"
+    tool: str | None = None   # имя инструмента, если kind == "tool"
+    args: tuple = ()          # аргументы инструмента
+    answer: object = None     # ответ, если kind == "final"
+
+
+# ---- Запись одного витка цикла (для истории и трейса) ----
+@dataclass
+class Step:
+    action: Action
+    observation: object = None
+
+
+class AgentError(Exception):
+    pass
+
+
+def run_agent(goal: dict, tools: dict[str, Callable], policy: Callable,
+              max_steps: int = 10, trace: bool = False) -&gt; tuple[object, list[Step]]:
+    """Главный цикл: reason (policy) -&gt; act (tool) -&gt; observe (result).
+
+    Возвращает (финальный_ответ, история_шагов). Если за max_steps агент не
+    пришёл к финалу — поднимает AgentError (guardrail против петель).
+    """
+    history: list[Step] = []
+    for _ in range(max_steps):
+        action = policy(goal, history)              # reason
+        if action.kind == "final":                  # агент решил завершить
+            if trace:
+                print(f"FINAL -&gt; {action.answer}")
+            return action.answer, history
+        if action.tool not in tools:                # guardrail: неизвестный инструмент
+            raise AgentError(f"unknown tool: {action.tool}")
+        observation = tools[action.tool](*action.args)   # act
+        history.append(Step(action, observation))        # observe
+        if trace:
+            print(f"{action.tool}{action.args} -&gt; {observation}")
+    raise AgentError(f"no final answer in {max_steps} steps (возможная петля)")
+
+
+# ---- Инструменты (то, что агент умеет делать руками) ----
+def add(x, y): return x + y
+def sub(x, y): return x - y
+def mul(x, y): return x * y
+
+TOOLS = {"add": add, "sub": sub, "mul": mul}
+
+
+# ---- Детерминированная policy: цепочка операций над текущим значением ----
+class RuleBasedPolicy:
+    """Решает goal вида {"start": 2, "ops": [("add", 3), ("mul", 4)]}.
+
+    На каждом шаге берёт текущее значение (start или результат прошлого
+    шага), применяет следующую операцию через инструмент, а когда операции
+    кончились — отдаёт финальный ответ. Это и есть reason-&gt;act-&gt;observe.
+    """
+    def __call__(self, goal: dict, history: list[Step]) -&gt; Action:
+        ops = goal["ops"]
+        i = len(history)
+        value = goal["start"] if i == 0 else history[-1].observation
+        if i &gt;= len(ops):
+            return Action(kind="final", answer=value)
+        name, operand = ops[i]
+        return Action(kind="tool", tool=name, args=(value, operand))
+
+
+if __name__ == "__main__":
+    goal = {"start": 2, "ops": [("add", 3), ("mul", 4), ("sub", 1)]}
+    answer, history = run_agent(goal, TOOLS, RuleBasedPolicy(), trace=True)
+    print(f"\nИтог: (2 + 3) * 4 - 1 = {answer}  за {len(history)} вызова(ов)")
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-07-agent-engineering-07-reason-act-observe-loop-outputs-skill-agent-loop-md" open><summary><span class="fname">outputs/skill-agent-loop.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: agent-loop (skill)
+
+Переиспользуемый каркас агентного цикла reason → act → observe с встроенными guardrails. Подставляешь свои инструменты и policy — получаешь рабочего агента. Основа для всей Фазы 7 и для Capstone.
+
+## Контракт
+
+- **Tool** — обычная функция `name(*args) -&gt; observation`. Регистрируется в словаре `tools`.
+- **Policy** — `policy(goal, history) -&gt; Action`. Решает, что делать дальше.
+- **Action** — `Action("tool", tool, args)` или `Action("final", answer=...)`.
+- **run_agent(goal, tools, policy, max_steps)** — крутит цикл; возвращает `(answer, history)` или поднимает `AgentError`.
+
+## Guardrails (всегда включены)
+
+- **Лимит шагов** — защита от петель: нет финала за `max_steps` → `AgentError`.
+- **Проверка инструмента** — вызов незарегистрированного инструмента → `AgentError`.
+- (дальше по фазе) human-in-the-loop перед «опасными» инструментами — урок 7.3.
+
+## Как переиспользовать
+
+1. Опиши инструменты и положи в `tools`.
+2. Для прототипа возьми детерминированную policy; для прода — LLM-policy через function calling (форма `Action` та же).
+3. Логируй `history` — это память и трейс для отладки.
+4. Роль policy отдавай модели подешевле (Haiku/Flash) — см. Фазу 9; на сложные решения эскалируй на Opus.
+
+## Связи
+
+- Память и планирование → урок 7.2
+- Human-in-the-loop и guardrails → урок 7.3
+- Где агенты ломаются (петли, дрейф цели) → урок 7.4
+- Подключение реальных инструментов через MCP → Фаза 6
+- Выбор модели на роль policy по цене → Фаза 9
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~5 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/security-and-access/"><small>← 6.5</small>Безопасность и доступ</a><a href="../../lessons/agent-memory-and-planning/" style="text-align:right"><small>7.2 →</small>Память и планирование агента</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>12.3 Презентация и защита — AI Native</title>
+  <meta name="description" content="Защита — это цифры: насколько упало время и стоимость, выросло качество, какой ROI.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/presentation-and-defense/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="12.3 Презентация и защита — AI Native">
+  <meta property="og:description" content="Защита — это цифры: насколько упало время и стоимость, выросло качество, какой ROI.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/presentation-and-defense/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="12.3">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 12.3 · Презентация и защита</h1><p><strong>Фаза 12 — Capstone</strong> · <strong>Результат фазы:</strong> Автоматизировать реальный процесс end-to-end и защитить решение с метриками эффекта.</p><p><strong>Спека есть (12.1), решение собрано (12.2) — остался последний и решающий шаг: доказать, что стало лучше.</strong> Это финал курса. Не «я сделал агента», а «время упало на X%, стоимость на Y%, качество выросло на Z%, ROI = N». Числа, а не впечатления.</p><blockquote><strong>MOTTO.</strong> Защита — это цифры: насколько упало время и стоимость, выросло качество, какой ROI.</blockquote><h2>PROBLEM</h2><p>Работающее решение само по себе ничего не доказывает. «Кажется, быстрее» — не аргумент на защите: заказчик спросит «на сколько?» и «а сколько это стоило?». Без сравнения «до/после» по времени, качеству и стоимости и без честного ROI твой Capstone — красивое демо, а не доказанный эффект.</p><p>К счастью, baseline у тебя уже зафиксирован в спеке (12.1), а стоимость — в телеметрии решения (12.2). Осталось посчитать улучшения и окупаемость. И считать надо честно: FinOps-исследования показывают, что лишь малая доля команд вообще умеет привязать AI-расходы к бизнес-результату — не будь среди тех, кто не умеет. Соберём калькулятор защиты.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Защита Capstone — это <strong>акт сдачи работ с цифрами, а не питч стартапа</strong>. Инвестору продают мечту; заказчику сдают измеренный результат. И ключевая честность здесь: <strong>направление улучшения зависит от метрики</strong>. Для времени и стоимости лучше — это <strong>меньше</strong>; для качества лучше — это <strong>больше</strong>. Спутать знак — значит отчитаться, что «стоимость выросла на 80%», имея в виду, что она упала.</p><p>Вторая честность — <strong>ROI считается от полных затрат</strong>, а не только от экономии. Если решение сэкономило 800, но само стоит 200, окупаемость меряется относительно этих 200. Показать экономию и умолчать про стоимость решения — это не защита, а самообман.</p><h3>Как это работает</h3><pre><code>метрики «до» (baseline из 12.1) vs «после» (замер решения):
+   время     ↓  improvement%  (lower_is_better=True)
+   стоимость ↓  improvement%  (lower_is_better=True, FinOps Ф9–10)
+   качество  ↑  improvement%  (lower_is_better=False, eval Ф2.5/5.5)
+        │
+   ROI = (экономия + выгода) / затраты на решение
+        │
+   презентация (проблема→решение→демо→метрики→ROI→риски) + чек-лист компетенций</code></pre><ul><li><code>improvement(before, after, lower_is_better)</code> — процент улучшения с учётом направления метрики.</li><li><code>roi(before_cost, after_cost, value_gained)</code> — окупаемость: (экономия + доп. выгода) / затраты.</li><li><code>before_after(...)</code> — сводка по всем метрикам сразу; <code>competency_report(...)</code> — готовность компетенций курса.</li></ul><h3>Разбор формул</h3><p><strong>improvement.</strong> Для «меньше = лучше»: <code>(before − after) / before</code>. Время 10→3: (10−3)/10 = 0.7 = <strong>+70% улучшения</strong> (само время при этом упало на 70%). Для «больше = лучше» формула переворачивается: <code>(after − before) / before</code>. Качество 70→88: (88−70)/70 = 0.257 = <strong>+25.7% улучшения</strong> (качество выросло). Заметь: при верном флаге <code>improvement</code> в обоих случаях возвращает <strong>положительный</strong> процент улучшения — направление исходной метрики (упало/выросло) закодировано во флаге <code>lower_is_better</code>, а не в знаке результата.</p><p><strong>roi.</strong> Экономия = before_cost − after_cost. ROI = (экономия + выгода) / after_cost. Затраты 1000→200, доп. выгода 300: экономия 800, (800 + 300) / 200 = <strong>5.5</strong> — каждый вложенный доллар вернул 5.5.</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Прогоним защиту на реальных цифрах спеки поддержки:</p><pre><code>before = {время_мин: 10.0, стоимость_$: 0.50, качество_%: 70.0}
+after  = {время_мин:  3.0, стоимость_$: 0.10, качество_%: 88.0}
+lower  = {время_мин: True, стоимость_$: True, качество_%: False}
+
+before_after(before, after, lower):
+   время_мин:   10.0 → 3.0   (+70.0%)   меньше = лучше: время упало — улучшение
+   стоимость_$: 0.50 → 0.10  (+80.0%)   меньше = лучше: стоимость упала — улучшение
+   качество_%:  70.0 → 88.0  (+25.7%)   больше = лучше: качество выросло — улучшение
+
+roi(before_cost=1000, after_cost=200, value_gained=300) → 5.5
+
+competency_report({промпты:✓, агенты:✓, MCP:✗}) → {done: 2, total: 3, missing: [MCP]}</code></pre><p>Три улучшения с верными флагами направления, окупаемость от полных затрат, честный список непокрытого — это и есть содержание защиты. Заметь: если бы для качества забыли <code>lower_is_better=False</code>, <code>improvement</code> посчитал бы (70−88)/70 = <strong>−25.7%</strong> — минус честно просигналил бы, что с флагами что-то не так, но в отчёте ты заявил бы падение качества вместо роста.</p><p><strong>Честная граница метода.</strong> Калькулятор считает арифметику верно, но не проверяет, что цифры <strong>настоящие</strong>:</p><ul><li><strong>Мусор на входе — мусор на выходе.</strong> Если <code>after</code>-качество не из eval-harness (Ф2.5/5.5), а «на глаз», то и +25.7% — фикция. Числа должны приходить из замеров, а не из оптимизма.</li><li><strong>ROI зависит от честности <code>value_gained</code>.</strong> Раздутая «доп. выгода» надувает ROI. Выгоду надо обосновывать, а не назначать.</li><li><strong>Риски не в формуле.</strong> Приватность, галлюцинации, предвзятость (Фаза 11) в ROI не попадают, но на защите проговариваются — иначе решение выглядит зрелее, чем оно есть.</li></ul><h2>BUILD IT</h2><p><strong>Задание: собери калькулятор защиты</strong> — улучшения «до/после», ROI и отчёт по компетенциям. Только стандартная библиотека, без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/12.3-defense/</code>), а файлы урока клади в подпапку <code>code/</code> (как в 0.1). Нужен только <strong>Python 3</strong> (для теста ещё <code>pytest</code>).</blockquote><p>Создай файл <code>metrics.py</code> с четырьмя функциями:</p><ul><li><strong><code>improvement(before, after, lower_is_better=True)</code></strong> — процент улучшения, округлить до 1 знака. При <code>lower_is_better</code> дельта = <code>(before−after)/before</code>, иначе <code>(after−before)/before</code>. При <code>before==0</code> вернуть <code>0.0</code>.</li><li><strong><code>roi(before_cost, after_cost, value_gained=0.0)</code></strong> — <code>(экономия + value_gained) / after_cost</code>, округлить до 2 знаков; при <code>after_cost==0</code> вернуть <code>inf</code>.</li><li><strong><code>before_after(before, after, lower_is_better)</code></strong> — по каждому ключу вернуть <code>{before, after, improvement_pct}</code> (dict'ы before/after — метрика→значение, lower_is_better — метрика→bool).</li><li><strong><code>competency_report(checked)</code></strong> — по dict'у компетенция→bool вернуть <code>{done, total, missing}</code>.</li></ul><p><strong>Готово, когда</strong> все тесты в <code>test_metrics.py</code> зелёные — они проверяют: улучшение времени 70% и стоимости 80% (lower); качества 25.7% (higher); ROI 5.5; структура <code>before_after</code>; <code>competency_report</code> считает done/total и собирает missing.</p><pre><code>pytest code -q          # красное → реализуй metrics.py → зелёное
+python code/metrics.py  # демо: +70% / +80% / +25.7% улучшения и ROI 5.5</code></pre><p><strong>Подсказка.</strong> Знак улучшения решает флаг <code>lower_is_better</code> — не хардкодь одно направление. В <code>before_after</code> бери направление через <code>lower_is_better.get(k, True)</code> (по умолчанию «меньше = лучше»).</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>Демо и обратная связь (мульти-провайдер, применимо к любому решению):</p><ul><li><strong>Замерь до/после на реальных кейсах</strong> — время (хронометраж), качество (eval-harness 2.5 / валидация 5.5), стоимость (телеметрия 10.3 / FinOps 9.4). Не «прогон в голове», а числа из инструментов.</li><li><strong>Посчитай ROI по FinOps-логике</strong> — «Price × Quantity = Cost» применима и к AI, но появляются свои KPI: cost per inference = общие расходы / число запросов, cost per outcome. ROI = (экономия + выгода) / затраты на решение.</li><li><strong>Смотри шире денег</strong> — FinOps for AI выделяет несколько граней ценности (эффективность затрат, продуктивность, UX, устойчивость, рост бизнеса); привязывай эффект к бизнес-результату, а не только к сэкономленным долларам.</li><li><strong>Покажи живое демо</strong> и собери обратную связь; <strong>проговори риски</strong> (приватность, галлюцинации, предвзятость — Фаза 11) — это признак зрелости, а не слабости.</li></ul><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Презентация + чек-лист компетенций → <a href="#f-phases-12-capstone-12-presentation-and-defense-outputs-presentation-and-competencies-md"><code>outputs/presentation-and-competencies.md</code></a></p><p>Структура защиты (проблема → решение → демо → метрики до/после → ROI → риски → что дальше) плюс чек-лист освоенных компетенций всех 12 фаз. Это финал курса: реальный процесс с <strong>доказанным числами</strong> эффектом. Поздравляю — ты прошёл путь от токенов до собственной агентной системы.</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Защищаться словами, а не числами.</strong> «Кажется, лучше» — не аргумент. Нужны время/стоимость/качество «до/после» и ROI, иначе эффект не доказан.</li><li><strong>Спутать направление метрики.</strong> Для качества <code>lower_is_better=False</code>; забудешь — и рост +25.7% превратится в мнимое падение. Знак зависит от метрики.</li><li><strong>Считать ROI только от экономии.</strong> Окупаемость меряется от полных затрат на решение (<code>after_cost</code>), а не от одной экономии — иначе цифра завышена.</li><li><strong>Брать числа «на глаз».</strong> improvement верно посчитает мусор как мусор. Метрики должны приходить из eval/телеметрии, а не из оптимизма.</li><li><strong>Умолчать про риски.</strong> Приватность, галлюцинации, предвзятость (Ф11) в формулу ROI не входят, но на защите обязательны — зрелость важнее глянца.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="12.3"></div><h2>Материалы</h2><ul><li><a href="https://www.finops.org/wg/finops-for-ai-overview/" target="_blank" rel="noopener">FinOps Foundation — FinOps for AI</a> — стоимость AI, unit-экономика, cost per inference/outcome.</li><li><a href="https://platform.claude.com/docs/en/docs/build-with-claude/define-success" target="_blank" rel="noopener">Anthropic — Define success criteria &amp; build evaluations</a> — измерение качества: методы грейдинга.</li><li><a href="https://www.cloudzero.com/blog/finops-for-ai/" target="_blank" rel="noopener">CloudZero — FinOps for AI</a> — ROI и привязка AI-расходов к бизнес-результату.</li><li><a href="https://www.mckinsey.com/capabilities/quantumblack/our-insights/the-state-of-ai" target="_blank" rel="noopener">McKinsey — The State of AI</a> — почему ценность приходит только при строгом замере исходов: high performers ставят измеримые бизнес-цели и меряют эффект (аргумент за защиту числами).</li><li><a href="https://agility-at-scale.com/implementing/roi-of-enterprise-ai/" target="_blank" rel="noopener">Agility at Scale — Proving ROI: Measuring the Business Value of Enterprise AI</a> — практика: baseline «до», отделение эффекта AI от внешних факторов, Realized/Trending/Capability ROI, payback-период.</li><li><a href="https://www.storytellingwithdata.com/books" target="_blank" rel="noopener">Cole Nussbaumer Knaflic — Storytelling with Data</a> — как показать результат, а не вывалить числа: контекст, убрать шум, направить внимание, before/after-makeover'ы (навык демо и защиты).</li><li><a href="https://altersquare.medium.com/why-ai-projects-stall-after-the-first-demo-3aa0b639e684" target="_blank" rel="noopener">AlterSquare — Why AI Projects Stall After the First Demo</a> — «science-experiment trap», показывай реальный рабочий процесс, а не вау-демо; про переход демо → прод.</li><li><a href="https://www.aigl.blog/state-of-ai-in-business-2025/" target="_blank" rel="noopener">MIT NANDA — The GenAI Divide: State of AI in Business 2025</a> — громкое исследование: 95% корпоративных GenAI-пилотов не показывают измеримого ROI — сильнейший аргумент, почему защита строится на числах «до/после».</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-12-capstone-12-presentation-and-defense-code-test-metrics-py" open data-test="1"><summary><span class="fname">code/test_metrics.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from metrics import improvement, roi, before_after, competency_report
+
+
+def test_improvement_lower_is_better():
+    assert improvement(10, 3, lower_is_better=True) == 70.0      # время −70%
+    assert improvement(0.50, 0.10, lower_is_better=True) == 80.0  # стоимость −80%
+
+
+def test_improvement_higher_is_better():
+    assert improvement(70, 88, lower_is_better=False) == 25.7     # качество +25.7%
+
+
+def test_roi():
+    # экономия 800 + выгода 300 = 1100; / 200 = 5.5
+    assert roi(before_cost=1000, after_cost=200, value_gained=300) == 5.5
+
+
+def test_before_after_structure():
+    ba = before_after({"t": 10}, {"t": 5}, {"t": True})
+    assert ba["t"]["improvement_pct"] == 50.0
+    assert ba["t"]["before"] == 10 and ba["t"]["after"] == 5
+
+
+def test_competency_report():
+    rep = competency_report({"промпты": True, "агенты": True, "MCP": False})
+    assert rep["done"] == 2 and rep["total"] == 3
+    assert "MCP" in rep["missing"]
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-12-capstone-12-presentation-and-defense-code-metrics-py"><summary><span class="fname">code/metrics.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Презентация и защита: метрики «до/после» + ROI — Build It для урока 12.3.
+
+Без зависимостей. Защита Capstone строится на цифрах: насколько упало время и
+стоимость, насколько выросло качество, какой ROI. Здесь считаем улучшения,
+окупаемость и собираем сводку для презентации.
+"""
+
+
+def improvement(before, after, lower_is_better=True):
+    """% улучшения. lower_is_better=True для времени/стоимости (меньше = лучше)."""
+    if before == 0:
+        return 0.0
+    delta = (before - after) / before if lower_is_better else (after - before) / before
+    return round(delta * 100, 1)
+
+
+def roi(before_cost, after_cost, value_gained=0.0):
+    """ROI автоматизации: (экономия + выгода) / затраты."""
+    saved = before_cost - after_cost
+    return round((saved + value_gained) / after_cost, 2) if after_cost else float("inf")
+
+
+def before_after(before, after, lower_is_better):
+    """before/after: dict метрика→значение. lower_is_better: dict метрика→bool."""
+    return {
+        k: {"before": before[k], "after": after[k],
+            "improvement_pct": improvement(before[k], after[k], lower_is_better.get(k, True))}
+        for k in before
+    }
+
+
+def competency_report(checked):
+    """checked: dict компетенция→bool. Возвращает сводку готовности."""
+    done = sum(1 for v in checked.values() if v)
+    return {"done": done, "total": len(checked),
+            "missing": [k for k, v in checked.items() if not v]}
+
+
+if __name__ == "__main__":
+    before = {"время_мин": 10.0, "стоимость_$": 0.50, "качество_%": 70.0}
+    after = {"время_мин": 3.0, "стоимость_$": 0.10, "качество_%": 88.0}
+    lower = {"время_мин": True, "стоимость_$": True, "качество_%": False}
+    for k, v in before_after(before, after, lower).items():
+        print(f"{k}: {v['before']} → {v['after']} ({v['improvement_pct']:+.1f}%)")
+    print("ROI:", roi(before_cost=1000, after_cost=200, value_gained=300))
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-12-capstone-12-presentation-and-defense-outputs-presentation-and-competencies-md" open><summary><span class="fname">outputs/presentation-and-competencies.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: презентация защиты + чек-лист компетенций
+
+Структура защиты Capstone и самопроверка освоенного. Метрики — [`code/metrics.py`](../code/metrics.py).
+
+## Структура презентации (7 слайдов)
+
+1. **Проблема** — процесс, его боль, baseline (сколько стоит/занимает сейчас).
+2. **Решение** — архитектура из кирпичей курса (агент + MCP + cost-aware + память + мониторинг).
+3. **Демо** — живой прогон end-to-end на реальном кейсе.
+4. **Метрики «до/после»** — время ↓, стоимость ↓, качество ↑ (с %).
+5. **ROI** — (экономия + выгода) / затраты на решение.
+6. **Риски и ограничения** — приватность, галлюцинации, предвзятость (Фаза 11) и меры.
+7. **Что дальше** — масштабирование, что доработать.
+
+## Таблица эффекта (пример)
+
+| Метрика | До | После | Δ |
+|---|---|---|---|
+| Время/единица | 10 мин | 3 мин | −70% |
+| Стоимость/единица | $0.50 | $0.10 | −80% |
+| Качество | 70% | 88% | +25.7% |
+| **ROI** | | | **5.5** |
+
+```python
+from metrics import before_after, roi
+before_after({"время": 10}, {"время": 3}, {"время": True})   # → −70%
+roi(before_cost=1000, after_cost=200, value_gained=300)       # → 5.5
+```
+
+## Чек-лист компетенций курса
+
+- [ ] LLM изнутри: токены, контекст, сэмплинг, галлюцинации (Ф1)
+- [ ] Воспроизводимые промпты + eval-harness (Ф2)
+- [ ] Резюмирование/редактура и RAG над корпусом (Ф3)
+- [ ] Скиллы, память, проекты, контекст-инжиниринг (Ф4)
+- [ ] Данные: NL→SQL, BI-агент, валидация/аномалии (Ф5)
+- [ ] Tool use и свой MCP-сервер с доступом (Ф6)
+- [ ] Агент: цикл, память, guardrails, отладка поломок (Ф7)
+- [ ] Мульти-агентная оркестрация и передача контекста (Ф8)
+- [ ] FinOps: роутинг, каскад, кэш/batch, ROI (Ф9)
+- [ ] Production: интеграция, мониторинг, телеметрия (Ф10)
+- [ ] Этика: приватность, фактчекинг, риски, политика (Ф11)
+- [ ] Capstone: спека → сборка → защита с метриками (Ф12)
+
+```python
+from metrics import competency_report
+competency_report({"промпты": True, "агенты": True, "MCP": True})  # → готовность
+```
+
+## Правила честной защиты
+
+- **Реальные замеры**, не «кажется лучше» (eval 2.5, валидация 5.5, телеметрия 10.3).
+- **Учти стоимость решения** в ROI, а не только экономию.
+- **Проговори риски и ограничения** (Фаза 11) — это часть зрелости, а не слабость.
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~10 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/building-the-solution/"><small>← 12.2</small>Сборка решения</a><span></span></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

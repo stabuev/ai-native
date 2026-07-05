@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>10.2 Деплой и мониторинг — AI Native</title>
+  <meta name="description" content="Задеплоил — значит измеряешь: без логов prompt/response и метрик здоровья прод вслепую.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/deploy-and-monitoring/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="10.2 Деплой и мониторинг — AI Native">
+  <meta property="og:description" content="Задеплоил — значит измеряешь: без логов prompt/response и метрик здоровья прод вслепую.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/deploy-and-monitoring/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="10.2">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 10.2 · Деплой и мониторинг</h1><p><strong>Фаза 10 — Production и интеграция</strong> · <strong>Результат фазы:</strong> Встроить ИИ в рабочий инструмент с мониторингом токенов и стоимости.</p><p><strong>Requires (только для USE IT):</strong> прод-окружение / observability-бэкенд. BUILD IT работает офлайн, без ключей и без сети.</p><p><strong>В 10.1 мы встроили ИИ безопасно. Теперь — увидеть, как он живёт в проде.</strong> Выложить мало: без логов и метрик «у пользователя не работает» превращается в гадание. А ИИ ещё и недетерминирован, так что наблюдаемость тут критична вдвойне.</p><blockquote><strong>MOTTO.</strong> Задеплоил — значит измеряешь: без логов prompt/response и метрик здоровья прод вслепую.</blockquote><h2>PROBLEM</h2><p>Процесс выложен, вроде работает. Но: не растёт ли доля ошибок после вчерашнего релиза? Не деградировала ли латентность? Что именно сломалось у того клиента, который жалуется? Без структурного лога каждого вызова и метрик здоровья ответов нет — есть догадки.</p><p>И есть ловушка: <strong>среднее лжёт</strong>. Средняя латентность может выглядеть отлично, пока каждый двадцатый запрос висит 5 секунд — и именно эти пользователи уходят. Нужны метрики, которые ловят <strong>хвост</strong> (перцентили), а не сглаживают его. Соберём логгер вызовов и метрики мониторинга.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Мониторинг — это <strong>приборная панель самолёта</strong>, а не «вроде летим». Пилот не смотрит на «среднюю высоту за полёт» — он видит текущие показатели и <strong>тревожные пики</strong>: давление, температуру, отказ датчика. Так и прод: на панели — доля ошибок, латентность по перцентилям, последние сбои. Среднее скрывает аварию (один отказавший двигатель на фоне трёх рабочих усредняется), перцентиль — показывает.</p><p>Каждый вызов модели — это запись в бортовой журнал; метрики поверх журнала — приборы; пороги на приборах — алерты.</p><h3>Как это работает</h3><pre><code>каждый вызов → лог {model, latency, status, error}
+                     │
+   метрики:  error_rate · p50/p95 latency · recent_errors
+                     │
+              алерты при превышении порогов</code></pre><ul><li><code>log(model, latency_ms, ok, error)</code> — структурная запись вызова (не «строка в файл», а поля для агрегации).</li><li><code>error_rate()</code> — доля неуспешных вызовов (здоровье №1).</li><li><code>latency_percentile(p)</code> — латентность на перцентиле <code>p</code>: p95 = «95% запросов быстрее этого», то есть граница худших 5%.</li><li><code>recent_errors(n)</code> — последние сбои для разбора.</li></ul><p>Почему <strong>p95, а не среднее</strong>: среднее сглаживает редкие, но болезненные зависания, а p95/p99 их показывают — именно по хвосту латентности уходят пользователи. Логируют то, что позволит и отладить, и оценить здоровье: модель, латентность, статус, ошибку (а контент — только с согласия и с редактированием PII).</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Залогируем 5 вызовов (латентность в мс, последний — таймаут) и снимем метрики:</p><pre><code>вызовы: 120✓  300✓  90✓  1500✗(timeout)  200✓
+
+error_rate:  1 ошибка / 5 = 0.2
+p95 latency: сортируем [90,120,200,300,1500]; ранг 95% → последний → 1500
+recent_errors: [{latency:1500, error:"timeout"}]</code></pre><p>А теперь сравни p95 со <strong>средним</strong>: <code>(120+300+90+1500+200)/5 = 442ms</code>. Среднее говорит «всё ок, ~0.4с», а p95 = <code>1500ms</code> кричит, что у худших 5% запросов — полуторасекундные зависания. Это и есть смысл перцентилей: один таймаут утонул в среднем, но всплыл в p95 — и именно он станет алертом. <code>error_rate 0.2</code> — второй сигнал: каждый пятый вызов упал, повод бить тревогу. Метрики превращают «вроде работает» в числа, по которым видно, что чинить.</p><h2>BUILD IT</h2><p><strong>Задание: собери логгер вызовов и метрики здоровья</strong> — error_rate, перцентиль латентности, последние ошибки. Только стандартная библиотека, без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/10.2-monitoring/</code>), а файлы урока клади в подпапку <code>code/</code> (как в 0.1). Нужен только <strong>Python 3</strong> (для теста ещё <code>pytest</code>).</blockquote><p>Создай файл <code>monitoring.py</code> с классом <code>CallLogger</code>:</p><ul><li><strong><code>log(model, latency_ms, ok=True, error=None)</code></strong> — добавить запись вызова в <code>self.calls</code>.</li><li><strong><code>error_rate()</code></strong> — доля записей с <code>ok=False</code> (пустой лог → 0.0; округли до 3).</li><li><strong><code>latency_percentile(p=95)</code></strong> — nearest-rank перцентиль: отсортировать латентности, индекс <code>k = round(p/100 * n) - 1</code> (с защитой границ <code>0..n-1</code>); вернуть значение (пустой лог → 0.0).</li><li><strong><code>recent_errors(n=5)</code></strong> — последние <code>n</code> записей с <code>ok=False</code>.</li></ul><p><strong>Готово, когда</strong> все тесты в <code>test_monitoring.py</code> зелёные — они проверяют: <code>error_rate</code> = 0.2 (1 из 5); <code>latency_percentile(95)</code> = 1500 (ловит хвост); <code>recent_errors</code> собирает таймаут; пустой логгер безопасен (0.0).</p><pre><code>pytest code -q          # красное → реализуй CallLogger → зелёное
+python code/monitoring.py # демо: error_rate 0.2, p95 1500, последние ошибки</code></pre><p><strong>Подсказка.</strong> Перцентиль: <code>values = sorted(...)</code>, <code>k = max(0, min(len(values)-1, round(p/100*len(values)) - 1))</code>. Это nearest-rank — простой и достаточный для мониторинга; точные перцентили считают t-digest, но для алертов хватает.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>Запуск процесса в проде с observability (мульти-провайдер):</p><ul><li><strong>OpenTelemetry GenAI</strong> — семантические конвенции <code>gen_ai.*</code> (модель, токены, латентность, tool-calls): единый формат вместо самописных логов, читаемый любым observability-бэкендом без привязки к вендору. Это <strong>развивающийся</strong> стандарт (конвенции в статусе development и активно меняются — сверяйся с актуальной спекой), но даже сырой он лучше самописных полей: меньше лок-ина.</li><li><strong>Langfuse / аналоги</strong> — трейсинг вызовов, ошибок и токенов; LLM-as-judge для оценки качества прямо на трафике (online-evals из 7.5).</li><li><strong>Алерты</strong> — на <code>error_rate</code>, p95 latency и всплеск стоимости (FinOps из 9.4); редактируй PII <strong>до</strong> логирования контента.</li></ul><p>Принцип: логируй в стандартном формате (<code>gen_ai.*</code>), меряй по перцентилям, алертай по порогам — тогда прод виден, а не угадывается.</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Мониторинг-конфиг → <a href="#f-phases-10-production-and-integration-10-deploy-and-monitoring-outputs-monitoring-config-md"><code>outputs/monitoring-config.md</code></a></p><p>Конфиг: что логировать, какие метрики, пороги алертов, политика по PII. Дальше: телеметрия токенов/стоимости и воспроизводимость (10.3), трейсинг шагов агента (10.4).</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Смотреть на среднюю латентность.</strong> Среднее прячет хвост: при average 0.4с каждый двадцатый запрос может висеть секунды. Меряй p95/p99 — по хвосту уходят пользователи.</li><li><strong>Логировать неструктурно.</strong> «Строка в файл» не агрегируется. Пиши поля (модель, латентность, статус, ошибка), чтобы считать метрики и резать по разрезам.</li><li><strong>Логировать контент без редактирования PII.</strong> Промпт/ответ могут содержать персданные. Контент — только с согласия и после маскирования PII (приватность, Фаза 11).</li><li><strong>Пороги без алертов.</strong> Метрика, на которую никто не смотрит, бесполезна. Ставь алерты на error_rate, p95, всплеск стоимости — узнавать о проблеме до жалобы пользователя.</li><li><strong>Самописный формат вместо стандарта.</strong> Свои поля привязывают к одному бэкенду. <code>gen_ai.*</code> (OpenTelemetry) читается любым инструментом — меньше лок-ина.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="10.2"></div><h2>Материалы</h2><ul><li><a href="https://opentelemetry.io/blog/2026/genai-observability/" target="_blank" rel="noopener">OpenTelemetry — GenAI observability</a> — трейсинг вызовов LLM.</li><li><a href="https://opentelemetry.io/blog/2024/otel-generative-ai/" target="_blank" rel="noopener">OpenTelemetry — for Generative AI</a> — семантические конвенции <code>gen_ai.*</code>.</li><li><a href="https://langfuse.com/docs/observability/overview" target="_blank" rel="noopener">Langfuse — Observability</a> — трейсинг, ошибки, токены, оценка.</li><li><a href="https://sre.google/sre-book/monitoring-distributed-systems/" target="_blank" rel="noopener">Google SRE — Monitoring Distributed Systems (Four Golden Signals)</a> — latency / traffic / errors / saturation; латентность успешных vs ошибочных (мост к p95 из урока).</li><li><a href="https://sre.google/workbook/alerting-on-slos/" target="_blank" rel="noopener">Google SRE Workbook — Alerting on SLOs</a> — burn-rate алертинг: превратить SLO в осмысленные алерты без шума (для «мониторинг-конфига»).</li><li><a href="https://github.com/traceloop/openllmetry" target="_blank" rel="noopener">OpenLLMetry (Traceloop)</a> — OTel-инструментация LLM: логирует prompt/completion в spans (с privacy-тумблером), провайдеры + vector-DB.</li><li><a href="https://docs.datadoghq.com/llm_observability/" target="_blank" rel="noopener">Datadog — LLM Observability</a> — прод-мониторинг: end-to-end трейсы, latency/tokens, quality/safety-оценки, авто-инструментация OpenAI/Anthropic/LangChain.</li><li><a href="https://platform.openai.com/docs/guides/production-best-practices" target="_blank" rel="noopener">OpenAI — Production best practices</a> — вывод в прод: security, изоляция окружений, лимиты, латентность.</li><li><a href="https://platform.claude.com/docs/en/api/errors" target="_blank" rel="noopener">Anthropic — Errors</a> — коды 429/500/504/529, <code>request-id</code>, типизированные исключения — что логировать в проде.</li><li><a href="https://platform.claude.com/docs/en/api/rate-limits" target="_blank" rel="noopener">Anthropic — Rate limits</a> — token bucket, <code>retry-after</code>, backoff, <code>anthropic-ratelimit-*</code> headers (сатурация).</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-10-production-and-integration-10-deploy-and-monitoring-code-test-monitoring-py" open data-test="1"><summary><span class="fname">code/test_monitoring.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from monitoring import CallLogger
+
+
+def _log():
+    log = CallLogger()
+    for ms, ok in [(120, True), (300, True), (90, True), (1500, False), (200, True)]:
+        log.log("sonnet-4.6", ms, ok=ok, error=None if ok else "timeout")
+    return log
+
+
+def test_error_rate():
+    assert _log().error_rate() == 0.2          # 1 из 5
+
+
+def test_latency_percentile_returns_high_value():
+    p95 = _log().latency_percentile(95)
+    assert p95 == 1500                          # худшая латентность в хвосте
+
+
+def test_recent_errors_captured():
+    errs = _log().recent_errors()
+    assert len(errs) == 1
+    assert errs[0]["error"] == "timeout"
+
+
+def test_empty_logger_safe():
+    log = CallLogger()
+    assert log.error_rate() == 0.0
+    assert log.latency_percentile() == 0.0
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-10-production-and-integration-10-deploy-and-monitoring-code-monitoring-py"><summary><span class="fname">code/monitoring.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Деплой и мониторинг: логирование вызовов — Build It для урока 10.2.
+
+Без зависимостей. В проде каждый вызов модели логируется структурно (модель,
+латентность, статус, ошибка), а поверх лога считаются метрики здоровья: доля
+ошибок и перцентили латентности. Без этого «работает/не работает» — вслепую.
+"""
+
+
+class CallLogger:
+    """Структурный лог вызовов + базовые метрики мониторинга."""
+
+    def __init__(self):
+        self.calls = []
+
+    def log(self, model, latency_ms, ok=True, error=None):
+        self.calls.append({"model": model, "latency_ms": latency_ms,
+                           "ok": ok, "error": error})
+
+    def error_rate(self):
+        if not self.calls:
+            return 0.0
+        return round(sum(1 for c in self.calls if not c["ok"]) / len(self.calls), 3)
+
+    def latency_percentile(self, p=95):
+        """Приблизительный перцентиль латентности (nearest-rank)."""
+        if not self.calls:
+            return 0.0
+        values = sorted(c["latency_ms"] for c in self.calls)
+        k = max(0, min(len(values) - 1, round(p / 100 * len(values)) - 1))
+        return values[k]
+
+    def recent_errors(self, n=5):
+        return [c for c in self.calls if not c["ok"]][-n:]
+
+
+if __name__ == "__main__":
+    log = CallLogger()
+    for ms, ok in [(120, True), (300, True), (90, True), (1500, False), (200, True)]:
+        log.log("sonnet-4.6", ms, ok=ok, error=None if ok else "timeout")
+    print("error_rate:", log.error_rate())
+    print("p95 latency:", log.latency_percentile(95))
+    print("errors:", log.recent_errors())
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-10-production-and-integration-10-deploy-and-monitoring-outputs-monitoring-config-md" open><summary><span class="fname">outputs/monitoring-config.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: мониторинг-конфиг для ИИ-процесса
+
+Что логировать и какие алерты ставить после деплоя. Код логгера — [`code/monitoring.py`](../code/monitoring.py).
+
+## Что логировать на каждый вызов
+
+```json
+{
+  "ts": "...", "process": "summarize", "model": "sonnet-4.6",
+  "latency_ms": 320, "status": "ok", "error": null,
+  "input_tokens": 1200, "output_tokens": 180, "cost": 0.0063,
+  "prompt_version": "v3", "cache_hit": true
+}
+```
+
+⚠️ Содержимое prompt/response логируй только с согласия и с **редактированием PII** (Фаза 11).
+
+## Метрики и пороги алертов
+
+| Метрика | Источник | Порог алерта |
+|---|---|---|
+| error_rate | `error_rate()` | &gt; 2% (5 мин) |
+| p95 latency | `latency_percentile(95)` | &gt; 3000 ms |
+| стоимость/час | телеметрия (10.3) | &gt; бюджета (9.4) |
+| cache-hit rate | лог | &lt; ожидаемого (упустили экономию) |
+| дрейф качества | LLM-judge (2.5) | падение score |
+
+## Стандарты и инструменты
+
+- **OpenTelemetry GenAI** (`gen_ai.*`) — единый формат спанов/метрик, без вендор-лока.
+- **Langfuse / аналоги** — трейсинг, ошибки, токены, оценка качества.
+- **Алерты** — в существующий on-call (Slack/PagerDuty).
+
+## Правила
+
+- Логируй **структурно** (JSON), не строками — иначе не построишь метрики.
+- Считай `error_rate` и `p95`, а не только среднее (хвост важнее).
+- Свяжи мониторинг (здоровье) с телеметрией (стоимость, 10.3) и FinOps (9.4).
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/integration-into-workspaces/"><small>← 10.1</small>Интеграция в рабочие пакеты</a><a href="../../lessons/telemetry-and-reproducibility/" style="text-align:right"><small>10.3 →</small>Телеметрия и воспроизводимость</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

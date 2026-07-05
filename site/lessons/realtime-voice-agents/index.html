@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>7.6 Realtime и голосовые агенты — AI Native</title>
+  <meta name="description" content="Голосовой агент — это поток и право перебить: ответ идёт по чанкам, пользователь может вмешаться.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/realtime-voice-agents/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="7.6 Realtime и голосовые агенты — AI Native">
+  <meta property="og:description" content="Голосовой агент — это поток и право перебить: ответ идёт по чанкам, пользователь может вмешаться.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/realtime-voice-agents/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="7.6">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 7.6 · Realtime и голосовые агенты</h1><p><strong>Фаза 7 — Agent Engineering</strong> · <strong>Результат фазы:</strong> Собрать надёжного агента с памятью, планированием, human-in-the-loop и guardrails.</p><p><strong>Requires (только для USE IT):</strong> платный API-ключ Realtime/Live (OpenAI/Gemini). BUILD IT работает офлайн, без ключей и без сети.</p><p><strong>Это финал Фазы 7 — агент, который говорит.</strong> Текстовый агент отвечает «целиком», голосовой устроен иначе: он стримит ответ и его можно перебить. Разберём, что меняется в цикле, когда агент выходит в реальное время.</p><blockquote><strong>MOTTO.</strong> Голосовой агент — это поток и право перебить: ответ идёт по чанкам, пользователь может вмешаться.</blockquote><h2>PROBLEM</h2><p>В чате агент думает, потом выдаёт ответ блоком — задержка в пару секунд незаметна. В голосе так нельзя: пауза в две секунды звучит как «агент завис», а ответ, который нельзя перебить, ощущается как глухой автоответчик, не дающий вставить слово.</p><p>Голосовой агент меняет две вещи в цикле: ответ идёт <strong>потоком</strong> (по аудио-чанкам, чтобы начать говорить как можно раньше — метрика <strong>TTFT</strong>, время до первого токена), и пользователь может <strong>перебить</strong> (barge-in) — тогда текущий ответ надо <strong>оборвать</strong> и слушать. Смоделируем этот турновый цикл, чтобы понять управление «кто сейчас говорит».</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Разница как между <strong>письмом и живым разговором</strong>. В переписке ты дочитываешь сообщение целиком. В разговоре собеседник начинает отвечать сразу (не ждёт, пока сформулирует всё), и ты можешь его перебить на полуслове — он замолкает и слушает. Голосовой агент должен вести себя как живой собеседник: говорить сразу и уметь замолчать, когда заговорили с ним.</p><p>Отсюда две новые механики поверх цикла 7.1: <strong>стриминг вывода</strong> (начать отвечать рано) и <strong>прерываемость</strong> (бросить текущий ответ на barge-in). Сердце realtime — управление турами, кто держит слово.</p><h3>Как это работает</h3><pre><code>аудио пользователя ──► VAD (детект речи) ──► агент
+                                              │ стримит ответ по токенам/чанкам
+       barge-in (пользователь заговорил) ──► отменить текущий ответ
+                                              │
+                              TTFT — ключевая метрика (время до 1-го токена)</code></pre><ul><li><code>StreamingAgent.respond(tokens, interrupt_after)</code> — «произносит» ответ потоком, токен за токеном; если <code>interrupt_after=N</code> (пользователь перебил после N токенов) — обрывает турн, ставит состояние <code>interrupted</code> и возвращает только сказанную часть.</li><li>состояния турна: <code>idle</code> (молчит) → <code>speaking</code> (говорит) → <code>idle</code> (договорил) или <code>interrupted</code> (перебили).</li><li><code>first_token_latency(timeline)</code> — TTFT, время до первого токена: в голосе важнее средней скорости, потому что определяет, как быстро агент «отзовётся».</li></ul><p>В проде роль «пользователь заговорил» играет <strong>VAD</strong> (voice activity detection), а стрим идёт по WebSocket/WebRTC. Но логика турна — та же, что в нашей модели.</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Прогоним два турна <code>StreamingAgent</code>:</p><pre><code>1. respond(["при","вет","как","дела"])              без перебивания
+   state: speaking → токены идут по одному → дошли до конца
+   → said = ["при","вет","как","дела"];  state = idle
+   transcript += {said:[...], interrupted: False}
+
+2. respond(["я","сейчас","расскажу","длинно"], interrupt_after=2)   barge-in
+   i=0 "я", i=1 "сейчас", i=2 → i ≥ 2 → ПЕРЕБИЛИ: бросаем остаток
+   → said = ["я","сейчас"];  state = interrupted
+   transcript += {said:["я","сейчас"], interrupted: True}</code></pre><p>И TTFT: <code>first_token_latency([0.18, 0.05, 0.05]) = 0.18</code> — первый токен пришёл через 0.18с, дальше быстрее. Видно главное отличие от чат-цикла: ответ не атомарен. Второй турн оборвался на полуслове, а в transcript честно записано, что реплика <strong>прервана</strong> — это и есть управление турами. Поменяй список токенов на аудио-чанки из Realtime API, а <code>interrupt_after</code> на сигнал VAD — структура не изменится.</p><h2>BUILD IT</h2><p><strong>Задание: собери турновый streaming-цикл с barge-in</strong> — стриминг ответа и прерываемость. Только стандартная библиотека, без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/7.6-realtime/</code>), а файлы урока клади в подпапку <code>code/</code> (как в 0.1). Нужен только <strong>Python 3</strong> (для теста ещё <code>pytest</code>).</blockquote><p>Создай файл <code>streaming_loop.py</code>:</p><ul><li><strong><code>StreamingAgent</code></strong> — <code>state</code> (<code>"idle"</code> | <code>"speaking"</code> | <code>"interrupted"</code>) и <code>transcript</code> (список реплик).</li><li><strong><code>respond(tokens, interrupt_after=None)</code></strong> — поставить <code>state="speaking"</code>; идти по <code>tokens</code>: если <code>interrupt_after</code> задан и индекс <code>&gt;= interrupt_after</code> → <code>state="interrupted"</code>, записать в <code>transcript</code> <code>{said, interrupted: True}</code> и вернуть сказанное; иначе добавить токен. Дошли до конца → <code>state="idle"</code>, записать <code>{said, interrupted: False}</code>, вернуть всё.</li><li><strong><code>first_token_latency(timeline)</code></strong> — вернуть первый элемент <code>timeline</code> (TTFT) или <code>None</code> для пустого.</li></ul><p><strong>Готово, когда</strong> все тесты в <code>test_streaming_loop.py</code> зелёные — они проверяют: без перебивания — полный ответ и <code>state="idle"</code>; barge-in после 2 токенов — частичный ответ и <code>state="interrupted"</code>; <code>transcript</code> пишет оба турна с флагом <code>interrupted</code>; <code>first_token_latency</code> отдаёт первый элемент или <code>None</code>.</p><pre><code>pytest code -q              # красное → реализуй StreamingAgent → зелёное
+python code/streaming_loop.py # демо: полный ответ; перебивание после 2 токенов</code></pre><p><strong>Подсказка.</strong> Перебивание — это ранний <code>return</code> из цикла по токенам с установкой <code>state="interrupted"</code>. Каждый турн (и полный, и прерванный) дописывай в <code>transcript</code> с флагом <code>interrupted</code>.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>Готовые realtime/voice API делают это с настоящим аудио (мульти-провайдер):</p><ul><li><strong>OpenAI Realtime API</strong> — speech-to-speech одной моделью (<code>gpt-realtime-2</code>, низкая задержка), транспорты WebRTC / WebSocket / SIP, встроенный VAD и автоматическое прерывание, tool use; три типа сессий — voice-agent, перевод, транскрипция. Для браузера/мобильного — ephemeral-кредитал через <code>POST /v1/realtime/client_secrets</code>, а не основной ключ.</li><li><strong>Gemini Live API</strong> — двунаправленный WebSocket, аудио/видео/текст, barge-in, 70+ языков, live-перевод, function calling.</li><li>Паттерн: VAD ловит речь → стрим ответа → barge-in отменяет текущий ответ (ровно как наш <code>interrupt_after</code>); клиенту выдают ephemeral tokens, а не основной ключ (безопасность).</li></ul><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Голосовой/realtime агент-демо → <a href="#f-phases-07-agent-engineering-07-realtime-voice-agents-outputs-streaming-loop-py"><code>outputs/streaming_loop.py</code></a></p><p>Каркас турнового стрима с barge-in: подставляешь реальный VAD и Realtime/Live API. Это <strong>завершает Фазу 7</strong> — у тебя агент с циклом, памятью, планом, guardrails, защитой от поломок, evals и работой в реальном времени. Связь с 7.1 (agent loop), 7.3 (guardrails на голосовых действиях), 10.2 (латентность как метрика).</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Отвечать блоком, как в чате.</strong> В голосе пауза = «завис». Стримь ответ по чанкам и оптимизируй TTFT (время до первого токена), а не только общую скорость.</li><li><strong>Не давать перебить (нет barge-in).</strong> Агент, которого нельзя остановить, звучит как глухой автоответчик. Заговорил пользователь — текущий ответ обрывается.</li><li><strong>Мерить среднюю скорость вместо TTFT.</strong> В realtime решает, как быстро агент <strong>начал</strong> отвечать. Высокий средний throughput при медленном первом токене всё равно ощущается тормозным.</li><li><strong>Терять состояние турна.</strong> Нужно явно знать, кто говорит (<code>idle</code>/<code>speaking</code>/<code>interrupted</code>), и записывать, что реплика прервана. Иначе агент путается, чья очередь.</li><li><strong>Голосовые действия без guardrails.</strong> Голосом легко «случайно» подтвердить опасное. Необратимое всё равно через подтверждение и валидацию (7.3) — голос не отменяет заслоны.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="7.6"></div><h2>Материалы</h2><ul><li><a href="https://developers.openai.com/api/docs/guides/realtime" target="_blank" rel="noopener">OpenAI — Realtime API</a> — speech-to-speech, прерывания, транспорты.</li><li><a href="https://ai.google.dev/gemini-api/docs/live-api" target="_blank" rel="noopener">Gemini — Live API</a> — realtime аудио/видео, barge-in, перевод.</li><li><a href="https://developers.openai.com/api/docs/guides/voice-agents" target="_blank" rel="noopener">OpenAI — Voice agents</a> — сборка голосового агента.</li><li><a href="https://github.com/livekit/agents" target="_blank" rel="noopener">LiveKit Agents</a> — open-source фреймворк realtime голосовых агентов (WebRTC, STT-LLM-TTS + realtime-модели, barge-in).</li><li><a href="https://github.com/pipecat-ai/pipecat" target="_blank" rel="noopener">Pipecat</a> — open-source фреймворк voice/multimodal: оркестрация пайплайна, прерывания, vendor-neutral.</li><li><a href="https://openai.github.io/openai-agents-python/voice/pipeline/" target="_blank" rel="noopener">OpenAI Agents SDK — Voice Pipeline</a> — STT → agent workflow → TTS, StreamedAudioInput и activity detection.</li><li><a href="https://medium.com/@bravekjh/building-voice-agents-with-pipecat-real-time-llm-conversations-in-python-a15de1a8fc6a" target="_blank" rel="noopener">Jay Kim — Building Voice Agents with Pipecat (Medium, 2025)</a> — практический разбор цикла streaming STT→LLM→TTS.</li><li><a href="https://www.assemblyai.com/blog/building-a-voice-agent-with-pipecat" target="_blank" rel="noopener">AssemblyAI — Building a Voice Agent with Pipecat</a> — build + deploy с реальной STT и низкой задержкой.</li><li><a href="https://www.youtube.com/watch?v=66w0iOC4hoc" target="_blank" rel="noopener">Pipecat Explained: Building Real-Time Voice AI, WebRTC + code (YouTube)</a> — видео-разбор realtime голосового цикла.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-07-agent-engineering-07-realtime-voice-agents-code-test-streaming-loop-py" open data-test="1"><summary><span class="fname">code/test_streaming_loop.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from streaming_loop import StreamingAgent, first_token_latency
+
+
+def test_full_response_when_no_interrupt():
+    agent = StreamingAgent()
+    said = agent.respond(["a", "b", "c"])
+    assert said == ["a", "b", "c"]
+    assert agent.state == "idle"
+
+
+def test_barge_in_interrupts():
+    agent = StreamingAgent()
+    said = agent.respond(["a", "b", "c", "d"], interrupt_after=2)
+    assert said == ["a", "b"]
+    assert agent.state == "interrupted"
+
+
+def test_transcript_records_turns():
+    agent = StreamingAgent()
+    agent.respond(["a"])
+    agent.respond(["x", "y", "z"], interrupt_after=1)
+    assert len(agent.transcript) == 2
+    assert agent.transcript[0]["interrupted"] is False
+    assert agent.transcript[1]["interrupted"] is True
+
+
+def test_first_token_latency():
+    assert first_token_latency([0.18, 0.05]) == 0.18
+    assert first_token_latency([]) is None
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-07-agent-engineering-07-realtime-voice-agents-code-streaming-loop-py"><summary><span class="fname">code/streaming_loop.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Realtime и голосовые агенты: турновый streaming-цикл с barge-in — Build It 7.6.
+
+Без зависимостей. Голосовой/realtime агент отличается от чат-агента двумя вещами:
+ответ идёт ПОТОКОМ (по токенам/чанкам) и пользователь может перебить (barge-in) —
+тогда текущий ответ обрывается. Здесь моделируем этот цикл детерминированно.
+В USE IT — OpenAI Realtime / Gemini Live (аудио, низкая задержка).
+"""
+
+
+class StreamingAgent:
+    """Стримит ответ по токенам; barge-in (перебивание) обрывает текущий турн."""
+
+    def __init__(self):
+        self.state = "idle"          # idle | speaking | interrupted
+        self.transcript = []         # завершённые/прерванные реплики
+
+    def respond(self, tokens, interrupt_after=None):
+        """Произнести ответ потоком. interrupt_after=N → пользователь перебил после N токенов."""
+        self.state = "speaking"
+        said = []
+        for i, tok in enumerate(tokens):
+            if interrupt_after is not None and i &gt;= interrupt_after:
+                self.state = "interrupted"          # barge-in: бросаем остаток
+                self.transcript.append({"said": said, "interrupted": True})
+                return said
+            said.append(tok)
+        self.state = "idle"
+        self.transcript.append({"said": said, "interrupted": False})
+        return said
+
+
+def first_token_latency(timeline):
+    """Задержка до первого токена (TTFT) — ключевая метрика realtime."""
+    return timeline[0] if timeline else None
+
+
+if __name__ == "__main__":
+    agent = StreamingAgent()
+    print("полный ответ:", agent.respond(["при", "вет", "как", "дела"]))
+    print("state:", agent.state)
+    print("перебили:", agent.respond(["я", "сейчас", "расскажу", "длинно"], interrupt_after=2))
+    print("state:", agent.state)
+    print("TTFT:", first_token_latency([0.18, 0.05, 0.05]))
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-07-agent-engineering-07-realtime-voice-agents-outputs-streaming-loop-py" open><summary><span class="fname">outputs/streaming_loop.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Realtime и голосовые агенты: турновый streaming-цикл с barge-in — Build It 7.6.
+
+Без зависимостей. Голосовой/realtime агент отличается от чат-агента двумя вещами:
+ответ идёт ПОТОКОМ (по токенам/чанкам) и пользователь может перебить (barge-in) —
+тогда текущий ответ обрывается. Здесь моделируем этот цикл детерминированно.
+В USE IT — OpenAI Realtime / Gemini Live (аудио, низкая задержка).
+"""
+
+
+class StreamingAgent:
+    """Стримит ответ по токенам; barge-in (перебивание) обрывает текущий турн."""
+
+    def __init__(self):
+        self.state = "idle"          # idle | speaking | interrupted
+        self.transcript = []         # завершённые/прерванные реплики
+
+    def respond(self, tokens, interrupt_after=None):
+        """Произнести ответ потоком. interrupt_after=N → пользователь перебил после N токенов."""
+        self.state = "speaking"
+        said = []
+        for i, tok in enumerate(tokens):
+            if interrupt_after is not None and i &gt;= interrupt_after:
+                self.state = "interrupted"          # barge-in: бросаем остаток
+                self.transcript.append({"said": said, "interrupted": True})
+                return said
+            said.append(tok)
+        self.state = "idle"
+        self.transcript.append({"said": said, "interrupted": False})
+        return said
+
+
+def first_token_latency(timeline):
+    """Задержка до первого токена (TTFT) — ключевая метрика realtime."""
+    return timeline[0] if timeline else None
+
+
+if __name__ == "__main__":
+    agent = StreamingAgent()
+    print("полный ответ:", agent.respond(["при", "вет", "как", "дела"]))
+    print("state:", agent.state)
+    print("перебили:", agent.respond(["я", "сейчас", "расскажу", "длинно"], interrupt_after=2))
+    print("state:", agent.state)
+    print("TTFT:", first_token_latency([0.18, 0.05, 0.05]))
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/agent-evals/"><small>← 7.5</small>Evals агентов</a><a href="../../lessons/orchestrator-and-subagents/" style="text-align:right"><small>8.1 →</small>Оркестратор и субагенты</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

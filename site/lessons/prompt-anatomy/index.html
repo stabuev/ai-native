@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>2.1 Анатомия промпта — AI Native</title>
+  <meta name="description" content="Промпт — это интерфейс к интеллекту; у хорошего интерфейса есть структура.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/prompt-anatomy/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="2.1 Анатомия промпта — AI Native">
+  <meta property="og:description" content="Промпт — это интерфейс к интеллекту; у хорошего интерфейса есть структура.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/prompt-anatomy/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="2.1">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 2.1 · Анатомия промпта</h1><p><strong>Фаза 2 — Промпт-инжиниринг</strong> · <strong>Результат фазы:</strong> Писать воспроизводимые промпты и измерять их качество через eval-harness.</p><p><strong>Requires (только для USE IT):</strong> платный API-ключ одного из провайдеров. BUILD IT работает офлайн, без ключей и без сети.</p><p><strong>Это первый урок про промптинг — и он про структуру, а не про «магические слова».</strong> Промпт — это интерфейс к модели, и у хорошего интерфейса есть анатомия: роль, контекст, задача, формат, примеры. Разложишь промпт на эти блоки — и сможешь управлять ответом осознанно: менять по одной части, переиспользовать находки и (со следующих уроков) измерять, что стало лучше.</p><blockquote><strong>MOTTO.</strong> Промпт — это интерфейс к интеллекту; у хорошего интерфейса есть структура.</blockquote><h2>PROBLEM</h2><p>«Напиши покороче» работает случайно: сегодня ок, завтра мимо. Без структуры промпт <strong>невоспроизводим</strong> — нельзя понять, что именно повлияло на ответ, нельзя переиспользовать удачную формулировку и нельзя сравнить две версии. Получается не инженерия, а гадание. Нужна <strong>анатомия</strong>: разложить промпт на части, каждой из которых можно управлять отдельно.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Думай о промпте как о <strong>техзадании для очень способного, но буквального исполнителя</strong>. Он сделает близко к тому, что ты написал — поэтому неоднозначность превращается в случайный результат. Официальные техники Anthropic (ясность и прямота, роль, примеры, XML-структура, рассуждение, цепочки) — это по сути способы убрать неоднозначность из ТЗ. Анатомия промпта собирает их в пять управляемых блоков.</p><h3>Как это работает</h3><pre><code>[ Роль ]      кто отвечает (эксперт, редактор, парсер)
+[ Контекст ]  что нужно знать для задачи
+[ Задача ]    что именно сделать  ← единственный обязательный блок
+[ Формат ]    как должен выглядеть ответ
+[ Примеры ]   few-shot образцы вход→выход (урок 2.2)</code></pre><p>Разберём каждый блок — что он даёт и почему:</p><ul><li><strong>Роль</strong> (role prompting). Задаёт, «кем» модель отвечает: эксперт, редактор, строгий парсер. Меняет тон, глубину и словарь ответа. Технически роль часто кладут в <strong>системный промпт</strong> (см. USE IT — у провайдеров это разные поля).</li><li><strong>Контекст.</strong> Факты и данные, нужные для задачи: фрагмент документа, прошлые решения, ограничения. Это прямая защита от галлюцинаций из урока 1.4 — модель опирается на переданное, а не на «общие знания».</li><li><strong>Задача.</strong> Единственный обязательный блок. Главный приём Anthropic здесь — <strong>«be clear and direct»</strong>: одна чёткая, конкретная инструкция, без «сделай красиво». Размытая задача = размытый ответ.</li><li><strong>Формат.</strong> Как должен выглядеть ответ: список, таблица, JSON, длина, язык. Чем строже формат, тем предсказуемее вывод и тем легче его потом проверять и парсить (мост к уроку 2.4 — structured output).</li><li><strong>Примеры</strong> (multishot / few-shot). Образцы «вход → выход» показывают желаемое поведение нагляднее любого описания. Это отдельная большая тема урока 2.2.</li></ul><p>Чем явнее блоки, тем стабильнее ответ и тем легче его <strong>измерять</strong>. Anthropic советует начинать промпт-инжиниринг с определения критериев успеха и тестов — поэтому анатомию мы здесь делаем проверяемой (линтер блоков), а системно мерить версии будем в уроке 2.5.</p><blockquote><strong>Врезка: цикл Description ↔ Discernment (AI Fluency).</strong> Хороший промпт редко выходит с первого раза: ты <strong>описываешь</strong> задачу (Description), <strong>оцениваешь</strong> ответ (Discernment) и уточняешь — и так по кругу. Этот урок — про первую половину (анатомия описания); измерять вторую системно будем в уроке 2.5 (eval-harness).</blockquote><h2>РАЗБОР ПО ШАГАМ</h2><p>Соберём промпт из блоков руками и посмотрим, как линтер делает «полноту» проверяемой.</p><p><strong>Шаг 1 — голый промпт</strong> (только задача):</p><pre><code># Задача
+Суммаризируй отзыв в 3 пунктах</code></pre><p><code>lint_prompt</code> идёт по ожидаемым заголовкам и возвращает, каких блоков нет:</p><pre><code>lint_prompt(голый) → ["role", "context", "output_format", "examples"]</code></pre><p>Задача на месте, всё остальное — нет. Такой промпт сработает «как повезёт»: модель сама придумает роль, формат и объём.</p><p><strong>Шаг 2 — добавим блоки</strong> роль, контекст, формат и пример:</p><pre><code># Роль
+Ты редактор поддержки
+
+# Контекст
+Отзывы клиентов из чата поддержки
+
+# Задача
+Суммаризируй отзыв в 3 пунктах
+
+# Формат ответа
+Маркированный список из 3 пунктов
+
+# Примеры
+Вход: Долго грузит
+Выход: - проблема: производительность</code></pre><pre><code>lint_prompt(полный) → []      # пустой список = все блоки на месте</code></pre><p>Теперь ответ предсказуем: задана роль (тон), контекст (на что опираться), формат (как оформить) и пример (эталон). А <code>lint_prompt</code> превратил расплывчатое «вроде нормальный промпт» в <strong>проверяемый</strong> критерий — на этом и строится воспроизводимость.</p><h2>BUILD IT</h2><p><strong>Задание: собери конструктор промпта и линтер</strong> — стандартная библиотека, без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/2.1-prompt-anatomy/</code>), а файлы урока клади в подпапку <code>code/</code> (как в 0.1). Нужен только <strong>Python 3</strong>, всё офлайн (для теста ещё <code>pytest</code>).</blockquote><p>Заголовки блоков бери готовыми (это данные):</p><pre><code>HEADERS = {
+    "role": "# Роль",
+    "context": "# Контекст",
+    "task": "# Задача",
+    "output_format": "# Формат ответа",
+    "examples": "# Примеры",
+}</code></pre><p>Реализуй две функции:</p><ul><li><strong><code>build_prompt(task, role=None, context=None, output_format=None, examples=None)</code></strong> — собери промпт из блоков в порядке роль → контекст → задача → формат → примеры. Обязателен только <code>task</code>; каждый заданный блок выводится под своим заголовком из <code>HEADERS</code>. <code>examples</code> — список пар <code>(вход, выход)</code>, каждую оформи как <code>Вход: …\nВыход: …</code>. Блоки разделяй пустой строкой.</li><li><strong><code>lint_prompt(text)</code></strong> — верни список имён блоков (ключей <code>HEADERS</code>), чьих заголовков <strong>нет</strong> в тексте. Пустой список = промпт структурно полон.</li></ul><p><strong>Готово, когда</strong> тест <code>test_prompt_template.py</code> зелёный — он проверяет, что задача присутствует всегда, опциональные блоки рендерятся при передаче, а линтер ловит недостающие блоки и пропускает полный промпт.</p><pre><code>pytest code -q                 # красное → реализуй функции → зелёное
+python code/prompt_template.py # демо: голый промпт vs полный + что не хватает</code></pre><p><strong>Подсказка.</strong> В <code>build_prompt</code> собирай список кусков <code>f"{HEADERS[...]}\n{значение}"</code> (задача — всегда, остальное — по условию) и склей через <code>"\n\n"</code>. <code>lint_prompt</code> — это list comprehension: для каждого <code>(name, header)</code> проверь <code>header not in text</code>.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>Один и тот же структурированный промпт — на трёх платформах; сравни, как меняется ответ:</p><pre><code>role = "Ты редактор поддержки"
+prompt = build_prompt(task="Суммаризируй отзыв в 3 пунктах",
+                      output_format="Маркированный список")   # роль НЕ в тексте — уйдёт в system
+# Anthropic — роль в поле system
+Anthropic().messages.create(model="claude-sonnet-4-6", max_tokens=300,
+    system=role, messages=[{"role": "user", "content": prompt}])
+# OpenAI — роль в поле instructions
+OpenAI().responses.create(model="gpt-5.x", instructions=role, input=prompt)
+# Google — отдельного system-поля нет, роль кладём в текст промпта
+genai.Client().models.generate_content(model="gemini-2.x-flash",
+    contents=build_prompt(task="Суммаризируй отзыв в 3 пунктах", role=role,
+                          output_format="Маркированный список"))</code></pre><p>Заметь: «роль» у провайдеров живёт в разных местах (<code>system</code> / <code>instructions</code> / в тексте) — <strong>анатомия одна, синтаксис разный</strong>. Меняй по одному блоку и смотри, что именно сдвинуло ответ.</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Базовый шаблон промпта → <a href="#f-phases-02-prompt-engineering-02-prompt-anatomy-outputs-prompt-template-md"><code>outputs/prompt-template.md</code></a></p><p>Переиспользуемый каркас «роль · контекст · задача · формат · примеры» с подстановками. Дальше: примеры → урок 2.2, измерение версий → урок 2.5.</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Размытая задача.</strong> «Сделай покороче/получше» — это не ТЗ. Будь конкретен (be clear and direct): сколько пунктов, в каком тоне, на каком языке.</li><li><strong>Менять всё сразу.</strong> Поправил роль, формат и задачу одним махом — и не понять, что помогло. Меняй по одному блоку, как в эксперименте.</li><li><strong>Не задавать формат, а потом удивляться разнобою.</strong> Если ответ нужно парсить или сравнивать — фиксируй формат (список/JSON/длина) заранее.</li><li><strong>Путать роль и задачу.</strong> «Ты редактор» (роль) не говорит, что сделать; нужна ещё явная задача. Роль настраивает, задача поручает.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="2.1"></div><h2>Материалы</h2><ul><li><a href="https://platform.claude.com/docs/en/docs/build-with-claude/prompt-engineering/overview" target="_blank" rel="noopener">Anthropic — Prompt engineering overview</a> — с чего начать и какие техники есть.</li><li><a href="https://platform.claude.com/docs/en/docs/build-with-claude/prompt-engineering/claude-4-best-practices" target="_blank" rel="noopener">Anthropic — Prompting best practices</a> — живой справочник приёмов.</li><li><a href="https://github.com/anthropics/prompt-eng-interactive-tutorial" target="_blank" rel="noopener">anthropics/prompt-eng-interactive-tutorial</a> — интерактивный курс по промптингу.</li><li><a href="https://lilianweng.github.io/posts/2023-03-15-prompt-engineering/" target="_blank" rel="noopener">Lilian Weng — Prompt Engineering (Lil'Log)</a> — эталонный обзор in-context prompting: alignment и steerability.</li><li><a href="https://github.com/brexhq/prompt-engineering" target="_blank" rel="noopener">Brex — Prompt Engineering Guide</a> — production-гайд: фундамент LLM, структура промпта, безопасность.</li><li><a href="https://www.promptingguide.ai/" target="_blank" rel="noopener">DAIR.AI — Prompt Engineering Guide</a> — эталонный открытый справочник по техникам промптинга.</li><li><a href="https://ai.google.dev/gemini-api/docs/prompting-strategies" target="_blank" rel="noopener">Google — Prompt design strategies</a> — мульти-провайдерный взгляд на структуру хорошего промпта.</li><li><a href="https://cameronrwolfe.substack.com/p/practical-prompt-engineering-part" target="_blank" rel="noopener">Cameron R. Wolfe — Practical Prompt Engineering</a> — глубокий практический лонгрид: компоненты промпта, few-shot.</li><li><a href="https://arxiv.org/abs/2406.06608" target="_blank" rel="noopener">Schulhoff et al., 2024 — The Prompt Report: систематический обзор техник</a> — свежая систематизация 58+ приёмов промптинга с единой терминологией.</li><li><a href="https://cameronrwolfe.substack.com/p/modern-advances-in-prompt-engineering" target="_blank" rel="noopener">Cameron R. Wolfe — Modern Advances in Prompt Engineering (2024)</a> — что изменилось: reasoning, авто-промптинг, retrieval, современные паттерны.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-02-prompt-engineering-02-prompt-anatomy-code-test-prompt-template-py" open data-test="1"><summary><span class="fname">code/test_prompt_template.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from prompt_template import build_prompt, lint_prompt, HEADERS
+
+
+def test_task_is_always_present():
+    p = build_prompt("сделай X")
+    assert HEADERS["task"] in p and "сделай X" in p
+
+
+def test_optional_blocks_render_when_given():
+    p = build_prompt("сделай X", role="ты аналитик", output_format="JSON",
+                     examples=[("вход", "выход")])
+    for key in ("role", "task", "output_format", "examples"):
+        assert HEADERS[key] in p
+    assert "вход" in p and "выход" in p
+
+
+def test_lint_flags_missing_blocks():
+    bare = build_prompt("только задача")
+    missing = lint_prompt(bare)
+    assert "role" in missing and "context" in missing and "examples" in missing
+    assert "task" not in missing
+
+
+def test_lint_passes_full_prompt():
+    full = build_prompt("задача", role="r", context="c", output_format="f",
+                        examples=[("i", "o")])
+    assert lint_prompt(full) == []
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-02-prompt-engineering-02-prompt-anatomy-code-prompt-template-py"><summary><span class="fname">code/prompt_template.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Анатомия промпта: структурный шаблон + линтер — Build It для урока 2.1.
+
+Без зависимостей. Промпт — это интерфейс к модели, и у него есть анатомия:
+роль, контекст, задача, формат ответа, примеры. Здесь собираем промпт из этих
+блоков и проверяем линтером, что ключевые части на месте (воспроизводимость).
+"""
+
+# Заголовки секций промпта (порядок = рекомендуемая структура).
+HEADERS = {
+    "role": "# Роль",
+    "context": "# Контекст",
+    "task": "# Задача",
+    "output_format": "# Формат ответа",
+    "examples": "# Примеры",
+}
+
+
+def build_prompt(task, role=None, context=None, output_format=None, examples=None):
+    """Собрать промпт из блоков. Обязателен только `task`, остальное опционально.
+
+    `examples` — список пар (вход, выход).
+    """
+    parts = []
+    if role:
+        parts.append(f"{HEADERS['role']}\n{role}")
+    if context:
+        parts.append(f"{HEADERS['context']}\n{context}")
+    parts.append(f"{HEADERS['task']}\n{task}")
+    if output_format:
+        parts.append(f"{HEADERS['output_format']}\n{output_format}")
+    if examples:
+        ex = "\n\n".join(f"Вход: {i}\nВыход: {o}" for i, o in examples)
+        parts.append(f"{HEADERS['examples']}\n{ex}")
+    return "\n\n".join(parts)
+
+
+def lint_prompt(text):
+    """Каких анатомических блоков не хватает в промпте (эвристика по заголовкам)."""
+    return [name for name, header in HEADERS.items() if header not in text]
+
+
+if __name__ == "__main__":
+    bare = build_prompt("Суммаризируй текст в 3 пунктах")
+    print("--- голый промпт ---", bare, sep="\n")
+    print("\nНе хватает:", lint_prompt(bare))
+
+    full = build_prompt(
+        task="Суммаризируй отзыв в 3 пунктах",
+        role="Ты редактор продуктовой команды",
+        context="Отзывы клиентов из поддержки",
+        output_format="Маркированный список из 3 пунктов",
+        examples=[("Долго грузит", "- проблема: производительность")],
+    )
+    print("\n--- полный промпт ---", full, sep="\n")
+    print("\nНе хватает:", lint_prompt(full) or "ничего")
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-02-prompt-engineering-02-prompt-anatomy-outputs-prompt-template-md" open><summary><span class="fname">outputs/prompt-template.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: базовый шаблон промпта
+
+Каркас «роль · контекст · задача · формат · примеры» с подстановками. Сборка и проверка — в [`code/prompt_template.py`](../code/prompt_template.py).
+
+## Шаблон
+
+```
+# Роль
+{Кто отвечает: эксперт/редактор/парсер и с каким опытом}
+
+# Контекст
+{Что нужно знать для задачи: источник данных, ограничения, аудитория}
+
+# Задача
+{Что именно сделать — одно понятное действие}     ← обязательный блок
+
+# Формат ответа
+{Как выглядит ответ: список из N пунктов / JSON по схеме / таблица}
+
+# Примеры
+Вход: {пример входа}
+Выход: {эталонный выход}
+```
+
+## Чек-лист перед отправкой
+
+- [ ] **Задача** сформулирована как одно действие (не «сделай всё»).
+- [ ] **Роль** задаёт нужную экспертизу и тон.
+- [ ] **Формат** однозначен (если ответ парсит код — это JSON-схема, см. урок 2.4).
+- [ ] **Примеры** добавлены, если важен формат/класс (урок 2.2).
+- [ ] Прогнал `lint_prompt()` — нет случайно забытых блоков.
+
+## Как переиспользовать
+
+```python
+from prompt_template import build_prompt, lint_prompt
+p = build_prompt(task="...", role="...", output_format="...", examples=[("вход","выход")])
+assert lint_prompt(p) == []     # все нужные блоки на месте
+```
+
+Где «роль» у провайдеров: Anthropic — `system`, OpenAI — `instructions`, Google — в начале `contents`. Измерять версии шаблона — урок 2.5.
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~3 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/hallucinations-and-trust/"><small>← 1.4</small>Галлюцинации и границы доверия</a><a href="../../lessons/few-shot-and-cot/" style="text-align:right"><small>2.2 →</small>Few-shot и chain-of-thought</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

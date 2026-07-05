@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>1.2 Контекстное окно и inference — AI Native</title>
+  <meta name="description" content="Inference — это не «один ответ», а цикл: предскажи токен, допиши, повтори.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/context-window-and-inference/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="1.2 Контекстное окно и inference — AI Native">
+  <meta property="og:description" content="Inference — это не «один ответ», а цикл: предскажи токен, допиши, повтори.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/context-window-and-inference/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="1.2">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 1.2 · Контекстное окно и inference</h1><p><strong>Фаза 1 — Как работают LLM</strong> · <strong>Результат фазы:</strong> Объяснить токены, контекст и inference; собрать токен-бюджетер; отличать надёжный ответ от галлюцинации.</p><p><strong>Requires (только для USE IT):</strong> платный API-ключ одного из провайдеров. BUILD IT работает офлайн, без ключей и без сети.</p><p><strong>Этот урок объясняет, как модель на самом деле генерирует ответ.</strong> Не «прочитала вопрос — выдала текст», а цикл: предсказала один токен, дописала его и повторила. Поймёшь этот цикл — и сразу ясно, почему ответ «печатается» постепенно (стриминг), почему модель «забывает» начало длинного диалога и что значит «контекст 200K токенов».</p><blockquote><strong>MOTTO.</strong> Inference — это не «один ответ», а цикл: предскажи токен, допиши, повтори.</blockquote><h2>PROBLEM</h2><p>Кажется, что модель «читает вопрос и пишет ответ» целиком. На самом деле она генерирует <strong>по одному токену за шаг</strong>, каждый раз заново глядя на весь контекст. Не понимая этого, нельзя объяснить ни стриминг, ни почему «забывается» начало длинного диалога, ни что вообще значит «контекстное окно 200K токенов» — а из этого складывается и бюджет, и поведение модели.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Генерация <strong>авторегрессивна</strong>: модель предсказывает следующий токен по всем предыдущим, дописывает его в конец и повторяет — пока не решит остановиться. Каждый шаг видит результат предыдущего, поэтому ответ растёт слева направо, по токену за раз. А смотрит модель не на всю историю мира, а на <strong>контекстное окно</strong> — последние N токенов; что вышло за окно, для неё просто исчезает.</p><h3>Как это работает</h3><pre><code>prompt ─► [ контекстное окно ] ─► P(next token) ─► argmax/sample ─► токен
+              ▲                                                       │
+              └──────────────── допишем токен в контекст ◄───────────┘
+                         (что вышло за окно — «исчезает»)</code></pre><p>Два следствия: <strong>(1)</strong> ответ строится пошагово — поэтому возможен стриминг (токены отдаются по мере генерации); <strong>(2)</strong> окно конечно — длинная история выходит за него, и модель её больше не «видит» (отсюда бюджет контекста).</p><p><strong>Reasoning-модели</strong> (Claude extended thinking, DeepSeek V4 thinking-mode, o-серия OpenAI) добавляют к циклу скрытый этап «размышления»: перед ответом генерируются <strong>thinking</strong>-токены, за которые ты тоже платишь. Это поднимает качество на сложных задачах, но увеличивает и стоимость, и задержку — учитывай в бюджете (Фаза 9).</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Прокрутим цикл руками на крошечном корпусе:</p><pre><code>["a","b","c","x"]   ["a","b","c","x"]   ["q","b","c","y"]</code></pre><p><code>train_ngram</code> считает, какой токен и как часто идёт за каждым суффиксом. Пара <code>("b","c")</code> встречается трижды: дважды за ней <code>x</code>, один раз <code>y</code>. Значит:</p><pre><code>next_token_probs(["b","c"]) → { "x": 2/3, "y": 1/3 }</code></pre><p>Теперь сгенерируем продолжение для <code>["q","b","c"]</code> — и сравним при разном окне:</p><ul><li><strong>окно = 8</strong> (видит весь <code>("q","b","c")</code>): в модели есть точное правило <code>("q","b","c") → y</code>, поэтому следующий токен — <strong><code>y</code></strong>;</li><li><strong>окно = 2</strong> (видит только <code>("b","c")</code>): длинного совпадения нет, backoff к <code>("b","c")</code>, greedy берёт самый вероятный — <strong><code>x</code></strong>.</li></ul><p>Один и тот же prompt, разный контекст в окне → <strong>разный токен</strong>. Это и есть эффект контекстного окна, который ты соберёшь в коде.</p><h2>BUILD IT</h2><p><strong>Задание: собери учебный inference-loop</strong> — стандартная библиотека, без сети. Модель игрушечная (n-граммы с backoff), но механизм тот же, что у LLM: предсказать токен → дописать → повторить, глядя на контекстное окно.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/1.2-context-window/</code>), а файлы урока клади в подпапку <code>code/</code> (как в 0.1). Нужен только <strong>Python 3</strong>, всё офлайн (для теста ещё <code>pytest</code>).</blockquote><p>Создай <code>inference_loop.py</code> и реализуй три функции:</p><ul><li><strong><code>train_ngram(corpus, order=3)</code></strong> — <code>corpus</code> это список последовательностей токенов. Для каждого суффикса длины 1..<code>order</code> посчитай, какие токены за ним идут, и переведи в вероятности. Верни <code>dict</code>: <code>{ суффикс-кортеж: { токен: вероятность } }</code>.</li><li><strong><code>next_token_probs(model, context, order=3)</code></strong> — верни распределение по <strong>самому длинному</strong> суффиксу <code>context</code> (до <code>order</code>), который есть в <code>model</code>. Нет длинного совпадения — отступай к более короткому (<strong>backoff</strong>); совсем ничего — верни <code>{}</code>.</li><li><strong><code>generate(model, prompt, max_tokens=10, window=8, order=3)</code></strong> — жадная авторегрессия: на каждом шаге смотри только на последние <code>window</code> токенов, бери самый вероятный следующий (<code>argmax</code>), дописывай в контекст. Останавливайся, если предсказать нечего.</li></ul><p><strong>Готово, когда</strong> тест <code>test_inference_loop.py</code> зелёный — он проверяет, что вероятности суммируются в 1, работает backoff, greedy детерминирован, <strong>окно меняет результат</strong> и генерация останавливается на неизвестном контексте.</p><pre><code>pytest code -q             # красное → реализуй три функции → зелёное
+python code/inference_loop.py</code></pre><p><strong>Подсказка.</strong> В <code>train_ngram</code> для каждой позиции <code>i</code> пройди суффиксы длины 1..order и копи частоты в <code>Counter</code>, потом нормируй. В <code>generate</code> на каждом шаге зови <code>next_token_probs</code> уже на <code>context[-window:]</code>.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>Тот же цикл — у реальной модели, и его видно через <strong>стриминг</strong>: ответ отдаётся не целиком, а кусочками по мере генерации. Anthropic описывает это так: «Stream Messages API responses incrementally with server-sent events» — каждый <code>text_delta</code> несёт только что сгенерированный кусок. Мульти-провайдер:</p><pre><code># Anthropic
+from anthropic import Anthropic
+with Anthropic().messages.stream(model="claude-opus-4-8", max_tokens=200,
+    messages=[{"role": "user", "content": "Объясни inference в 3 предложениях"}]) as s:
+    for text in s.text_stream:
+        print(text, end="")
+
+# OpenAI
+from openai import OpenAI
+for ev in OpenAI().responses.create(model="gpt-5.x",
+        input="Объясни inference в 3 предложениях", stream=True):
+    if ev.type == "response.output_text.delta":
+        print(ev.delta, end="")
+
+# Google
+from google import genai
+for chunk in genai.Client().models.generate_content_stream(
+        model="gemini-2.x-flash", contents="Объясни inference в 3 предложениях"):
+    print(chunk.text, end="")</code></pre><p>Каждый «delta» — это один (или несколько) только что сгенерированных токенов: тот самый цикл из Build It, но в проде.</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Памятка по бюджету контекста → <a href="#f-phases-01-how-llms-work-01-context-window-and-inference-outputs-context-budget-cheatsheet-md"><code>outputs/context-budget-cheatsheet.md</code></a></p><p>Короткая шпаргалка: из чего складывается контекст (system + история + RAG + ответ), что обрезать первым, как не упереться в окно. Связка с <code>prompt-token-budgeter</code> из 1.1 и с Фазой 4 (контекст-инжиниринг).</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Думать, что модель «видит весь разговор».</strong> Она видит только то, что влезло в контекстное окно; что вышло за него — для неё не существует. Длинный диалог надо ужимать (Фаза 4).</li><li><strong>Считать ответ «единым актом».</strong> Это цикл по токену; отсюда и стриминг, и то, что генерация дороже и дольше с ростом длины ответа.</li><li><strong>Забывать про thinking-токены.</strong> У reasoning-моделей скрытый этап размышления тоже тратит токены и время — закладывай в бюджет.</li><li><strong>Путать большой контекст с памятью.</strong> Окно в 200K — это не «модель помнит всё»; это лимит на один запрос, и забивать его под завязку дорого и не всегда полезно.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="1.2"></div><h2>Материалы</h2><ul><li><a href="https://platform.claude.com/docs/en/api/messages-streaming" target="_blank" rel="noopener">Anthropic — Streaming Messages</a> — как устроен стриминг (SSE, <code>text_delta</code>) у Claude.</li><li><a href="https://platform.openai.com/docs/guides/streaming-responses" target="_blank" rel="noopener">OpenAI — Streaming responses</a> — стриминг в Responses API.</li><li><a href="https://ai.google.dev/gemini-api/docs/quickstart" target="_blank" rel="noopener">Gemini — Quickstart</a> — первый вызов и стриминг у Google.</li><li><a href="https://platform.claude.com/docs/en/build-with-claude/context-windows" target="_blank" rel="noopener">Anthropic — Context windows</a> — что такое контекст-окно, «context rot» и как считаются токены запроса.</li><li><a href="https://jalammar.github.io/illustrated-gpt2/" target="_blank" rel="noopener">Jay Alammar — The Illustrated GPT-2</a> — визуально, как работает авторегрессионная генерация (тот самый inference-loop).</li><li><a href="https://www.youtube.com/watch?v=7xTGNNLPyMI" target="_blank" rel="noopener">Andrej Karpathy — «Deep Dive into LLMs like ChatGPT»</a> — весь стек (претрейн → токенизация → inference) с ментальными моделями.</li><li><a href="https://jalammar.github.io/illustrated-transformer/" target="_blank" rel="noopener">Jay Alammar — The Illustrated Transformer</a> — визуальный разбор attention и архитектуры трансформера.</li><li><a href="https://www.3blue1brown.com/lessons/attention/" target="_blank" rel="noopener">3Blue1Brown — «Attention in transformers»</a> — лучший визуальный разбор attention: Q/K/V, маскирование, контекст-сайз.</li><li><a href="https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents" target="_blank" rel="noopener">Anthropic — Effective context engineering for AI agents</a> — «context rot» и как курировать содержимое контекст-окна.</li><li><a href="https://lilianweng.github.io/posts/2023-01-10-inference-optimization/" target="_blank" rel="noopener">Lilian Weng — Large Transformer Model Inference Optimization</a> — как реально работает inference: KV-cache, сложность attention.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-01-how-llms-work-01-context-window-and-inference-code-test-inference-loop-py" open data-test="1"><summary><span class="fname">code/test_inference_loop.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from inference_loop import train_ngram, next_token_probs, generate
+
+CORPUS = [
+    ["a", "b", "c", "x"],
+    ["a", "b", "c", "x"],
+    ["q", "b", "c", "y"],
+]
+
+
+def test_probs_sum_to_one():
+    m = train_ngram(CORPUS, order=3)
+    probs = next_token_probs(m, ["b", "c"])
+    assert abs(sum(probs.values()) - 1.0) &lt; 1e-9
+    assert probs == {"x": 2 / 3, "y": 1 / 3}
+
+
+def test_backoff_to_shorter_suffix():
+    m = train_ngram(CORPUS, order=3)
+    # ("z","c") нет в модели → backoff к ("c",)
+    assert next_token_probs(m, ["z", "c"]) == next_token_probs(m, ["c"])
+
+
+def test_greedy_is_deterministic():
+    m = train_ngram(CORPUS, order=3)
+    assert generate(m, ["a", "b", "c"], max_tokens=1) == generate(m, ["a", "b", "c"], max_tokens=1)
+
+
+def test_context_window_changes_output():
+    m = train_ngram(CORPUS, order=3)
+    full = generate(m, ["q", "b", "c"], max_tokens=1, window=8)   # видит ("q","b","c") → y
+    narrow = generate(m, ["q", "b", "c"], max_tokens=1, window=2)  # видит ("b","c") → x
+    assert full == ["y"]
+    assert narrow == ["x"]
+
+
+def test_unknown_context_stops():
+    m = train_ngram(CORPUS, order=3)
+    assert generate(m, ["zzz"], max_tokens=5) == []
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-01-how-llms-work-01-context-window-and-inference-code-inference-loop-py"><summary><span class="fname">code/inference_loop.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Учебный inference-loop + контекстное окно — Build It для урока 1.2.
+
+Без зависимостей. Показывает, что inference — это цикл: модель раз за разом
+предсказывает следующий токен по предыдущим и дописывает его в контекст.
+Модель здесь игрушечная (n-граммы с backoff по маленькому корпусу), но механизм
+тот же, что у LLM. Контекстное окно — сколько последних токенов модель видит:
+что вышло за окно, для модели «исчезает».
+"""
+from collections import defaultdict, Counter
+
+
+def train_ngram(corpus, order=3):
+    """Для каждого суффикса длины 1..order — распределение следующего токена."""
+    counts = defaultdict(Counter)
+    for seq in corpus:
+        for i in range(len(seq)):
+            for n in range(1, order + 1):
+                if i - n &gt;= 0:
+                    counts[tuple(seq[i - n:i])][seq[i]] += 1
+    model = {}
+    for ctx, c in counts.items():
+        total = sum(c.values())
+        model[ctx] = {tok: n / total for tok, n in c.items()}
+    return model
+
+
+def next_token_probs(model, context, order=3):
+    """Распределение по самому длинному суффиксу контекста (до order), что есть в модели.
+
+    Это backoff: нет длинного совпадения — отступаем к более короткому.
+    """
+    for n in range(min(order, len(context)), 0, -1):
+        ctx = tuple(context[-n:])
+        if ctx in model:
+            return model[ctx]
+    return {}
+
+
+def generate(model, prompt, max_tokens=10, window=8, order=3):
+    """Жадная авторегрессия: на каждом шаге берём самый вероятный next-token.
+
+    `window` — контекстное окно: модель видит только последние `window` токенов.
+    """
+    context = list(prompt)
+    out = []
+    for _ in range(max_tokens):
+        visible = context[-window:]                  # контекстное окно
+        probs = next_token_probs(model, visible, order)
+        if not probs:
+            break                                    # нечего предсказать — стоп
+        nxt = max(probs, key=probs.get)              # greedy = argmax
+        out.append(nxt)
+        context.append(nxt)
+    return out
+
+
+if __name__ == "__main__":
+    corpus = [
+        ["the", "cat", "sat", "on", "the", "mat"],
+        ["the", "cat", "ate", "the", "fish"],
+        ["a", "dog", "sat", "on", "the", "rug"],
+    ]
+    model = train_ngram(corpus, order=3)
+    print("Контекст ['the','cat'] →", next_token_probs(model, ["the", "cat"]))
+    print("generate(['the','cat']) →", generate(model, ["the", "cat"], max_tokens=4))
+    print("Окно=1, ['a','dog','sat'] →", generate(model, ["a", "dog", "sat"], 3, window=1))
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-01-how-llms-work-01-context-window-and-inference-outputs-context-budget-cheatsheet-md" open><summary><span class="fname">outputs/context-budget-cheatsheet.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: памятка по бюджету контекста
+
+Контекстное окно — конечный ресурс. Всё, что в него кладёшь, занимает токены и стоит денег; что вышло за окно — модель не видит.
+
+## Из чего складывается контекст
+
+```
+[ system prompt ] + [ история диалога ] + [ RAG/вложения ] + [ запас под ответ (max_tokens) ]  ≤  окно модели
+```
+
+| Слой | Что занимает | Как ужать |
+|---|---|---|
+| System prompt | роль, правила, формат | вынести стабильное в кэш (prompt caching) |
+| История | прошлые сообщения | суммаризировать старое, держать только релевантное |
+| RAG/файлы | фрагменты документов | top-k чанков, а не весь корпус (Фаза 3) |
+| Ответ | `max_tokens` | резервируй явный запас, не «впритык» |
+
+## Правила
+
+1. **Считай заранее.** Прогоняй вход через `prompt-token-budgeter` (урок 1.1) до отправки.
+2. **Режь по приоритету.** Первым сокращай старую историю и низкорелевантный RAG, не system prompt.
+3. **Оставляй запас под ответ.** Вход + `max_tokens` должны влезать в окно с зазором.
+4. **Большое окно ≠ бесплатно.** 200K–1M токенов влезут, но за них платишь и растёт задержка.
+5. **Длинная история «забывается».** Что вышло за окно — для модели не существует; нужное возвращай явно (память/RAG).
+
+## Связи
+
+- Подсчёт токенов и стоимости → урок 1.1 (`prompt-token-budgeter`)
+- Стратегии chunking и map-reduce для длинных документов → урок 3.2
+- Управление и компакция контекста → Фаза 4 (контекст-инжиниринг)
+- Кэширование и батчи ради цены → Фаза 9 (FinOps)
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~3 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/tokens-and-tokenization/"><small>← 1.1</small>Токены и токенизация</a><a href="../../lessons/sampling-temperature/" style="text-align:right"><small>1.3 →</small>Сэмплирование, температура, детерминизм</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

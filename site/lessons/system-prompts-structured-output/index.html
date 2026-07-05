@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>2.4 Системные промпты и структурированный вывод — AI Native</title>
+  <meta name="description" content="Если ответ парсит программа — он должен быть схемой, а не прозой.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/system-prompts-structured-output/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="2.4 Системные промпты и структурированный вывод — AI Native">
+  <meta property="og:description" content="Если ответ парсит программа — он должен быть схемой, а не прозой.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/system-prompts-structured-output/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="2.4">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 2.4 · Системные промпты и структурированный вывод</h1><p><strong>Фаза 2 — Промпт-инжиниринг</strong> · <strong>Результат фазы:</strong> Писать воспроизводимые промпты и измерять их качество через eval-harness.</p><p><strong>Requires (только для USE IT):</strong> платный API-ключ одного из провайдеров. BUILD IT работает офлайн, без ключей и без сети.</p><p><strong>Этот урок — про то, как получить от модели не прозу, а данные, которые можно скормить коду.</strong> Когда ответ идёт в БД, API или UI, нужен не «текст про тикет», а строгий объект <code>{title, priority, urgent}</code>. Системный промпт задаёт формат, провайдерский <strong>structured output</strong> заставляет модель его держать, а собственный <strong>валидатор</strong> проверяет, что пришедшее реально соответствует схеме.</p><blockquote><strong>MOTTO.</strong> Если ответ парсит программа — он должен быть схемой, а не прозой.</blockquote><h2>PROBLEM</h2><p>Когда вывод модели идёт в код, свободный текст — катастрофа: то лишние пояснения вокруг JSON, то поле пропало, то число пришло строкой <code>"3"</code>, то <code>true</code> вместо <code>1</code>. И просто «верни JSON» в промпте <strong>не гарантирует</strong> ни валидный JSON, ни нужную структуру — модель может обернуть его в Markdown-ограждение (тройные обратные кавычки), добавить «Вот ваш ответ:» или перепутать тип. Нужны два рычага: <strong>системный промпт</strong> + provider structured output, чтобы формат держался, и <strong>валидатор</strong> на нашей стороне, чтобы поймать то, что всё же протекло.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Если ответ читает программа, то промпт — это <strong>контракт API</strong>, а не просьба «напиши красиво». У контракта есть схема: какие поля, каких типов, какие обязательны. Текстом такой контракт не задать надёжно — нужна машинно-проверяемая форма (JSON Schema) и проверка на приёме. Принцип — <strong>«доверяй, но проверяй»</strong>: даже когда провайдер обещает структуру, на своей стороне сверяешь.</p><h3>Как это работает</h3><pre><code>system prompt (роль + строгий формат)
+        │
+        ▼
+ответ модели ──extract_json──► объект ──validate_schema──► ✓ / список ошибок
+   (часто в ```json … ```)        (типы, обязательные поля)</code></pre><p>Два уровня надёжности:</p><ul><li><strong>(1) Provider structured output / function calling</strong> — заставляет модель держать схему на стороне API. У OpenAI это Structured Outputs: ответ <strong>гарантированно соответствует</strong> переданной JSON-схеме (это сильнее «JSON mode», который обещает лишь валидный JSON, но не твою структуру). У Google — <code>response_schema</code>, у Anthropic — нативный <code>output_format</code> (strict constrained decoding) или через tool use (<code>input_schema</code> инструмента).</li><li><strong>(2) Свой валидатор</strong> — страховка на приёме: распарсить ответ и проверить, что поля и типы на месте. Дёшево и ловит то, что молча ломает прод.</li></ul><p><strong>JSON Schema</strong> — стандарт описания структуры: <code>type</code> (string/number/integer/boolean/array/object), <code>required</code> (обязательные поля), <code>additionalProperties: false</code> (запретить лишние). На нём говорят все провайдеры.</p><p>Тонкость, на которой все спотыкаются: в Python <code>bool</code> — <strong>подкласс</strong> <code>int</code>, поэтому <code>isinstance(True, int)</code> это <code>True</code>. Наивный валидатор пропустит <code>priority: true</code> как «целое». Поэтому для <code>integer</code>/<code>number</code> boolean отсекают <strong>явно</strong> — иначе <code>urgent: true</code>, случайно попавший в числовое поле, проскочит.</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Прогоним конвейер руками. Модель часто возвращает JSON не голым, а в Markdown-ограждении из тройных обратных кавычек (с пометкой <code>json</code>), иногда ещё с пояснением вокруг.</p><p><strong>Шаг 1 — <code>extract_json</code></strong> снимает это ограждение и парсит текст в объект:</p><pre><code>{"title": "Не грузит отчёт", "priority": 2, "urgent": true}</code></pre><p><strong>Шаг 2 — <code>validate_schema</code></strong> по схеме <code>title: string (req), priority: integer (req), urgent: boolean</code>:</p><ul><li><code>title</code> — строка, обязательное, на месте → ок;</li><li><code>priority</code> — целое <code>2</code> → ок;</li><li><code>urgent</code> — boolean → ок.</li></ul><pre><code>validate_schema(obj, SCHEMA) → []      # пустой список = всё валидно</code></pre><p>А теперь ловим типичные поломки:</p><pre><code>{"priority": 1}                  → ["title: отсутствует обязательное поле"]
+{"title": "X", "priority": "high"} → ["priority: ожидался integer"]
+{"title": "X", "priority": true}   → ["priority: ожидался integer, получен boolean"]</code></pre><p>Последний случай — та самая ловушка <code>bool</code>/<code>int</code>: без явной проверки <code>true</code> проскочил бы как число. Валидатор превращает «вроде JSON пришёл» в <strong>проверяемую гарантию</strong>.</p><h2>BUILD IT</h2><p><strong>Задание: собери извлечение JSON и валидатор схемы</strong> — стандартная библиотека (<code>json</code>), без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/2.4-structured-output/</code>), а файлы урока клади в подпапку <code>code/</code> (как в 0.1). Нужен только <strong>Python 3</strong>, всё офлайн (для теста ещё <code>pytest</code>).</blockquote><p>Данные бери готовыми (карта типов и пример схемы/системного промпта):</p><pre><code>_TYPES = {"string": str, "number": (int, float), "integer": int,
+          "boolean": bool, "array": list, "object": dict}
+SCHEMA = {
+    "title":    {"type": "string",  "required": True},
+    "priority": {"type": "integer", "required": True},
+    "urgent":   {"type": "boolean", "required": False},
+}</code></pre><p>Реализуй две функции:</p><ul><li><strong><code>extract_json(text)</code></strong> — достань JSON из ответа: если текст начинается с тройных обратных кавычек, сними это ограждение (и слово <code>json</code> после него) и закрывающие кавычки, затем <code>json.loads</code>. Обычный JSON без ограждения тоже должен парситься.</li><li><strong><code>validate_schema(obj, schema)</code></strong> — верни список ошибок (пустой = валидно). Если <code>obj</code> не <code>dict</code> → <code>["корень: ожидался объект (dict)"]</code>. Для каждого поля схемы: нет поля и оно <code>required</code> → «отсутствует обязательное поле»; есть, но тип не совпал с <code>_TYPES[...]</code> → «ожидался {тип}». <strong>Важно:</strong> для <code>integer</code>/<code>number</code> отдельно отсекай <code>bool</code> («получен boolean»), потому что в Python <code>bool</code> — подкласс <code>int</code>.</li></ul><p><strong>Готово, когда</strong> тест <code>test_structured_output.py</code> зелёный — он проверяет извлечение из ограждённого и обычного JSON, прохождение валидного объекта, отлов пропущенного обязательного поля, неверного типа, boolean вместо integer и не-объекта в корне.</p><pre><code>pytest code -q                    # красное → реализуй функции → зелёное
+python code/structured_output.py  # демо: парс + валидация хорошего и плохого объекта</code></pre><p><strong>Подсказка.</strong> В <code>validate_schema</code> обходи <code>schema.items()</code>; для проверки типа держи порядок: сперва спецслучай <code>bool</code> для числовых полей, потом общий <code>isinstance(val, _TYPES[spec["type"]])</code>.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>Проси у провайдера гарантированную структуру (мульти-провайдер):</p><pre><code>schema = {"type": "object", "properties": {
+    "title": {"type": "string"}, "priority": {"type": "integer"}},
+    "required": ["title", "priority"], "additionalProperties": False}
+
+# OpenAI — Structured Outputs (text.format = json_schema)
+OpenAI().responses.create(model="gpt-5.x", input="...",
+    text={"format": {"type": "json_schema", "name": "ticket", "schema": schema}})
+# Google — responseSchema в config
+genai.Client().models.generate_content(model="gemini-2.x-flash", contents="...",
+    config={"response_mime_type": "application/json", "response_schema": schema})
+# Anthropic — нативный Structured Outputs (output_format + strict) либо tool use (input_schema)</code></pre><p>Даже с гарантией провайдера прогоняй ответ через свой <code>validate_schema</code> — это дешёвая страховка (доверяй, но проверяй).</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Системный промпт + JSON-схема → <a href="#f-phases-02-prompt-engineering-02-system-prompts-structured-output-outputs-system-prompt-and-schema-md"><code>outputs/system-prompt-and-schema.md</code></a></p><p>Готовая пара «system prompt + схема + валидатор» под извлечение структуры из текста. Возвращается в Фазе 5 (NL→SQL, отчёты) и Фазе 6 (инструменты MCP).</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>«Верни JSON» без схемы и проверки.</strong> Это не гарантия: модель добавит пояснение, обернёт в Markdown-ограждение или перепутает тип. Нужен structured output на стороне провайдера плюс свой валидатор.</li><li><strong>Путать JSON mode и Structured Outputs.</strong> JSON mode обещает лишь валидный JSON, а не твою структуру. Соответствие именно схеме даёт structured output / function calling.</li><li><strong>Ловушка <code>bool</code> vs <code>integer</code>.</strong> В Python <code>True</code> — это <code>int</code>, и наивная проверка пропустит <code>priority: true</code>. Отсекай boolean для числовых полей явно.</li><li><strong>Доверять провайдеру без проверки.</strong> Гарантия не отменяет валидатор на приёме — внешние ответы всегда сверяй перед записью в БД/API.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="2.4"></div><h2>Материалы</h2><ul><li><a href="https://platform.openai.com/docs/guides/structured-outputs" target="_blank" rel="noopener">OpenAI — Structured model outputs</a> — гарантированное соответствие JSON-схеме.</li><li><a href="https://openai.com/index/introducing-structured-outputs-in-the-api/" target="_blank" rel="noopener">OpenAI — Introducing Structured Outputs</a> — зачем и чем отличается от JSON mode.</li><li><a href="https://json-schema.org/" target="_blank" rel="noopener">JSON Schema</a> — стандарт описания схем (типы, required, additionalProperties).</li><li><a href="https://platform.claude.com/docs/en/build-with-claude/structured-outputs" target="_blank" rel="noopener">Anthropic — Structured Outputs</a> — нативный constrained decoding у Claude: <code>output_format</code> + strict tool use, гарантия соответствия JSON-схеме.</li><li><a href="https://platform.claude.com/docs/en/docs/build-with-claude/prompt-engineering/system-prompts" target="_blank" rel="noopener">Anthropic — Giving Claude a role with a system prompt</a> — вторая половина урока: как системный промпт задаёт роль, тон и фокус.</li><li><a href="https://ai.google.dev/gemini-api/docs/structured-output" target="_blank" rel="noopener">Google Gemini — Structured output</a> — JSON по response-схеме у Google (мульти-провайдер).</li><li><a href="https://github.com/567-labs/instructor" target="_blank" rel="noopener">Instructor (Pydantic)</a> — популярная библиотека структурированного вывода: Pydantic-валидация, ретраи, мульти-провайдер.</li><li><a href="https://github.com/dottxt-ai/outlines" target="_blank" rel="noopener">Outlines</a> — constrained-генерация (JSON / regex / грамматика): как структурный вывод устроен «под капотом».</li><li><a href="https://github.com/BoundaryML/baml" target="_blank" rel="noopener">BAML</a> — DSL для надёжных LLM-функций: schema-first, статическая типизация, тесты.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-02-prompt-engineering-02-system-prompts-structured-output-code-test-structured-output-py" open data-test="1"><summary><span class="fname">code/test_structured_output.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from structured_output import extract_json, validate_schema, SCHEMA
+
+
+def test_extract_json_from_fenced_and_plain():
+    fenced = '```json\n{"a": 1}\n```'
+    assert extract_json(fenced) == {"a": 1}
+    assert extract_json('{"b": 2}') == {"b": 2}
+
+
+def test_valid_object_passes():
+    obj = {"title": "Баг в оплате", "priority": 3, "urgent": False}
+    assert validate_schema(obj, SCHEMA) == []
+
+
+def test_missing_required_field_flagged():
+    errors = validate_schema({"priority": 1}, SCHEMA)
+    assert any("title" in e and "обязательное" in e for e in errors)
+
+
+def test_wrong_type_flagged():
+    errors = validate_schema({"title": "X", "priority": "high"}, SCHEMA)
+    assert any("priority" in e for e in errors)
+
+
+def test_boolean_is_not_accepted_as_integer():
+    errors = validate_schema({"title": "X", "priority": True}, SCHEMA)
+    assert any("priority" in e and "boolean" in e for e in errors)
+
+
+def test_non_dict_root_flagged():
+    assert validate_schema([1, 2, 3], SCHEMA) == ["корень: ожидался объект (dict)"]
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-02-prompt-engineering-02-system-prompts-structured-output-code-structured-output-py"><summary><span class="fname">code/structured_output.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Структурированный вывод: JSON-схема + валидатор — Build It для урока 2.4.
+
+Без зависимостей. Системный промпт задаёт формат, а валидатор гарантирует, что
+ответ модели реально соответствует схеме (типы, обязательные поля). Плюс
+извлечение JSON из текста — модель часто оборачивает его в ```json … ```.
+"""
+import json
+
+# Сопоставление типов мини-схемы с типами Python.
+_TYPES = {
+    "string": str,
+    "number": (int, float),
+    "integer": int,
+    "boolean": bool,
+    "array": list,
+    "object": dict,
+}
+
+
+def extract_json(text):
+    """Достать JSON из ответа: снять ```json-ограждение и распарсить."""
+    t = text.strip()
+    if t.startswith("```"):
+        t = t[3:]
+        if t.lower().startswith("json"):
+            t = t[4:]
+        t = t.rsplit("```", 1)[0]
+    return json.loads(t)
+
+
+def validate_schema(obj, schema):
+    """Проверить объект по мини-схеме {field: {type, required}}. → список ошибок."""
+    errors = []
+    if not isinstance(obj, dict):
+        return ["корень: ожидался объект (dict)"]
+    for field, spec in schema.items():
+        if field not in obj:
+            if spec.get("required", False):
+                errors.append(f"{field}: отсутствует обязательное поле")
+            continue
+        val = obj[field]
+        # boolean — подкласс int в Python, отделяем явно
+        if spec["type"] in ("number", "integer") and isinstance(val, bool):
+            errors.append(f"{field}: ожидался {spec['type']}, получен boolean")
+        elif not isinstance(val, _TYPES[spec["type"]]):
+            errors.append(f"{field}: ожидался {spec['type']}")
+    return errors
+
+
+# Пример системного промпта + схемы под извлечение тикета.
+SYSTEM_PROMPT = (
+    "Ты парсер обращений. Верни СТРОГО JSON по схеме, без пояснений: "
+    '{"title": string, "priority": integer (1..5), "urgent": boolean}.'
+)
+SCHEMA = {
+    "title": {"type": "string", "required": True},
+    "priority": {"type": "integer", "required": True},
+    "urgent": {"type": "boolean", "required": False},
+}
+
+
+if __name__ == "__main__":
+    raw = '```json\n{"title": "Не грузит отчёт", "priority": 2, "urgent": true}\n```'
+    obj = extract_json(raw)
+    print("Распарсено:", obj)
+    print("Ошибки схемы:", validate_schema(obj, SCHEMA) or "нет")
+    bad = {"title": "X", "priority": True}        # priority — boolean вместо integer
+    print("Плохой объект:", validate_schema(bad, SCHEMA))
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-02-prompt-engineering-02-system-prompts-structured-output-outputs-system-prompt-and-schema-md" open><summary><span class="fname">outputs/system-prompt-and-schema.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: системный промпт + JSON-схема
+
+Пара «системный промпт + схема + валидатор» для надёжного структурированного вывода. Код — в [`code/structured_output.py`](../code/structured_output.py).
+
+## Системный промпт (пример)
+
+```
+Ты парсер обращений в поддержку. Верни СТРОГО JSON по схеме, без пояснений и без markdown:
+{"title": string, "priority": integer (1..5), "urgent": boolean}
+Если данных не хватает — ставь priority=3, urgent=false.
+```
+
+## JSON-схема
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "title":    {"type": "string"},
+    "priority": {"type": "integer"},
+    "urgent":   {"type": "boolean"}
+  },
+  "required": ["title", "priority"],
+  "additionalProperties": false
+}
+```
+
+## Валидатор (наша сторона)
+
+```python
+from structured_output import extract_json, validate_schema, SCHEMA
+obj = extract_json(model_response)          # снимет ```json-ограждение
+errors = validate_schema(obj, SCHEMA)       # [] = всё в порядке
+assert not errors, errors
+```
+
+## Правила
+
+- **Двойная защита:** проси structured output у провайдера И проверяй своим валидатором.
+- `additionalProperties: false` + все нужные поля в `required` — меньше «лишнего» и пропусков.
+- **boolean ≠ integer** — частая ловушка; валидатор её ловит.
+- Порядок полей в ответе следует порядку в схеме.
+- Где задаётся: OpenAI — `text.format=json_schema`; Google — `response_schema`; Anthropic — через tool use (`input_schema`).
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~3 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/decomposition-and-iteration/"><small>← 2.3</small>Декомпозиция и итеративное уточнение</a><a href="../../lessons/prompt-evaluation/" style="text-align:right"><small>2.5 →</small>Оценка качества промптов</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

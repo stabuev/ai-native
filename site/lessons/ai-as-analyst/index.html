@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>5.1 ИИ как аналитик — AI Native</title>
+  <meta name="description" content="Аналитика — это план: что сгруппировать, что посчитать, как агрегировать; ИИ строит план, код его исполняет.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/ai-as-analyst/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="5.1 ИИ как аналитик — AI Native">
+  <meta property="og:description" content="Аналитика — это план: что сгруппировать, что посчитать, как агрегировать; ИИ строит план, код его исполняет.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/ai-as-analyst/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="5.1">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 5.1 · ИИ как аналитик</h1><p><strong>Фаза 5 — Данные и аналитика</strong> · <strong>Результат фазы:</strong> Анализировать данные с ИИ, делать NL→SQL и автоотчёты с валидацией результатов.</p><p><strong>Requires (только для USE IT):</strong> платный API-ключ или аккаунт ChatGPT/Claude с загрузкой файлов. BUILD IT работает офлайн, без ключей и без сети.</p><p><strong>Это вход в Фазу 5 — данные.</strong> Дальше будут Code Interpreter, NL→SQL, BI-агенты и автоотчёты. Но в основе всего лежит одна простая идея, которую мы разберём здесь до винтика: ИИ-аналитик не «понимает» таблицу магически — он строит <strong>план</strong> и исполняет его кодом.</p><blockquote><strong>MOTTO.</strong> Аналитика — это план: что сгруппировать, что посчитать, как агрегировать; ИИ строит план, код его исполняет.</blockquote><h2>PROBLEM</h2><p>«Посмотри данные и скажи, что интересного» — звучит как магия. Кажется, будто модель смотрит на таблицу и «видит» инсайт. Это не так — и пока механика выглядит магией, ты не можешь ни проверить ответ, ни понять, почему он иногда неверный.</p><p>На деле ИИ-аналитик делает буквально следующее: превращает твой вопрос в <strong>план</strong> (по чему сгруппировать, какую колонку считать, каким агрегатом) и <strong>исполняет его кодом</strong> (pandas / Code Interpreter), а не «угадывает» цифры из головы. Соберём этот механизм на голой стандартной библиотеке — и магии не останется.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Любой аналитический вопрос раскладывается на три кубика:</p><ul><li><strong>разрез (group_by)</strong> — по чему режем: по региону, по продукту, по дню;</li><li><strong>метрика (value)</strong> — что именно меряем: сумму чего, среднее чего;</li><li><strong>агрегат (agg)</strong> — как сворачиваем группу в одно число: <code>sum</code>, <code>mean</code>, <code>count</code>.</li></ul><p>«Выручка по регионам» = разрез <code>region</code> + метрика <code>amount</code> + агрегат <code>sum</code>. «Средний чек по продукту» = разрез <code>product</code> + метрика <code>amount</code> + агрегат <code>mean</code>. Вопрос на человеческом языке — это и есть план из трёх кубиков; работа ИИ — собрать план, работа кода — его исполнить.</p><h3>Как это работает</h3><p>Механизм называется <strong>split-apply-combine</strong> — три шага:</p><pre><code>вопрос → план(group_by, value, agg) → исполнение → результат
+                                          │
+   split    разложить строки по группам (по group_by)
+   apply    в каждой группе применить агрегат к value (sum/mean/count)
+   combine  собрать {группа: число} и при желании взять топ-N</code></pre><ul><li><code>load_csv(text)</code> — прочитать таблицу в список словарей (строки).</li><li><code>aggregate(rows, group_by, value, agg)</code> — сгруппировать строки и свернуть каждую группу в число.</li><li><code>top_n(d, n)</code> — отсортировать результат по убыванию и взять верх.</li></ul><p>Ровно это делает pandas (<code>df.groupby(...).sum()</code>), и ровно это собирает под капотом ChatGPT/Claude, когда ты грузишь CSV и спрашиваешь «топ-5 регионов по выручке». Мы делаем то же руками, чтобы видеть каждый шаг.</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Возьмём таблицу продаж и вопрос «выручка по регионам, топ-2» (план: <code>group_by=region</code>, <code>value=amount</code>, <code>agg=sum</code>):</p><pre><code>region  amount
+Москва  100
+Москва   50
+Питер    30
+Питер    70
+Казань   20</code></pre><p><strong>split</strong> — раскладываем строки по <code>region</code>:</p><pre><code>Москва → [100, 50]
+Питер  → [30, 70]
+Казань → [20]</code></pre><p><strong>apply</strong> — в каждой группе берём <code>sum</code> колонки <code>amount</code>:</p><pre><code>Москва → 100 + 50 = 150
+Питер  → 30 + 70  = 100
+Казань → 20</code></pre><p><strong>combine</strong> — собираем <code>{Москва: 150, Питер: 100, Казань: 20}</code> и берём <code>top_n(2)</code> → <code>[(Москва, 150), (Питер, 100)]</code>.</p><p>Теперь <strong>поменяем один кубик</strong> — <code>agg=sum</code> на <code>agg=mean</code> — на тех же данных и том же <code>split</code>:</p><pre><code>apply (mean):  Москва → (100+50)/2 = 75    Питер → (30+70)/2 = 50    Казань → 20/1 = 20
+combine:       {Москва: 75, Питер: 50, Казань: 20}</code></pre><p>Данные и группировка те же, а ответ другой: «выручка» (sum 150/100/20) превратилась в «средний чек» (mean 75/50/20), а <code>agg=count</code> дал бы число продаж (2/2/1). Вот почему план важнее данных: один и тот же <code>split</code> отвечает на разные вопросы — решает выбор агрегата.</p><h2>BUILD IT</h2><p><strong>Задание: собери мини-аналитику</strong> — <code>load_csv</code> + <code>aggregate</code> + <code>top_n</code>, по принципу split-apply-combine. Только стандартная библиотека (<code>csv</code>, <code>io</code>, <code>statistics</code>), без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/5.1-ai-analyst/</code>), а файлы урока клади в подпапку <code>code/</code> (как в 0.1). Нужен только <strong>Python 3</strong> (для теста ещё <code>pytest</code>).</blockquote><p>Создай файл <code>analyze.py</code> с тремя функциями:</p><ul><li><strong><code>load_csv(text)</code></strong> — распарсить CSV-текст в список словарей (строка таблицы = словарь <code>{колонка: значение}</code>). Подсказка: <code>csv.DictReader(io.StringIO(text.strip()))</code>.</li><li><strong><code>aggregate(rows, group_by, value, agg="sum")</code></strong> — сгруппировать <code>rows</code> по колонке <code>group_by</code>; в каждой группе свернуть колонку <code>value</code>: <code>sum</code> или <code>mean</code> числовых значений, либо <code>count</code> строк. Верни словарь <code>{группа: число}</code>. Нечисловые/пустые значения в <code>value</code> при sum/mean пропускай.</li><li><strong><code>top_n(d, n=3)</code></strong> — вернуть список из <code>n</code> пар <code>(ключ, значение)</code> по убыванию значения.</li></ul><p><strong>Готово, когда</strong> все тесты в <code>test_analyze.py</code> зелёные — они проверяют: парсинг строк; <code>sum</code> по региону (Москва = 150, Питер = 100); <code>count</code> и <code>mean</code>; <code>top_n</code> сортирует по убыванию (первый — Москва, 150).</p><pre><code>pytest code -q        # красное → реализуй три функции → зелёное
+python code/analyze.py # демо: выручка по регионам, топ-2, средний чек по продукту</code></pre><p><strong>Подсказка.</strong> Группировка: <code>groups.setdefault(r.get(group_by), []).append(r)</code>. Числа защити хелпером <code>_num(v)</code> через <code>try/except float(...)</code>. <code>top_n</code> — <code>sorted(d.items(), key=lambda kv: kv[1], reverse=True)[:n]</code>.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>Тот же план исполняет pandas — и ровно это делает ИИ-аналитик при загрузке файла (мульти-провайдер):</p><pre><code>import pandas as pd
+df = pd.read_csv("sales.csv")
+df.groupby("region")["amount"].sum().sort_values(ascending=False)   # = aggregate + top_n</code></pre><ul><li><strong>ChatGPT</strong> — загрузи CSV/Excel и спроси «выручка по регионам, топ-5»: он напишет и выполнит pandas-код в Code Interpreter и построит график.</li><li><strong>Claude</strong> — загрузка файла в чат или Project + тот же запрос; через API — code execution tool.</li></ul><p>Принцип один: естественный вопрос → план (group_by / value / agg) → исполнение кодом. Ты по-прежнему отвечаешь за то, чтобы план соответствовал вопросу.</p><p>⚠️ ИИ не знает происхождения данных и твоих допущений (что считать «выручкой», включать ли возвраты). Результат всегда <strong>проверяй</strong> — этому посвящён урок 5.5.</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Шаблон аналитического запроса → <a href="#f-phases-05-data-and-analytics-05-ai-as-analyst-outputs-analysis-request-template-md"><code>outputs/analysis-request-template.md</code></a></p><p>Структура запроса к ИИ-аналитику (данные · вопрос · метрика · разрез · формат · проверка) — чтобы ответы были воспроизводимы и проверяемы, а не «как поняла модель». Дальше: исполнение кода в песочнице (5.2), NL→SQL (5.3), валидация и автоотчёты (5.5).</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Считать, что ИИ «видит» инсайт в таблице.</strong> Он строит план и исполняет код. Нет плана — нет воспроизводимости; проси его показать код/логику, а не только число.</li><li><strong>Не задать определения метрики.</strong> «Выручка» с возвратами или без? «Активные» за какой период? Без явных допущений модель подставит свои — и цифра поедет.</li><li><strong>Путать агрегаты.</strong> <code>sum</code> ≠ <code>mean</code> ≠ <code>count</code>. «Сколько продали» — это <code>sum</code> суммы или <code>count</code> сделок? Уточни кубик <code>agg</code>, иначе ответишь не на тот вопрос.</li><li><strong>Доверять числу без проверки источника.</strong> ИИ не знает, откуда данные и насколько чисты. Сверяй с источником и здравым смыслом (5.5).</li><li><strong>Грузить гигантский файл целиком в чат.</strong> Окно конечно (4.4); для больших данных — выборка, агрегаты заранее или SQL (5.3), а не сырой дамп.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="5.1"></div><h2>Материалы</h2><ul><li><a href="https://pandas.pydata.org/docs/getting_started/index.html" target="_blank" rel="noopener">pandas — Getting started</a> — стандартный инструмент анализа данных (<code>groupby</code>).</li><li><a href="https://help.openai.com/en/articles/8437071-code-interpreter" target="_blank" rel="noopener">OpenAI — Data analysis / Code Interpreter</a> — анализ загруженных файлов кодом.</li><li><a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/code-execution-tool" target="_blank" rel="noopener">Anthropic — Code execution tool</a> — анализ данных кодом через API.</li><li><a href="https://wesmckinney.com/book/" target="_blank" rel="noopener">Wes McKinney — Python for Data Analysis (3e, бесплатно онлайн)</a> — «библия» pandas от автора библиотеки.</li><li><a href="https://github.com/sinaptik-ai/pandas-ai" target="_blank" rel="noopener">PandasAI</a> — естественный язык поверх dataframe: «pandas под управлением промпта» (v3.0.0, 2025).</li><li><a href="https://support.claude.com/en/articles/12650343-use-claude-for-excel" target="_blank" rel="noopener">Anthropic — Use Claude for Excel</a> — свежая интеграция: читать, править и создавать таблицы прямо в Excel (CSV/Excel в Claude).</li><li><a href="https://towardsdatascience.com/my-first-exploratory-data-analysis-with-chatgpt-7f100005efdc/" target="_blank" rel="noopener">TDS — My First Exploratory Data Analysis with ChatGPT</a> — практический разбор EDA через чат (Medium).</li><li><a href="https://arxiv.org/abs/2506.23719" target="_blank" rel="noopener">DABstep (Adyen × Hugging Face, 2025)</a> — бенчмарк агентов-аналитиков на 450+ реальных задачах: лучшие модели решают лишь ~15% сложных — числовой аргумент, почему результат ИИ-аналитика надо проверять (5.5).</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-05-data-and-analytics-05-ai-as-analyst-code-test-analyze-py" open data-test="1"><summary><span class="fname">code/test_analyze.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from analyze import load_csv, aggregate, top_n, CSV_DEMO
+
+ROWS = load_csv(CSV_DEMO)
+
+
+def test_load_csv_parses_rows():
+    assert len(ROWS) == 5
+    assert ROWS[0]["region"] == "Москва" and ROWS[0]["amount"] == "100"
+
+
+def test_aggregate_sum_by_region():
+    by_region = aggregate(ROWS, "region", "amount", "sum")
+    assert by_region["Москва"] == 150
+    assert by_region["Питер"] == 100
+
+
+def test_aggregate_count_and_mean():
+    assert aggregate(ROWS, "region", "amount", "count")["Москва"] == 2
+    by_product_mean = aggregate(ROWS, "product", "amount", "mean")
+    assert by_product_mean["A"] == (100 + 30 + 20) / 3
+
+
+def test_top_n_orders_desc():
+    by_region = aggregate(ROWS, "region", "amount", "sum")
+    top = top_n(by_region, 2)
+    assert top[0] == ("Москва", 150)
+    assert len(top) == 2
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-05-data-and-analytics-05-ai-as-analyst-code-analyze-py"><summary><span class="fname">code/analyze.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""ИИ как аналитик: мини-аналитика на stdlib под планом — Build It для урока 5.1.
+
+Без внешних зависимостей. Промпт превращается в план анализа (что сгруппировать,
+какую метрику, как агрегировать), а тулкит его исполняет — как делает ИИ-аналитик,
+только мы видим механизм. В USE IT тот же план исполняет pandas / Code Interpreter.
+"""
+import csv
+import io
+from statistics import mean
+
+
+def load_csv(text):
+    """CSV-текст -&gt; список словарей (строки таблицы)."""
+    return list(csv.DictReader(io.StringIO(text.strip())))
+
+
+def _num(v):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def aggregate(rows, group_by, value, agg="sum"):
+    """Сгруппировать rows по group_by и агрегировать value (sum/mean/count)."""
+    groups = {}
+    for r in rows:
+        groups.setdefault(r.get(group_by), []).append(r)
+    out = {}
+    for key, items in groups.items():
+        nums = [n for n in (_num(i.get(value)) for i in items) if n is not None]
+        if agg == "count":
+            out[key] = len(items)
+        elif agg == "mean":
+            out[key] = mean(nums) if nums else 0.0
+        else:  # sum
+            out[key] = sum(nums)
+    return out
+
+
+def top_n(d, n=3):
+    """Топ-n пар (ключ, значение) по убыванию значения."""
+    return sorted(d.items(), key=lambda kv: kv[1], reverse=True)[:n]
+
+
+CSV_DEMO = """region,product,amount
+Москва,A,100
+Москва,B,50
+Питер,A,30
+Питер,B,70
+Казань,A,20
+"""
+
+if __name__ == "__main__":
+    rows = load_csv(CSV_DEMO)
+    by_region = aggregate(rows, "region", "amount", "sum")
+    print("Выручка по регионам:", by_region)
+    print("Топ-2 региона:", top_n(by_region, 2))
+    print("Средний чек по продукту:", aggregate(rows, "product", "amount", "mean"))
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-05-data-and-analytics-05-ai-as-analyst-outputs-analysis-request-template-md" open><summary><span class="fname">outputs/analysis-request-template.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: шаблон аналитического запроса
+
+Структурированный запрос к ИИ-аналитику — чтобы ответы были воспроизводимы и проверяемы. Механика плана — [`code/analyze.py`](../code/analyze.py).
+
+## Шаблон
+
+```
+# Данные
+{что за таблица, какие колонки и типы, источник, период}
+
+# Вопрос
+{бизнес-вопрос одним предложением}
+
+# Метрика
+{что считаем: SUM(amount) = выручка, COUNT(*) = заказы, AVG = средний чек}
+
+# Разрез
+{по чему группируем: регион / месяц / продукт; и фильтры}
+
+# Формат ответа
+{таблица топ-N / график / число + вывод одним абзацем}
+
+# Проверка
+{покажи код/SQL; проверь, что строки не потеряны и суммы сходятся}
+```
+
+## Пример
+
+```
+# Данные: sales(region, product, amount) за Q2
+# Вопрос: какие регионы дают основную выручку?
+# Метрика: выручка = SUM(amount)
+# Разрез: по region, топ-5
+# Формат: таблица регион→выручка + доля от总
+# Проверка: сумма по регионам = общей выручке
+```
+
+## Правила
+
+- **Метрику определяй явно** — иначе ИИ выберет свою (семантический слой, урок 5.3).
+- **Проси показать код/SQL** — это аудируемость (Code Interpreter, урок 5.2).
+- **Всегда добавляй «Проверку»** — суммы, пропуски, аномалии (урок 5.5).
+- Считай токены на больших данных (урок 1.1) и сэмплируй, если таблица огромна.
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/agent-platforms-openclaw-hermes/"><small>← 4.5</small>Агентные платформы: OpenClaw / Hermes</a><a href="../../lessons/code-interpreter/" style="text-align:right"><small>5.2 →</small>Code Interpreter</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>

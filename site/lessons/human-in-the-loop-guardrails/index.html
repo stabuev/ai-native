@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>7.3 Human-in-the-loop и guardrails — AI Native</title>
+  <meta name="description" content="Автономность без заслонов опасна: критичные действия — через подтверждение и валидацию.">
+  <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/human-in-the-loop-guardrails/">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="7.3 Human-in-the-loop и guardrails — AI Native">
+  <meta property="og:description" content="Автономность без заслонов опасна: критичные действия — через подтверждение и валидацию.">
+  <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/human-in-the-loop-guardrails/">
+  <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="../../style.css">
+</head>
+<body data-page="lesson" data-lesson-id="7.3">
+  <section class="container" style="padding-top:24px">
+    <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
+    <div class="lessonbar" id="lessonbar"></div>
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 7.3 · Human-in-the-loop и guardrails</h1><p><strong>Фаза 7 — Agent Engineering</strong> · <strong>Результат фазы:</strong> Собрать надёжного агента с памятью, планированием, human-in-the-loop и guardrails.</p><p><strong>Requires (только для USE IT):</strong> платный API-ключ одного из провайдеров. BUILD IT работает офлайн, без ключей и без сети.</p><p><strong>Агент из 7.1–7.2 действует сам. Теперь научим его останавливаться.</strong> Чем выше автономия (режим Agency из 7.1), тем выше цена ошибки. Этот урок — про заслоны между решением агента и необратимым действием.</p><blockquote><strong>MOTTO.</strong> Автономность без заслонов опасна: критичные действия — через подтверждение и валидацию.</blockquote><h2>PROBLEM</h2><p>Агент, который сам жмёт «удалить», «перевести деньги», «задеплоить», однажды сделает это <strong>не вовремя</strong>: по галлюцинации, по кривому аргументу или по prompt-инъекции из данных. Разница между полезным помощником и миной — в том, есть ли между «агент решил» и «действие выполнено» заслон.</p><p>Нужны две вещи: <strong>валидация</strong> (проверить аргументы до исполнения — лимиты, типы, разрешённые операции) и <strong>human-in-the-loop</strong> (для необратимых действий — пауза и подтверждение человека). Причём безопасные действия должны идти без трения, иначе агент бесполезен. Соберём такой заслон.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Это как <strong>банковский перевод с двумя барьерами</strong>. Сначала система проверяет форму: сумма в пределах лимита, счёт существует, валюта верная (валидация — машинная, мгновенная). Потом, если операция крупная или необратимая, приходит SMS «подтвердите перевод» (human-in-the-loop — человек в петле). Мелкий безобидный платёж проходит без подтверждения; перевод миллиона — только после явного «да».</p><p>Агент должен работать так же: рутину делает сам, на необратимом — тормозит и спрашивает.</p><h3>Как это работает</h3><pre><code>действие агента {tool, args}
+   │ 1) валидаторы     (типы, лимиты, разрешённые операции)  → не прошло → блок
+   │ 2) опасное?       → пауза → подтверждение человека       → reject → блок
+   │ 3) известный tool?                                        → нет → блок
+   ▼ только тогда — исполнение</code></pre><ul><li><code>requires_confirmation(tool)</code> — опасное ли действие (множество <code>DANGEROUS</code>: <code>delete</code>, <code>send_money</code>, <code>deploy</code>, <code>drop_table</code>…).</li><li><code>run_action(action, tools, confirm, validators)</code> — три заслона <strong>по порядку</strong>: прогнать валидаторы → если действие опасное, спросить <code>confirm</code> → проверить, что инструмент известен. Только потом исполнить.</li><li><code>amount_limit(max)</code> — пример валидатора: запретить перевод сверх лимита.</li></ul><p>Порядок не случаен: <strong>валидаторы идут первыми</strong> — нет смысла отвлекать человека подтверждением заведомо невалидного действия (перевод на сумму сверх лимита отсекается до вопроса). Подтверждение — только для того, что прошло проверку и при этом необратимо.</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Прогоним <code>run_action</code> на трёх действиях (лимит перевода — 100):</p><pre><code>1. {tool: "read"}                              безопасное
+   валидаторов нет → не опасное → tool известен → ИСПОЛНЕНО → "данные"
+
+2. {tool: "send_money", args:{amount: 50, to: "Иван"}}   confirm=да
+   amount_limit(100): 50 ≤ 100 → ok → опасное → confirm()=да → известен → ИСПОЛНЕНО → "перевод 50→Иван"
+
+3. {tool: "send_money", args:{amount: 500, to: "X"}}     confirm=да
+   amount_limit(100): 500 &gt; 100 → GuardrailError ДО подтверждения  → БЛОК</code></pre><p>Видно три исхода: рутина (<code>read</code>) проходит без трения; валидный опасный перевод — после явного «да»; невалидный (сверх лимита) режется <strong>до</strong> того, как человека о чём-то спросят. Если бы на шаге 2 <code>confirm</code> вернул <code>False</code> (человек отклонил) — тоже блок. Так автономность не превращается в «удалил прод по галлюцинации»: необратимое всегда проходит через валидацию и человека.</p><h2>BUILD IT</h2><p><strong>Задание: собери заслоны агента</strong> — валидацию, подтверждение и проверку инструмента. Только стандартная библиотека, без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/7.3-guardrails/</code>), а файлы урока клади в подпапку <code>code/</code> (как в 0.1). Нужен только <strong>Python 3</strong> (для теста ещё <code>pytest</code>).</blockquote><p>Создай файл <code>guardrails.py</code>: множество <code>DANGEROUS</code> (необратимые действия), исключение <code>GuardrailError</code> и:</p><ul><li><strong><code>requires_confirmation(tool)</code></strong> — <code>True</code>, если <code>tool</code> в <code>DANGEROUS</code>.</li><li><strong><code>run_action(action, tools, confirm=None, validators=None)</code></strong> — <code>action</code> это <code>{tool, args}</code>. По порядку: (1) прогнать каждый валидатор <code>validate(action) -&gt; (ok, reason)</code>, при <code>not ok</code> → <code>raise GuardrailError</code>; (2) если <code>requires_confirmation(tool)</code> и (<code>confirm is None</code> или <code>confirm(action)</code> ложно) → <code>raise GuardrailError</code>; (3) если <code>tool not in tools</code> → <code>raise GuardrailError</code>; иначе исполнить <code>tools[tool](**args)</code>.</li><li><strong><code>amount_limit(max_amount)</code></strong> — вернуть валидатор: если <code>args["amount"] &gt; max_amount</code> → <code>(False, reason)</code>, иначе <code>(True, "ok")</code>.</li></ul><p><strong>Готово, когда</strong> все тесты в <code>test_guardrails.py</code> зелёные — они проверяют: безопасное действие исполняется без подтверждения; опасное без <code>confirm</code> → блок, с <code>confirm=да</code> → исполняется; <code>confirm=нет</code> → блок; перевод сверх лимита → блок валидатором; неизвестный инструмент → блок.</p><pre><code>pytest code -q          # красное → реализуй заслоны → зелёное
+python code/guardrails.py # демо: read проходит; перевод 50 — ок; 500 — блок</code></pre><p><strong>Подсказка.</strong> Порядок проверок важен: валидаторы → подтверждение → известность инструмента. <code>amount_limit</code> — это функция, возвращающая функцию-валидатор (замыкание на <code>max_amount</code>).</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>Контроль агента на критичных шагах — готовыми механизмами (мульти-провайдер):</p><ul><li><strong>OpenAI Agents SDK</strong> — <code>guardrails</code> (input / output / tool tripwire) + human-in-the-loop: на инструменте флаг <code>needs_approval</code> (<code>True</code> или async-функция для условной логики); на опасном вызове прогон встаёт на паузу и кладёт <code>ToolApprovalItem</code> в <code>RunResult.interruptions</code>. Состояние сериализуется через <code>result.to_state()</code> (<code>RunState</code>), решение — <code>state.approve(...)</code> / <code>state.reject(...)</code>, продолжение — <code>Runner.run(agent, state)</code>.</li><li><strong>Anthropic</strong> — tool use с подтверждением на стороне приложения; разрешения в Claude Code / Agent SDK (что агенту можно без спроса, что — только с одобрения).</li><li>Паттерн: дешёвая guardrail-модель отсекает плохое <strong>до</strong> дорогого вызова; необратимое — только после approve человека.</li></ul><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Шаблон guardrails → <a href="#f-phases-07-agent-engineering-07-human-in-the-loop-guardrails-outputs-guardrails-template-md"><code>outputs/guardrails-template.md</code></a></p><p>Готовый шаблон: список опасных действий, валидаторы, точки подтверждения, аудит. Подставляешь под свой агент. Дальше: что делать, когда агент всё равно ломается — петли и дрейф цели (7.4).</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Давать агенту необратимые действия без подтверждения.</strong> delete/send_money/deploy по галлюцинации или инъекции — катастрофа. Необратимое — только через human-in-the-loop.</li><li><strong>Подтверждать всё подряд.</strong> Если агент спрашивает на каждый шаг, им невозможно пользоваться. Трение — только на опасном; рутина идёт сама.</li><li><strong>Подтверждение раньше валидации.</strong> Сначала отсей заведомо плохое (лимит, типы), потом спрашивай человека. Незачем подтверждать то, что не пройдёт проверку.</li><li><strong>Считать confirm заменой валидации (или наоборот).</strong> Это разные заслоны: валидатор ловит «плохие аргументы», подтверждение — «необратимый эффект». Нужны оба.</li><li><strong>Доверять аргументам от модели.</strong> Опасное действие могло прийти из prompt-инъекции в данных (11.5). Валидаторы и подтверждение — именно та граница, что ловит это до исполнения.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="7.3"></div><h2>Материалы</h2><ul><li><a href="https://openai.github.io/openai-agents-python/guardrails/" target="_blank" rel="noopener">OpenAI — Guardrails (Agents SDK)</a> — input/output/tool проверки.</li><li><a href="https://openai.github.io/openai-agents-python/human_in_the_loop/" target="_blank" rel="noopener">OpenAI — Human-in-the-loop</a> — пауза и approve/reject.</li><li><a href="https://www.anthropic.com/research/building-effective-agents" target="_blank" rel="noopener">Anthropic — Building Effective Agents</a> — guardrails и тестирование в песочнице.</li><li><a href="https://github.com/NVIDIA/NeMo-Guardrails" target="_blank" rel="noopener">NVIDIA — NeMo Guardrails</a> — программируемые rails (input/output/dialog/execution) поверх LLM-приложения.</li><li><a href="https://github.com/guardrails-ai/guardrails" target="_blank" rel="noopener">Guardrails AI</a> — валидаторы вход/выход и структурированный вывод (open-source).</li><li><a href="https://docs.langchain.com/oss/python/langgraph/interrupts" target="_blank" rel="noopener">LangGraph — Human-in-the-loop (Interrupts)</a> — <code>interrupt()</code> + <code>Command(resume)</code>: пауза на approve/edit/reject перед критичным действием.</li><li><a href="https://platform.claude.com/docs/en/agent-sdk/permissions" target="_blank" rel="noopener">Claude Agent SDK — Configure permissions</a> — permission modes (ask/deny/allow), <code>canUseTool</code>, PreToolUse hooks — конкретный механизм HITL/guardrail.</li><li><a href="https://arxiv.org/abs/2212.08073" target="_blank" rel="noopener">Bai et al., 2022 — Constitutional AI</a> — guardrails через принципы (RLAIF): классика alignment.</li><li><a href="https://wandb.ai/site/articles/guardrails-for-ai-agents/" target="_blank" rel="noopener">Weights &amp; Biases — Guardrails for AI agents</a> — практический разбор: типы guardrails, где ставить, эскалация на человека.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Третий путь тренирует 4D: Delegation · Description · Discernment · Diligence.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-07-agent-engineering-07-human-in-the-loop-guardrails-code-test-guardrails-py" open data-test="1"><summary><span class="fname">code/test_guardrails.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>import pytest
+from guardrails import run_action, requires_confirmation, amount_limit, GuardrailError
+
+TOOLS = {
+    "read": lambda **k: "данные",
+    "delete": lambda **k: "удалено",
+    "send_money": lambda amount, to: f"{amount}-&gt;{to}",
+}
+
+
+def test_safe_action_runs_without_confirmation():
+    assert run_action({"tool": "read", "args": {}}, TOOLS) == "данные"
+
+
+def test_dangerous_requires_confirmation():
+    assert requires_confirmation("delete")
+    with pytest.raises(GuardrailError):
+        run_action({"tool": "delete", "args": {}}, TOOLS)            # без confirm
+    assert run_action({"tool": "delete", "args": {}}, TOOLS, confirm=lambda a: True) == "удалено"
+
+
+def test_denied_confirmation_blocks():
+    with pytest.raises(GuardrailError):
+        run_action({"tool": "delete", "args": {}}, TOOLS, confirm=lambda a: False)
+
+
+def test_validator_blocks_out_of_bounds():
+    with pytest.raises(GuardrailError):
+        run_action({"tool": "send_money", "args": {"amount": 500, "to": "X"}},
+                   TOOLS, confirm=lambda a: True, validators=[amount_limit(100)])
+    ok = run_action({"tool": "send_money", "args": {"amount": 50, "to": "X"}},
+                    TOOLS, confirm=lambda a: True, validators=[amount_limit(100)])
+    assert ok == "50-&gt;X"
+
+
+def test_unknown_tool_blocked():
+    with pytest.raises(GuardrailError):
+        run_action({"tool": "nope", "args": {}}, TOOLS)
+</code></pre></details><h3>Эталонное решение (Build It)</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-07-agent-engineering-07-human-in-the-loop-guardrails-code-guardrails-py"><summary><span class="fname">code/guardrails.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Human-in-the-loop и guardrails — Build It для урока 7.3.
+
+Без зависимостей. Между решением агента и действием ставим заслон: опасные
+действия требуют подтверждения человека, а валидаторы проверяют аргументы до
+исполнения. Так автономность не превращается в «удалил прод по галлюцинации».
+"""
+
+# Действия с необратимым/значимым эффектом — требуют подтверждения.
+DANGEROUS = {"delete", "send_money", "send_email", "deploy", "drop_table"}
+
+
+class GuardrailError(Exception):
+    pass
+
+
+def requires_confirmation(tool):
+    return tool in DANGEROUS
+
+
+def run_action(action, tools, confirm=None, validators=None):
+    """Исполнить action={tool, args} через заслоны.
+
+    validators: список callable(action)-&gt;(ok, reason). confirm: callable(action)-&gt;bool.
+    """
+    tool = action["tool"]
+    args = action.get("args", {})
+
+    for validate in (validators or []):                 # 1) валидация аргументов
+        ok, reason = validate(action)
+        if not ok:
+            raise GuardrailError(f"валидация не пройдена: {reason}")
+
+    if requires_confirmation(tool):                     # 2) подтверждение человека
+        if confirm is None or not confirm(action):
+            raise GuardrailError(f"действие '{tool}' не подтверждено")
+
+    if tool not in tools:                               # 3) известный инструмент
+        raise GuardrailError(f"неизвестный инструмент: {tool}")
+    return tools[tool](**args)
+
+
+def amount_limit(max_amount):
+    """Валидатор: запретить перевод сумм больше лимита."""
+    def check(action):
+        amount = action.get("args", {}).get("amount", 0)
+        if amount &gt; max_amount:
+            return False, f"сумма {amount} &gt; лимита {max_amount}"
+        return True, "ok"
+    return check
+
+
+if __name__ == "__main__":
+    tools = {"read": lambda **k: "данные", "send_money": lambda amount, to: f"перевод {amount}→{to}"}
+    print(run_action({"tool": "read", "args": {}}, tools))                      # безопасно
+    # опасное действие с подтверждением и лимитом:
+    print(run_action({"tool": "send_money", "args": {"amount": 50, "to": "Иван"}},
+                     tools, confirm=lambda a: True, validators=[amount_limit(100)]))
+    try:
+        run_action({"tool": "send_money", "args": {"amount": 500, "to": "X"}},
+                   tools, confirm=lambda a: True, validators=[amount_limit(100)])
+    except GuardrailError as e:
+        print("Заблокировано:", e)
+</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-07-agent-engineering-07-human-in-the-loop-guardrails-outputs-guardrails-template-md" open><summary><span class="fname">outputs/guardrails-template.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: шаблон guardrails для агента
+
+Заслоны между решением агента и действием. Код — [`code/guardrails.py`](../code/guardrails.py).
+
+## Уровни защиты (по порядку)
+
+```
+действие агента
+ 1. ВАЛИДАЦИЯ аргументов   → типы, лимиты, разрешённые операции
+ 2. ПОДТВЕРЖДЕНИЕ (HITL)    → для опасных/необратимых действий
+ 3. АВТОРИЗАЦИЯ             → principal имеет право (урок 6.5)
+ 4. ИСПОЛНЕНИЕ + АУДИТ
+```
+
+## Какие действия опасны (требуют подтверждения)
+
+`delete` · `send_money` · `send_email` · `deploy` · `drop_table` · массовые изменения · всё необратимое или с внешним эффектом.
+
+## Шаблон
+
+```python
+from guardrails import run_action, amount_limit
+
+result = run_action(
+    {"tool": "send_money", "args": {"amount": 50, "to": "Иван"}},
+    tools,
+    confirm=ask_human,                 # callable(action)-&gt;bool: пауза на approve/reject
+    validators=[amount_limit(100)],    # проверки до исполнения
+)
+```
+
+## Правила
+
+- **Безопасные действия — без трения**, опасные — только после approve.
+- **Валидируй до подтверждения**: плохие аргументы не должны доходить до человека.
+- **Дешёвый guardrail-модель** отсекает плохое до дорогого вызова (экономия, Фаза 9).
+- **Подтверждение = пауза, а не новый ход**: сохраняй состояние и продолжай (resume).
+- **Аудит** каждого решения (кто, что, разрешено ли); алерты на отказы.
+- Данные из инструментов недоверенные → возможны prompt-инъекции (Фаза 11).
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~5 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    <div class="nav-prevnext" id="prevnext"><a href="../../lessons/agent-memory-and-planning/"><small>← 7.2</small>Память и планирование агента</a><a href="../../lessons/where-agents-break/" style="text-align:right"><small>7.4 →</small>Где агенты ломаются</a></div>
+  </section>
+
+  <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
+
+  <script>window.__BASE__="../../";</script>
+  <script src="../../data.js"></script>
+  <script src="../../progress.js"></script>
+  <script src="../../header.js"></script>
+  <script src="../../app.js"></script>
+</body>
+</html>
