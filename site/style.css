@@ -195,6 +195,25 @@ footer.site { border-top: 1px solid var(--line); color: var(--muted); font-size:
 
 @media (max-width: 760px) {
   .stats, .cycle { grid-template-columns: 1fr 1fr; }
+  .hero { padding: 40px 0 28px; }
   .hero h1 { font-size: 30px; }
-  article.lesson { padding: 18px; }
+  .hero p.lead { font-size: 17px; }
+  article.lesson { padding: 18px 16px; }
+  /* шапка: не фиксируем высоту, чтобы перенос меню не обрезался; уплотняем меню */
+  header.site .row { height: auto; min-height: 58px; padding: 8px 0; flex-wrap: wrap; gap: 6px 14px; }
+  header.site nav { gap: 12px; }
+  header.site nav a { font-size: 14px; }
+  /* таблицы скроллятся внутри своего блока, а не тянут страницу вбок */
+  table { display: block; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  /* prev/next — в столбик, на всю ширину */
+  .nav-prevnext { flex-direction: column; }
+  .nav-prevnext a { max-width: 100%; }
+}
+@media (max-width: 480px) {
+  .container { padding: 0 14px; }
+  .cycle { grid-template-columns: 1fr; }   /* карточки с текстом — в столбик; статистика остаётся 2×2 */
+  .hero h1 { font-size: 26px; }
+  h2.section { font-size: 22px; }
+  article.lesson h1 { font-size: 25px; }
+  article.lesson pre { padding: 12px; }
 }
