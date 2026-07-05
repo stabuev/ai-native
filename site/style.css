@@ -44,7 +44,7 @@ header.site { position: sticky; top: 0; z-index: 10; background: var(--header-bg
 header.site .row { display: flex; align-items: center; gap: 22px; height: 58px; }
 header.site .brand { font-weight: 700; font-size: 18px; color: var(--fg); }
 header.site .brand span { color: var(--accent); }
-header.site nav { display: flex; gap: 18px; margin-left: auto; flex-wrap: wrap; }
+header.site nav { display: flex; align-items: center; gap: 18px; margin-left: auto; flex-wrap: wrap; }
 header.site nav a { color: var(--muted); font-size: 15px; }
 header.site nav a.active, header.site nav a:hover { color: var(--fg); text-decoration: none; }
 .theme-toggle { background: var(--bg3); color: var(--fg); border: 1px solid var(--line);
@@ -68,6 +68,9 @@ header.site nav a.active, header.site nav a:hover { color: var(--fg); text-decor
 
 /* sections */
 section { padding: 40px 0; }
+/* контентные секции — это <section class="container">, и .container обнуляет
+   вертикальный padding секции; возвращаем вертикальный ритм явно */
+section.container { padding-top: 40px; padding-bottom: 4px; }
 h2.section { font-size: 26px; margin: 0 0 18px; }
 .muted { color: var(--muted); }
 
