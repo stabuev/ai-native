@@ -1,11 +1,33 @@
-/* AI Native — статичный сайт курса. Тёмная тема, без зависимостей. */
+/* AI Native — статичный сайт курса. Тёмная + светлая тема, без зависимостей. */
 :root {
+  /* светлая тема — по умолчанию */
+  --bg: #ffffff; --bg2: #f6f8fa; --bg3: #eaeef2;
+  --fg: #1f2328; --muted: #59636e; --line: #d0d7de;
+  --accent: #0a7276; --accent2: #4b45c9;
+  --done: #1a7f37; --plan: #8c959f;
+  --header-bg: rgba(255,255,255,.9);
+  --code-bg: #f6f8fa;
+  --hero-tint: rgba(91,87,224,.10);
+  --btn-fg: #ffffff; --ai-btn-fg: #ffffff;
+  --ok-bg: rgba(26,127,55,.12); --ok-fg: #10682b;
+  --bad-bg: rgba(207,34,46,.10); --bad-fg: #b3262e; --bad-border: #cf222e;
+  --maxw: 1080px;
+}
+/* тёмная тема — включается data-theme="dark" на <html> (см. инлайн-скрипт в <head>) */
+[data-theme="dark"] {
   --bg: #0e1117; --bg2: #161b22; --bg3: #1c2330;
   --fg: #e6edf3; --muted: #9aa7b4; --line: #2a313c;
   --accent: #4cc2c4; --accent2: #7c83ff;
   --done: #3fb950; --plan: #6e7681;
-  --maxw: 1080px;
+  --header-bg: rgba(14,17,23,.85);
+  --code-bg: #0a0d12;
+  --hero-tint: rgba(124,131,255,.18);
+  --btn-fg: #06262a; --ai-btn-fg: #0b0d1a;
+  --ok-bg: rgba(63,185,80,.15); --ok-fg: #b7f0bf;
+  --bad-bg: rgba(240,111,111,.14); --bad-fg: #ffc4c4; --bad-border: #f06f6f;
 }
+html { color-scheme: light; }
+html[data-theme="dark"] { color-scheme: dark; }
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 body {
@@ -17,7 +39,7 @@ a:hover { text-decoration: underline; }
 .container { max-width: var(--maxw); margin: 0 auto; padding: 0 20px; }
 
 /* header */
-header.site { position: sticky; top: 0; z-index: 10; background: rgba(14,17,23,.85);
+header.site { position: sticky; top: 0; z-index: 10; background: var(--header-bg);
   backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
 header.site .row { display: flex; align-items: center; gap: 22px; height: 58px; }
 header.site .brand { font-weight: 700; font-size: 18px; color: var(--fg); }
@@ -25,17 +47,21 @@ header.site .brand span { color: var(--accent); }
 header.site nav { display: flex; gap: 18px; margin-left: auto; flex-wrap: wrap; }
 header.site nav a { color: var(--muted); font-size: 15px; }
 header.site nav a.active, header.site nav a:hover { color: var(--fg); text-decoration: none; }
+.theme-toggle { background: var(--bg3); color: var(--fg); border: 1px solid var(--line);
+  border-radius: 8px; width: 34px; height: 34px; font-size: 15px; line-height: 1; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; padding: 0; }
+.theme-toggle:hover { border-color: var(--accent); }
 
 /* hero */
 .hero { padding: 64px 0 36px; border-bottom: 1px solid var(--line);
-  background: radial-gradient(1200px 400px at 50% -120px, rgba(124,131,255,.18), transparent); }
+  background: radial-gradient(1200px 400px at 50% -120px, var(--hero-tint), transparent); }
 .hero h1 { font-size: 40px; line-height: 1.15; margin: 0 0 12px; }
 .hero p.lead { font-size: 19px; color: var(--muted); max-width: 760px; margin: 0 0 24px; }
 .badges { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 26px; }
 .badge { background: var(--bg3); border: 1px solid var(--line); border-radius: 999px;
   padding: 5px 13px; font-size: 13px; color: var(--muted); }
 .badge b { color: var(--fg); }
-.btn { display: inline-block; background: var(--accent); color: #06262a; font-weight: 600;
+.btn { display: inline-block; background: var(--accent); color: var(--btn-fg); font-weight: 600;
   padding: 11px 20px; border-radius: 8px; border: 0; cursor: pointer; }
 .btn:hover { text-decoration: none; filter: brightness(1.08); }
 .btn.ghost { background: transparent; color: var(--fg); border: 1px solid var(--line); }
@@ -93,7 +119,7 @@ article.lesson h2 { font-size: 21px; margin: 26px 0 10px; border-top: 1px solid 
 article.lesson h3 { font-size: 17px; margin: 18px 0 8px; }
 article.lesson code { background: var(--bg3); padding: 1px 6px; border-radius: 5px; font-size: 13.5px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-article.lesson pre { background: #0a0d12; border: 1px solid var(--line); border-radius: 10px;
+article.lesson pre { background: var(--code-bg); border: 1px solid var(--line); border-radius: 10px;
   padding: 14px 16px; overflow-x: auto; }
 article.lesson pre code { background: none; padding: 0; font-size: 13px; line-height: 1.5; }
 article.lesson blockquote { border-left: 3px solid var(--accent); margin: 14px 0; padding: 4px 16px;
@@ -123,8 +149,8 @@ article.lesson hr { border: 0; border-top: 1px solid var(--line); margin: 22px 0
   border-radius: 8px; padding: 10px 14px; font-size: 15px; cursor: pointer; font-family: inherit; }
 .quiz-opt:hover:not(:disabled) { border-color: var(--accent); }
 .quiz-opt:disabled { cursor: default; opacity: .9; }
-.quiz-opt.ok { border-color: var(--done); background: rgba(63, 185, 80, .15); color: #b7f0bf; }
-.quiz-opt.bad { border-color: #f06f6f; background: rgba(240, 111, 111, .14); color: #ffc4c4; }
+.quiz-opt.ok { border-color: var(--done); background: var(--ok-bg); color: var(--ok-fg); }
+.quiz-opt.bad { border-color: var(--bad-border); background: var(--bad-bg); color: var(--bad-fg); }
 .quiz-exp { margin-top: 9px; padding: 9px 12px; font-size: 14px; color: var(--muted);
   border-left: 3px solid var(--accent); background: var(--bg2); border-radius: 0 8px 8px 0; }
 .quiz-score { margin-top: 12px; font-weight: 700; color: var(--fg); }
@@ -152,7 +178,7 @@ details.filebox[open] > summary { border-bottom: 1px solid var(--line); }
 .lesson-files .three-ways h3 { color: var(--fg); text-transform: none; letter-spacing: 0; font-size: 15px; margin: 14px 0 6px; }
 .lesson-files .three-ways ol { margin: 6px 0; padding-left: 22px; }
 .lesson-files .three-ways li { margin: 6px 0; }
-.lesson-files .ai-prompt-btn { background: var(--accent2); color: #0b0d1a; border: 0; border-radius: 7px;
+.lesson-files .ai-prompt-btn { background: var(--accent2); color: var(--ai-btn-fg); border: 0; border-radius: 7px;
   padding: 3px 11px; font-size: 12.5px; font-weight: 600; cursor: pointer; font-family: inherit; margin-left: 4px; }
 .lesson-files .ai-prompt-btn:hover { filter: brightness(1.08); }
 .lesson-files .ai-prompt-btn.copied { background: var(--done); color: #06262a; }

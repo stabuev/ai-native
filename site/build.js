@@ -365,6 +365,7 @@ function staticLessonHtml(l, prev, next) {
   <meta property="og:url" content="${url}">
   <meta property="og:image" content="${SITE_ORIGIN}${DEPLOY_BASE}og-image.png">
   <meta name="twitter:card" content="summary_large_image">
+  <script>(function(){try{var t=localStorage.getItem("theme")||"light";document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
   <link rel="stylesheet" href="../../style.css">
 </head>
 <body data-page="lesson" data-lesson-id="${l.id}">

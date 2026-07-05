@@ -17,7 +17,23 @@
        <a class="brand" href="${B}index.html">AI <span>Native</span></a>
        <nav>${nav}
          <a href="https://github.com/stabuev/ai-native" target="_blank" rel="noopener">GitHub</a>
+         <button type="button" class="theme-toggle" aria-label="Переключить тему"></button>
        </nav>
      </div>`;
   document.body.insertBefore(el, document.body.firstChild);
+
+  // переключатель темы: тёмная ↔ светлая, выбор запоминается в localStorage
+  const toggle = el.querySelector(".theme-toggle");
+  const isDark = () => document.documentElement.getAttribute("data-theme") === "dark"; // свет — дефолт
+  const paint = () => {
+    toggle.textContent = isDark() ? "☀" : "☾";
+    toggle.title = isDark() ? "Светлая тема" : "Тёмная тема";
+  };
+  paint();
+  toggle.addEventListener("click", () => {
+    const next = isDark() ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    try { localStorage.setItem("theme", next); } catch (e) { /* приватный режим */ }
+    paint();
+  });
 })();
