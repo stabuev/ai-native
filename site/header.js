@@ -17,8 +17,8 @@
        <a class="brand" href="${B}index.html">AI <span>Native</span></a>
        <nav>${nav}
          <a href="https://github.com/stabuev/ai-native" target="_blank" rel="noopener">GitHub</a>
-         <button type="button" class="theme-toggle" aria-label="Переключить тему"></button>
        </nav>
+       <button type="button" class="theme-toggle" aria-label="Переключить тему"></button>
      </div>`;
   document.body.insertBefore(el, document.body.firstChild);
 
