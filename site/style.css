@@ -65,6 +65,8 @@ header.site nav a.active, header.site nav a:hover { color: var(--fg); text-decor
   padding: 11px 20px; border-radius: 8px; border: 0; cursor: pointer; }
 .btn:hover { text-decoration: none; filter: brightness(1.08); }
 .btn.ghost { background: transparent; color: var(--fg); border: 1px solid var(--line); }
+.hero-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.hero-actions .btn { text-align: center; }
 
 /* sections */
 section { padding: 40px 0; }
@@ -216,6 +218,9 @@ footer.site { border-top: 1px solid var(--line); color: var(--muted); font-size:
   .cycle { grid-template-columns: 1fr; }   /* карточки с текстом — в столбик; статистика остаётся 2×2 */
   .hero h1 { font-size: 26px; }
   h2.section { font-size: 22px; }
+  /* кнопки hero — в столбик, равной ширины, с зазором */
+  .hero-actions { flex-direction: column; }
+  .hero-actions .btn { width: 100%; }
   article.lesson h1 { font-size: 25px; }
   article.lesson pre { padding: 12px; }
 }
