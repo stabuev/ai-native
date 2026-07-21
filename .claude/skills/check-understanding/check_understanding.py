@@ -510,7 +510,10 @@ def grade(answers, bank) -> dict:
             {"competency": name, **RETRY_TASKS[name]}
             for name in retry_competencies
         ],
-        "assessment_note": "Квиз подтверждает понимание сценариев, но не заменяет артефакт и практику фазы.",
+        "assessment_note": (
+            "Квиз показывает применение механизма в нескольких сценариях, но не заменяет "
+            "артефакт, практику фазы или более широкую оценку навыка."
+        ),
     }
 
 
@@ -539,12 +542,53 @@ def run_quiz(phase: int, answers, baseline: dict[str, float] | None = None) -> d
     result["phase"] = phase
     if baseline is not None:
         result["progress"] = compare_with_baseline(result, baseline)
+        result["progress_note"] = (
+            "Изменение по компетенции — ориентир между малым числом разных сценариев, "
+            "а не точное измерение прироста навыка."
+        )
     return result
 
 
-if __name__ == "__main__":
+def _parse_answers(raw: str) -> list[int]:
+    try:
+        answers = [int(value.strip()) for value in raw.split(",") if value.strip()]
+    except ValueError as exc:
+        raise ValueError("ответы должны быть индексами через запятую, например 2,0,3,1") from exc
+    if not answers:
+        raise ValueError("список ответов не может быть пустым")
+    return answers
+
+
+def main(argv=None) -> int:
+    """CLI для запуска движка по абсолютному пути из любого рабочего каталога."""
+    import argparse
     import json
 
-    bank = BANKS[1]
-    perfect = [item["correct"] for item in bank]
-    print(json.dumps(run_quiz(1, perfect), ensure_ascii=False, indent=2))
+    parser = argparse.ArgumentParser(description="Выходная сценарная проверка AI Native")
+    parser.add_argument("--phase", type=int, required=True, choices=sorted(BANKS))
+    parser.add_argument(
+        "--answers",
+        required=True,
+        help="индексы ответов через запятую в исходном порядке",
+    )
+    parser.add_argument(
+        "--baseline-json",
+        help="необязательный JSON-объект baseline_competencies из персонального маршрута",
+    )
+    args = parser.parse_args(argv)
+
+    try:
+        answers = _parse_answers(args.answers)
+        baseline = json.loads(args.baseline_json) if args.baseline_json else None
+        if baseline is not None and not isinstance(baseline, dict):
+            raise ValueError("baseline-json должен содержать JSON-объект")
+        result = run_quiz(args.phase, answers, baseline=baseline)
+    except (ValueError, KeyError, json.JSONDecodeError) as exc:
+        parser.error(str(exc))
+
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

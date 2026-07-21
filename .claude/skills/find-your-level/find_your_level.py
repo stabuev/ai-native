@@ -3,13 +3,16 @@
 Это не экзамен и не присвоение квалификации. Диагностика сочетает:
 
 * самооценку через наблюдаемые действия по фазам 0–11;
-* короткие сценарные задания по контрольным фазам 1, 4 и 8;
+* адаптивные сценарные задания по контрольным фазам 1, 4 и 8;
 * консервативный маршрут без автоматического пропуска фаз.
 
 Сценарии используют ту же карту компетенций, что и выходная проверка
 ``check_understanding.py``, но не повторяют её вопросы.
 """
 from __future__ import annotations
+
+import json
+import math
 
 
 def _self_check(phase: int, name: str, question: str, options: list[str]) -> dict:
@@ -29,7 +32,7 @@ SELF_ASSESSMENT = [
         "Самостоятельно настраиваю окружение, секреты и запускаю агента.",
         "Диагностирую ошибки настройки и могу объяснить безопасный способ команде.",
     ]),
-    _self_check(1, "Как работают LLM", "Что ты можешь сделать, когда ответ модели дорогой, нестабильный или сомнительный?", [
+    _self_check(1, "Как работает языковая модель (LLM)", "Что ты можешь сделать, когда ответ модели дорогой, нестабильный или сомнительный?", [
         "Пока ориентируюсь только по тому, нравится ли мне ответ.",
         "Могу примерно объяснить ограничения, но не умею их измерять.",
         "Считаю единицы текста модели, управляю вариативностью и проверяю факты.",
@@ -59,13 +62,13 @@ SELF_ASSESSMENT = [
         "Фиксирую единицу анализа, проверяю запрос и сверяю ключевые показатели.",
         "Строю автоматические проверки данных, запросов, аномалий и отчётов.",
     ]),
-    _self_check(6, "Инструменты и MCP", "Как ты подключаешь модель к внешним действиям и данным?", [
+    _self_check(6, "Инструменты и внешние данные", "Как ты подключаешь модель к внешним действиям и данным?", [
         "Пока использую только обычный чат.",
         "Подключал готовый инструмент по инструкции.",
         "Описываю инструменты, обрабатываю их вызовы и ограничиваю доступ.",
         "Поднимаю и тестирую собственный сервер инструментов с контролем ошибок и прав.",
     ]),
-    _self_check(7, "Agent Engineering", "Что происходит, если агент ошибается или зацикливается?", [
+    _self_check(7, "Надёжность агента", "Что происходит, если агент ошибается или зацикливается?", [
         "Останавливаю его вручную и начинаю заново.",
         "Задаю лимит шагов и иногда прошу подтверждение.",
         "Проектирую цикл действий, состояние, точки подтверждения и обработку сбоев.",
@@ -77,19 +80,19 @@ SELF_ASSESSMENT = [
         "Декомпозирую независимые части, изолирую работу и свожу краткие результаты.",
         "Проектирую общий контекст, разрешение конфликтов и выбираю движок под процесс.",
     ]),
-    _self_check(9, "FinOps", "Как ты управляешь стоимостью решения на моделях?", [
+    _self_check(9, "Стоимость моделей (FinOps)", "Как ты управляешь стоимостью решения на моделях?", [
         "Смотрю на счёт постфактум.",
         "Примерно оцениваю объём запросов.",
         "Считаю вход, выход и число вызовов, затем выбираю модель под сложность.",
         "Использую маршрутизацию, кэширование и бюджет с контролем качества.",
     ]),
-    _self_check(10, "Production", "Что ты можешь узнать о сбое рабочего ИИ-процесса?", [
+    _self_check(10, "Рабочая эксплуатация (Production)", "Что ты можешь узнать о сбое рабочего ИИ-процесса?", [
         "Только то, что пользователь сообщил об ошибке.",
         "Сохраняю отдельные логи вручную.",
         "Записываю версии, входы, шаги, задержку, токены и стоимость запуска.",
         "Настраиваю наблюдаемость, воспроизведение и оповещения по качеству и бюджету.",
     ]),
-    _self_check(11, "Безопасность и governance", "Как ты решаешь, какие данные и действия можно доверить ИИ?", [
+    _self_check(11, "Безопасность и правила (governance)", "Как ты решаешь, какие данные и действия можно доверить ИИ?", [
         "Ориентируюсь на здравый смысл в каждом отдельном случае.",
         "Не отправляю очевидные секреты, но формальных правил нет.",
         "Классифицирую данные, ограничиваю действия и проверяю важные утверждения.",
@@ -308,7 +311,18 @@ PHASES = [
     (9, "FinOps", 14), (10, "Production", 16), (11, "Этика и governance", 14), (12, "Capstone", 30),
 ]
 
-_FACTOR = {"focus": 1.0, "refresh": 0.5, "challenge": 0.25}
+_EFFORT = {
+    "focus": "полное прохождение",
+    "refresh": "сжатое повторение + практика",
+    "challenge": "проверка + артефакт до повторения",
+}
+
+# Это диапазоны планирования, а не измеренная скорость конкретного студента.
+_TIME_FACTOR_RANGE = {
+    "focus": (0.85, 1.15),
+    "refresh": (0.35, 0.65),
+    "challenge": (0.15, 0.35),
+}
 
 
 def _validate_choices(answers, size: int, option_count: int = 4) -> list[int]:
@@ -327,6 +341,16 @@ def self_profile(answers) -> dict[int, int]:
         item["phase"]: item["options"][choice][1]
         for item, choice in zip(SELF_ASSESSMENT, answers)
     }
+
+
+def suggested_baseline_phases(self_answers) -> list[int]:
+    """Возвращает контрольные фазы, где заявленный опыт стоит проверить сценарием.
+
+    Новичку не нужно отвечать на вопросы из ещё не изученных продвинутых фаз. Форма A
+    предлагается только при самооценке 2..3 либо по явному желанию студента.
+    """
+    ratings = self_profile(self_answers)
+    return [phase for phase in BASELINE_BANKS if ratings[phase] >= 2]
 
 
 def grade_baseline(phase: int, answers) -> dict:
@@ -370,12 +394,19 @@ def _profile_label(ratings: dict[int, int]) -> str:
     return "Опыт широкий — подтверждай его практикой"
 
 
+def _hours_range(base_hours: int, action: str) -> list[int]:
+    low_factor, high_factor = _TIME_FACTOR_RANGE[action]
+    low = max(1, math.floor(base_hours * low_factor))
+    high = max(low, math.ceil(base_hours * high_factor))
+    return [low, high]
+
+
 def route(self_answers, baseline_answers: dict[int, list[int]] | None = None) -> dict:
     """Строит маршрут по фазам без автоматического ``skip``.
 
-    ``baseline_answers`` — ответы формы A для фаз 1, 4 и 8. Только сценарное
-    доказательство может перевести контрольную фазу в ``challenge``. Для остальных
-    фаз уверенная самооценка даёт лишь ``refresh``.
+    ``baseline_answers`` — ответы формы A для выбранных фаз 1, 4 и 8. Только сценарное
+    доказательство может перевести контрольную фазу в ``challenge``. Без формы A
+    уверенная самооценка даёт не больше чем ``refresh``.
     """
     ratings = self_profile(self_answers)
     baseline_answers = baseline_answers or {}
@@ -385,7 +416,7 @@ def route(self_answers, baseline_answers: dict[int, list[int]] | None = None) ->
     }
 
     plan = []
-    total_hours = 0.0
+    total_hours_range = [0, 0]
     for phase, name, base_hours in PHASES:
         if phase == 12:
             action = "focus"
@@ -393,8 +424,12 @@ def route(self_answers, baseline_answers: dict[int, list[int]] | None = None) ->
         elif phase in BASELINE_BANKS:
             evidence = baseline_results.get(phase)
             if evidence is None:
-                action = "focus"
-                reason = "Нет сценарного доказательства по этой фазе."
+                if ratings[phase] >= 2:
+                    action = "refresh"
+                    reason = "Заявлен практический опыт, но сценарная проверка не проводилась."
+                else:
+                    action = "focus"
+                    reason = "Практического опыта пока недостаточно для сокращённого маршрута."
             elif evidence["strong_evidence"]:
                 action = "challenge"
                 reason = "Все входные сценарии решены; начни с итоговой проверки и артефакта фазы."
@@ -413,13 +448,15 @@ def route(self_answers, baseline_answers: dict[int, list[int]] | None = None) ->
                 action = "focus"
                 reason = "Практического опыта пока недостаточно для сокращённого маршрута."
 
-        hours = round(base_hours * _FACTOR[action], 1)
-        total_hours += hours
+        hours_range = _hours_range(base_hours, action)
+        total_hours_range[0] += hours_range[0]
+        total_hours_range[1] += hours_range[1]
         plan.append({
             "phase": phase,
             "name": name,
             "action": action,
-            "hours": hours,
+            "effort": _EFFORT[action],
+            "hours_range": hours_range,
             "reason": reason,
         })
 
@@ -440,7 +477,8 @@ def route(self_answers, baseline_answers: dict[int, list[int]] | None = None) ->
     return {
         "profile": _profile_label(ratings),
         "profile_note": "Это описание маршрута, а не квалификация или допуск к работе.",
-        "total_hours": round(total_hours, 1),
+        "total_hours_range": total_hours_range,
+        "planning_note": "Диапазоны времени — грубый ориентир для календаря, а не обещание скорости.",
         "self_ratings": ratings,
         "baseline": baseline_results,
         "baseline_competencies": {
@@ -453,12 +491,168 @@ def route(self_answers, baseline_answers: dict[int, list[int]] | None = None) ->
     }
 
 
-if __name__ == "__main__":
-    import json
+def render_route_markdown(
+    result: dict,
+    agent: str = "<Claude Code / Cursor / Codex>",
+    workspace: str = "<абсолютный путь>",
+    work_task: str = "<задача из карты 0.1 / нет задачи для агента>",
+    success_criterion: str = "<критерий из той же карточки / не применимо>",
+    agent_role: str = "<рабочий кандидат / только среда курса>",
+) -> str:
+    """Рендерит переносимый маршрут без ложной точности до десятых часа."""
+    total_low, total_high = result["total_hours_range"]
+    lines = [
+        "# Персональный маршрут AI Native",
+        "",
+        f"- **Агент:** {agent}",
+        f"- **Рабочая папка:** {workspace}",
+        f"- **Сквозная задача из 0.1:** {work_task}",
+        f"- **Критерий успеха:** {success_criterion}",
+        f"- **Роль агента:** {agent_role}",
+        f"- **Профиль:** {result['profile']}",
+        f"- **Ориентир:** {total_low}–{total_high} ч",
+        "",
+        f"> {result['profile_note']} {result['planning_note']}",
+        "",
+        "## Маршрут",
+        "",
+        "| Фаза | Действие | Ориентир | Причина |",
+        "|---:|---|---:|---|",
+    ]
+    for item in result["plan"]:
+        low, high = item["hours_range"]
+        reason = item["reason"].replace("|", "/")
+        lines.append(
+            f"| {item['phase']} · {item['name']} | {item['action']} | {low}–{high} ч | {reason} |"
+        )
 
-    self_answers = [2, 3, 2, 1, 2, 2, 1, 1, 3, 1, 1, 2]
-    baseline_answers = {
-        phase: [item["correct"] for item in bank]
-        for phase, bank in BASELINE_BANKS.items()
-    }
-    print(json.dumps(route(self_answers, baseline_answers), ensure_ascii=False, indent=2))
+    lines.extend([
+        "",
+        "`challenge` — это вход через проверку и артефакт, а не автоматический пропуск.",
+    ])
+    if result["baseline"]:
+        lines.extend([
+            "",
+            "## Пройденные входные сценарии",
+            "",
+            "| Фаза | Результат | Интерпретация |",
+            "|---:|---:|---|",
+        ])
+        for phase, evidence in sorted(result["baseline"].items()):
+            interpretation = (
+                "можно начать с контрольной попытки"
+                if evidence["strong_evidence"]
+                else "использовать пробелы для выбора глубины повторения"
+            )
+            lines.append(
+                f"| {phase} | {evidence['correct']} из {evidence['total']} | {interpretation} |"
+            )
+        lines.extend([
+            "",
+            "Один входной сценарий на компетенцию показывает направление, но не является точным измерением навыка.",
+            "",
+            "### baseline_competencies",
+            "",
+            "```json",
+            json.dumps(result["baseline_competencies"], ensure_ascii=False, indent=2),
+            "```",
+        ])
+
+    lines.extend([
+        "",
+        "## Следующий шаг",
+        "",
+        "Пройти урок 0.4 и пересмотреть маршрут после первой контрольной фазы.",
+        "",
+    ])
+    return "\n".join(lines)
+
+
+def _ask_choice(prompt: str, options: list[str]) -> int:
+    print(f"\n{prompt}")
+    for index, option in enumerate(options):
+        print(f"  {index}. {option}")
+    while True:
+        raw = input("Выбери 0–3: ").strip()
+        if raw in {"0", "1", "2", "3"}:
+            return int(raw)
+        print("Нужен номер варианта от 0 до 3.")
+
+
+def _ask_yes_no(prompt: str) -> bool:
+    while True:
+        raw = input(f"{prompt} [y/N]: ").strip().lower()
+        if raw in {"", "n", "no", "нет"}:
+            return False
+        if raw in {"y", "yes", "да", "д"}:
+            return True
+        print("Ответь y/да или n/нет.")
+
+
+def run_interactive() -> dict:
+    """Проводит адаптивную диагностику в терминале без агента и сети."""
+    print("AI Native: входная диагностика. Это планирование, а не экзамен.")
+    self_answers = []
+    for item in SELF_ASSESSMENT:
+        options = [label for label, _ in item["options"]]
+        self_answers.append(_ask_choice(f"Фаза {item['phase']} · {item['name']}\n{item['q']}", options))
+
+    baseline_answers = {}
+    for phase in suggested_baseline_phases(self_answers):
+        if not _ask_yes_no(
+            f"Ты заявил опыт по фазе {phase}. Пройти короткие сценарии для возможного challenge?"
+        ):
+            continue
+        baseline_answers[phase] = [
+            _ask_choice(item["q"], item["options"])
+            for item in BASELINE_BANKS[phase]
+        ]
+    return route(self_answers, baseline_answers)
+
+
+def main(argv=None) -> int:
+    import argparse
+    from pathlib import Path
+
+    parser = argparse.ArgumentParser(description="Адаптивная входная диагностика курса AI Native")
+    parser.add_argument("--interactive", action="store_true", help="задать вопросы в терминале")
+    parser.add_argument("--output", help="сохранить Markdown-маршрут в этот файл")
+    parser.add_argument("--agent", default="offline / укажи после установки")
+    parser.add_argument("--workspace", default="текущая папка")
+    parser.add_argument(
+        "--work-task",
+        default="не указана — добавь задачу из карты 0.1 или отметь, что её нет",
+    )
+    parser.add_argument(
+        "--success-criterion",
+        default="не указан — перенеси из той же карточки 0.1",
+    )
+    parser.add_argument(
+        "--agent-role",
+        default="только среда курса — уточни после сверки с картой 0.1",
+    )
+    args = parser.parse_args(argv)
+    if not args.interactive:
+        parser.error("укажи --interactive")
+
+    result = run_interactive()
+    markdown = render_route_markdown(
+        result,
+        agent=args.agent,
+        workspace=args.workspace,
+        work_task=args.work_task,
+        success_criterion=args.success_criterion,
+        agent_role=args.agent_role,
+    )
+    if args.output:
+        output = Path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(markdown, encoding="utf-8")
+        print(f"Маршрут сохранён: {output}")
+    else:
+        print("\n" + markdown)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
