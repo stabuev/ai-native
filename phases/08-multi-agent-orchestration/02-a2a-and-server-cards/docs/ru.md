@@ -1,0 +1,136 @@
+# Урок 8.2 · A2A и MCP Server Cards
+
+**Фаза 8 — Мульти-агенты и оркестрация** · **Результат фазы:** Построить мульти-агентный процесс с оркестратором и передачей контекста.
+<!-- exercise -->
+
+**Requires (только для USE IT):** A2A-совместимый агент/SDK. BUILD IT работает офлайн, без ключей и без сети.
+
+**В 8.1 субагенты были «вшиты» в оркестратор.** Но в реальности агенты пишут разные команды на разных фреймворках — и они должны находить друг друга и передавать задачи **без ручной интеграции**. Это та же проблема, что решал MCP для инструментов (6.2), только теперь для агентов.
+
+> **MOTTO.** Чтобы агенты сотрудничали, им нужен общий язык: карточки возможностей + конверт задачи.
+
+## PROBLEM
+
+Твой агент умеет ресёрч, агент соседней команды — генерацию SQL, сторонний сервис — поиск по документам. Чтобы твой агент позвал чужой, без стандарта пришлось бы писать интеграцию под каждый: его адрес, его формат запроса, его авторизацию. N агентов × M интеграций — снова хаос, как было с инструментами до MCP.
+
+**A2A (agent-to-agent)** решает это так же, как MCP: стандартом. Агент публикует **карточку** (Agent Card) — кто он и что умеет, — другой агент находит её и шлёт **задачу** в стандартном конверте. Собрав discovery + handoff руками, увидим механику.
+
+## CONCEPT
+
+### Интуиция
+
+A2A — это **визитки и бланк заявки** в мире агентов. У каждого агента есть визитка с навыками («умею SQL», «умею поиск по докам») и адресом. Хочешь делегировать — смотришь визитки, выбираешь подходящего по навыку, отправляешь ему **заявку стандартного образца** (задача), получаешь **результат стандартного образца** (артефакт). Не нужно знать его внутреннее устройство — только читать визитку и заполнять бланк.
+
+Ключевое разделение: **MCP** соединяет агента с **инструментами**, **A2A** — агента с **агентом**. По формулировке стандарта: «MCP is for agent-to-tool communication, A2A is for agent-to-agent communication». Оба стоят на JSON-RPC/HTTP и discovery через карточки — это два слоя одной идеи.
+
+### Как это работает
+
+```
+Agent Card (JSON): {name, skills, endpoint, auth}   ← discovery (визитка)
+        │ find_agent: подобрать по навыкам
+        ▼
+Task (id, message) ──► agent ──► Artifact (результат)   ← A2A-конверт
+```
+
+- `AgentCard(name, skills, handler)` — карточка возможностей агента.
+- `find_agent(task, cards)` — discovery: подобрать агента, чьи навыки лучше всего покрывают задачу.
+- `send_task(task, card)` — отправить задачу и вернуть **конверт результата** (`status`, `agent`, `result`); нет агента → `status: no_agent`.
+- `route_and_run(task, cards)` — найти и выполнить за один шаг.
+
+В проде карточка лежит по «известному адресу» (`/.well-known/agent-card.json`), а конверт — это объекты `Task` / `Message` / `Artifact`. Наш матч по навыкам наивный (ключевые слова); настоящий A2A матчит по структурированным capability-картам.
+
+## РАЗБОР ПО ШАГАМ
+
+Две карточки и три задачи:
+
+```
+sql-agent : skills = [sql, база, запрос]      handler → "SELECT ..."
+doc-agent : skills = [документ, поиск, rag]    handler → "найдено 3 документа"
+```
+
+`route_and_run` для каждой задачи делает discovery → handoff:
+
+```
+1. "сделай sql запрос"
+   слова {сделай, sql, запрос} ∩ sql-agent [sql,база,запрос] = {sql,запрос} → 2
+                                ∩ doc-agent = {}                              → 0
+   find_agent → sql-agent → send_task → {status:done, agent:"sql-agent", result:"SELECT ..."}
+
+2. "поиск по документам"
+   ∩ doc-agent [документ,поиск,rag] = {поиск} → 1 (выигрывает)
+   → {status:done, agent:"doc-agent", result:"найдено 3 документа"}
+
+3. "нарисуй картинку"
+   ∩ обоих = {} → 0 → find_agent = None
+   → send_task(None) → {status:"no_agent", result:None}
+```
+
+Видно две фазы A2A: **discovery** (по карточкам выбрали, кто умеет) и **handoff** (отдали задачу, получили конверт результата). Незнакомая задача честно даёт `no_agent`, а не падает. Это та же идея, что discovery в MCP (6.3), только подбирается **агент**, а не инструмент. Поменяй наивный матч на capability-карты и HTTP — протокол тот же.
+
+## BUILD IT
+
+**Задание: собери A2A-discovery и handoff** — карточки агентов, подбор по навыкам, конверт задачи. Только стандартная библиотека, без сети.
+
+> **Перед запуском.** Работай в своей папке курса (`ai-native/8.2-a2a/`), а файлы урока клади в подпапку `code/` (по соглашению курса). Нужен только **Python 3** (для теста ещё `pytest`).
+
+Создай файл `a2a.py`:
+
+- **`AgentCard(name, skills, handler)`** — dataclass карточки (навыки — список слов, `handler` — функция-исполнитель).
+- **`find_agent(task, cards)`** — вернуть карточку с наибольшим числом навыков, встречающихся в словах задачи; нет совпадений → `None`.
+- **`send_task(task, card)`** — если `card is None` → `{"status": "no_agent", "task", "result": None}`; иначе `{"status": "done", "agent": card.name, "task", "result": card.handler(task)}`.
+- **`route_and_run(task, cards)`** — `send_task(task, find_agent(task, cards))`.
+
+**Готово, когда** все тесты в `test_a2a.py` зелёные — они проверяют: `find_agent` матчит по навыкам (sql-задача → sql-agent); нет совпадений → `None`; `send_task` собирает конверт с результатом; нет агента → `status: no_agent`; `route_and_run` работает end-to-end.
+
+```bash
+pytest code -q      # красное → реализуй A2A → зелёное
+python code/a2a.py  # демо: sql → sql-agent, поиск → doc-agent, картинка → нет агента
+```
+
+**Подсказка.** Слова задачи — `set(task.lower().split())`. Score карточки — `sum(1 for skill in card.skills if skill in words)`. Конверт — обычный словарь со `status`.
+
+Внизу, в [«Исходниках урока»](#lesson-files), — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.
+
+## USE IT
+
+Автообнаружение агентов и инструментов — готовыми стандартами (мульти-платформа):
+
+- **A2A Protocol** — открытый стандарт agent-to-agent; Google разработал и **передал его Linux Foundation** (TSC из AWS, Cisco, Google, IBM, Microsoft, Salesforce, SAP, ServiceNow). Agent Card по `/.well-known/agent-card.json`, объекты `Task` / `Message` / `Artifact`, транспорт JSON-RPC over HTTP + стриминг через SSE, enterprise-аутентификация и мульти-тенантность.
+- **MCP discovery** — `tools/list` и server cards: клиент сам узнаёт, что умеет сервер (6.3).
+- Комбинация: **MCP даёт агенту инструменты, A2A оркеструет агентов между собой** — два слоя одной системы.
+
+## SHIP IT
+
+**Артефакт:** Схема A2A-взаимодействия → [`outputs/a2a-schema.md`](../outputs/a2a-schema.md)
+
+Схема: карточки агентов твоего процесса, какие навыки, как находят друг друга, формат задачи. Дальше: как агенты делят общий контекст и не конфликтуют (8.3), когда вообще нужен фреймворк (8.4).
+
+## ЧАСТЫЕ ОШИБКИ
+
+- **Жёстко прописывать адреса агентов вместо discovery.** Смысл A2A — найти агента по карточке навыков, как в MCP `tools/list`. Хардкод ломает переносимость и связывает команды намертво.
+- **Путать A2A и MCP.** MCP — агент↔инструменты, A2A — агент↔агент. Это разные слои: один даёт агенту руки, другой связывает агентов между собой.
+- **Возвращать сырой результат вместо конверта.** Ответ идёт в стандартном виде (`Task`/`Artifact`, у нас — словарь со `status`), чтобы вызывающий одинаково обрабатывал успех, отказ и «нет агента».
+- **Не обрабатывать «нет подходящего агента».** Если ни одна карточка не подходит, верни `no_agent`, а не падай. Делегирование может промахнуться — это нормальный исход.
+- **Навыки карточки одним словом или слишком общо.** Скудные навыки → discovery промахивается. Описывай возможности так, чтобы по ним можно было точно выбрать агента (как `description` скилла в 4.1).
+
+## ПРОВЕРЬ СЕБЯ
+
+Ответь на вопросы — проверка сразу, с пояснением.
+
+{{quiz}}
+
+## Материалы
+
+- [A2A Protocol](https://a2a-protocol.org/latest/) — стандарт agent-to-agent (карточки, Task/Artifact).
+- [a2aproject/A2A](https://github.com/a2aproject/A2A) — спецификация и реализации.
+- [MCP — Specification](https://modelcontextprotocol.io/specification/2025-11-25) — discovery и server cards.
+- [Google — Announcing the Agent2Agent Protocol (A2A)](https://developers.googleblog.com/en/a2a-a-new-era-of-agent-interoperability/) — первоисточник (апр. 2025; 50+ партнёров, ныне под Linux Foundation).
+- [A2A — A2A and MCP: Detailed Comparison](https://a2a-protocol.org/latest/topics/a2a-and-mcp/) — вертикаль (agent↔tool, MCP) vs горизонталь (agent↔agent, A2A); аналогия автосервиса.
+- [A2A — Agent Discovery (Agent Card)](https://a2a-protocol.org/latest/topics/agent-discovery/) — `/.well-known/agent-card.json`: автообнаружение агентов и их навыков.
+- [Ehtesham et al., 2025 — A Survey of Agent Interoperability Protocols](https://arxiv.org/abs/2505.02279) — карта ландшафта: MCP / ACP / A2A / ANP и когда что.
+- [Red Hat — How to enhance A2A security](https://developers.redhat.com/articles/2025/08/19/how-enhance-agent2agent-security) — TLS 1.3, аутентификация Agent Card, out-of-band креды.
+- [Google Codelab — Getting Started with A2A](https://codelabs.developers.google.com/intro-a2a-purchasing-concierge) — hands-on: purchasing concierge + remote seller.
+- [Anil Jain — Agentic MCP and A2A Architecture (Medium)](https://medium.com/@anil.jain.baba/agentic-mcp-and-a2a-architecture-a-comprehensive-guide-0ddf4359e152) — комплексный разбор связки.
+
+---
+**Часы:** ~5 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**

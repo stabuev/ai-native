@@ -8,20 +8,26 @@
 - **Аудитория:** техническая (нужно уметь хотя бы немного программировать).
 - **Объём:** 13 фаз · 59 уроков · ~228 часов.
 
-## Цикл урока
+## Конструктор урока
 
-`MOTTO` → `PROBLEM` → `CONCEPT` → `BUILD IT` (с нуля, без фреймворков) → `USE IT` (то же в реальном инструменте) → `SHIP IT` (артефакт: prompt · skill · agent · MCP).
+Build It / Use It / Ship It задаёт возможную логику, а не обязательное оглавление.
+Конкретный урок использует только те блоки, практику и проверку, которые нужны его
+результату; подробнее — в [`LESSON_CONTRACT.md`](LESSON_CONTRACT.md).
 
 ## Структура репозитория
 
 ```
-phases/<NN>-<phase>/<NN>-<lesson>/
-├── code/      исполняемый код (Build It + Use It) + тесты
-├── docs/ru.md разбор урока по 6 шагам
-└── outputs/   артефакт урока (prompt · skill · agent · MCP)
+phases/<PP>-<phase>/<LL>-<lesson>/
+├── docs/ru.md обязательный материал урока
+├── code/      опционально: исполняемая практика + тесты
+├── outputs/   опционально: переиспользуемый артефакт
+└── quiz.json  опционально: диагностический квиз
 .claude/skills/lesson-author/   скилл для написания уроков в Claude Code
 CLAUDE.md                       инструкции проекта для Claude Code
 ```
+
+`PP` — двухзначный номер фазы, `LL` — двухзначный порядковый номер урока внутри
+фазы. Например, урок 4.3 лежит в `phases/04-…/03-…`.
 
 ## Результаты обучения
 
@@ -47,7 +53,8 @@ CLAUDE.md                       инструкции проекта для Claud
 ## Оценивание (self-paced)
 
 - Код-артефакты — самопроверка юнит-тестами и проверочными наборами из урока.
-- Теория — квиз /check-understanding после ключевых фаз: 1, 4, 8.
+- Понимание — сценарная форма `/check-understanding` после ключевых фаз 1, 4 и 8:
+  результат по каждому уроку, сравнение с входной формой и открытая повторная попытка.
 - Каждая фаза закрывается рефлексией: сверка с результатом фазы (learning outcome).
 - Финал — защита Capstone: демо процесса и метрики «до/после» (время, качество, стоимость).
 - Видео в курсе нет: материалы текстовые и кодовые, акцент на самостоятельную сборку и автопроверку.
@@ -92,7 +99,7 @@ CLAUDE.md                       инструкции проекта для Claud
 
 > _Сначала рабочее место, потом работа._
 
-**Цель.** Поднять окружение, ключи и агента; собрать карту инструментов и найти свой уровень.
+**Цель.** Поднять окружение, ключи и агента; собрать карту инструментов и построить входной профиль по фазам.
 
 **Результат фазы.** Настроить окружение, ключи и агента; осознанно выбрать модель под задачу.
 
@@ -100,10 +107,10 @@ CLAUDE.md                       инструкции проекта для Claud
 
 | # | Урок | Build It | Use It | Ship It | Папка |
 |---|---|---|---|---|---|
-| 0.1 | Карта инструментов ИИ 2026 | Сравнительная таблица моделей под свои задачи | Claude (Opus 4.8 / Mythos), GPT-5.x, Gemini, Copilot, Perplexity | Личная матрица «задача → модель» | `phases/00-setup-and-tooling/00-ai-tools-map` |
-| 0.2 | Аккаунты, тарифы, API-ключи, окружение | Python venv, .env, первый запрос к API | Консоли Anthropic / OpenAI / Google | Готовое окружение + проверочный скрипт | `phases/00-setup-and-tooling/00-accounts-keys-env` |
-| 0.3 | Агент и SkillKit | Установка агента (Claude/Cursor/Codex) со SkillKit | Запуск /find-your-level | Персональный маршрут с оценкой часов | `phases/00-setup-and-tooling/00-agent-and-skillkit` |
-| 0.4 | Соглашения курса | Структура папок phases/<NN>/<lesson>/ (code, docs, outputs) | Шаблон урока и сдачи артефактов | Заготовка репозитория курса | `phases/00-setup-and-tooling/00-course-conventions` |
+| 0.1 | Карта инструментов ИИ: как выбирать под задачу | — | Сравнение двух доступных вариантов на своих примерах | Личная карта выбора с критерием успеха и эскалацией | `phases/00-setup-and-tooling/01-ai-tools-map` |
+| 0.2 | Аккаунты, тарифы, API-ключи, окружение | Python venv, .env, первый запрос к API | Консоли Anthropic / OpenAI / Google | Готовое окружение + проверочный скрипт | `phases/00-setup-and-tooling/02-accounts-keys-env` |
+| 0.3 | Агент и SkillKit | Установка агента (Claude/Cursor/Codex) со SkillKit | Запуск /find-your-level | Персональный маршрут с оценкой часов | `phases/00-setup-and-tooling/03-agent-and-skillkit` |
+| 0.4 | Соглашения курса | Структура папок phases/<PP>-<phase>/<LL>-<lesson>/ (code, docs, outputs) | Шаблон урока и сдачи артефактов | Заготовка репозитория курса | `phases/00-setup-and-tooling/04-course-conventions` |
 
 **Домашнее задание.** Поднять окружение, пройти /find-your-level, закоммитить заготовку репозитория с первым артефактом.
 
@@ -122,9 +129,9 @@ CLAUDE.md                       инструкции проекта для Claud
 | # | Урок | Build It | Use It | Ship It | Папка |
 |---|---|---|---|---|---|
 | 1.1 | Токены и токенизация | Мини-токенизатор (BPE) с нуля | Подсчёт токенов через tokenizer провайдера | prompt-token-budgeter | `phases/01-how-llms-work/01-tokens-and-tokenization` |
-| 1.2 | Контекстное окно и inference | Учебный sampling-loop на массиве вероятностей | Тот же вызов через API со стримингом | Памятка по бюджету контекста | `phases/01-how-llms-work/01-context-window-and-inference` |
-| 1.3 | Сэмплирование, температура, детерминизм | Реализация top-k / top-p / temperature | Эксперименты с параметрами на 3 платформах | Гайд по параметрам генерации | `phases/01-how-llms-work/01-sampling-temperature` |
-| 1.4 | Галлюцинации и границы доверия | Тест-набор на провокацию галлюцинаций | Сравнение моделей и версий на одном наборе | Чек-лист доверия к ответу | `phases/01-how-llms-work/01-hallucinations-and-trust` |
+| 1.2 | Контекстное окно и inference | Учебный sampling-loop на массиве вероятностей | Тот же вызов через API со стримингом | Памятка по бюджету контекста | `phases/01-how-llms-work/02-context-window-and-inference` |
+| 1.3 | Сэмплирование, температура, детерминизм | Реализация top-k / top-p / temperature | Эксперименты с параметрами на 3 платформах | Гайд по параметрам генерации | `phases/01-how-llms-work/03-sampling-temperature` |
+| 1.4 | Галлюцинации и границы доверия | Тест-набор на провокацию галлюцинаций | Сравнение моделей и версий на одном наборе | Чек-лист доверия к ответу | `phases/01-how-llms-work/04-hallucinations-and-trust` |
 
 **Домашнее задание.** Собрать token-budgeter и прогнать тест-набор галлюцинаций на двух моделях, оформить выводы.
 
@@ -142,11 +149,11 @@ CLAUDE.md                       инструкции проекта для Claud
 
 | # | Урок | Build It | Use It | Ship It | Папка |
 |---|---|---|---|---|---|
-| 2.1 | Анатомия промпта | Шаблон: роль, контекст, задача, формат, примеры | Один промпт на трёх платформах, разбор отличий | Базовый шаблон промпта | `phases/02-prompt-engineering/02-prompt-anatomy` |
+| 2.1 | Анатомия промпта | Шаблон: роль, контекст, задача, формат, примеры | Один промпт на трёх платформах, разбор отличий | Базовый шаблон промпта | `phases/02-prompt-engineering/01-prompt-anatomy` |
 | 2.2 | Few-shot и chain-of-thought | Few-shot и CoT варианты под одну задачу | Сравнение точности с/без примеров | Набор few-shot заготовок | `phases/02-prompt-engineering/02-few-shot-and-cot` |
-| 2.3 | Декомпозиция и итеративное уточнение | Разбиение сложной задачи на цепочку промптов | Прогон цепочки в реальном инструменте | Промпт-цепочка под рабочий процесс | `phases/02-prompt-engineering/02-decomposition-and-iteration` |
-| 2.4 | Системные промпты и структурированный вывод | JSON-схема ответа и валидатор | Structured output / function calling провайдера | Системный промпт + JSON-схема | `phases/02-prompt-engineering/02-system-prompts-structured-output` |
-| 2.5 | Оценка качества промптов | Mini eval-harness: метрики и сравнение версий | Прогон harness на наборе кейсов | prompt-eval skill | `phases/02-prompt-engineering/02-prompt-evaluation` |
+| 2.3 | Декомпозиция и итеративное уточнение | Разбиение сложной задачи на цепочку промптов | Прогон цепочки в реальном инструменте | Промпт-цепочка под рабочий процесс | `phases/02-prompt-engineering/03-decomposition-and-iteration` |
+| 2.4 | Системные промпты и структурированный вывод | JSON-схема ответа и валидатор | Structured output / function calling провайдера | Системный промпт + JSON-схема | `phases/02-prompt-engineering/04-system-prompts-structured-output` |
+| 2.5 | Оценка качества промптов | Mini eval-harness: метрики и сравнение версий | Прогон harness на наборе кейсов | prompt-eval skill | `phases/02-prompt-engineering/05-prompt-evaluation` |
 
 **Домашнее задание.** Собрать библиотеку из 10 промптов под свою роль и прогнать через eval-harness, выбрать лучшие версии.
 
@@ -164,11 +171,11 @@ CLAUDE.md                       инструкции проекта для Claud
 
 | # | Урок | Build It | Use It | Ship It | Папка |
 |---|---|---|---|---|---|
-| 3.1 | Резюмирование, редактура, тон | Промпт-пайплайн «черновик → редактура → тон» | Реальные документы и переписка | Редакторский skill | `phases/03-text-and-documents/03-summarization-editing-tone` |
-| 3.2 | Длинный контекст и работа с файлами | Стратегия chunking и map-reduce суммаризации | Загрузка PDF/таблиц, контекст 1M токенов | Пайплайн обработки длинных документов | `phases/03-text-and-documents/03-long-context-and-files` |
+| 3.1 | Резюмирование, редактура, тон | Промпт-пайплайн «черновик → редактура → тон» | Реальные документы и переписка | Редакторский skill | `phases/03-text-and-documents/01-summarization-editing-tone` |
+| 3.2 | Длинный контекст и работа с файлами | Стратегия chunking и map-reduce суммаризации | Загрузка PDF/таблиц, контекст 1M токенов | Пайплайн обработки длинных документов | `phases/03-text-and-documents/02-long-context-and-files` |
 | 3.3 | Основы RAG: retrieval | Простой ретривер (эмбеддинги + поиск) с нуля | Тот же ретрив через готовое хранилище | Мини-RAG скрипт | `phases/03-text-and-documents/03-rag-basics-retrieval` |
-| 3.4 | Векторные хранилища | Индексация и поиск по корпусу | Подключение к базе знаний инструмента | doc-assistant skill | `phases/03-text-and-documents/03-vector-stores` |
-| 3.5 | Production RAG | Гибридный ретривер (vector+keyword) + reranking с нуля | GraphRAG / managed retrieval + RAGAS-оценка | production-rag pipeline + eval-отчёт | `phases/03-text-and-documents/03-production-rag` |
+| 3.4 | Векторные хранилища | Индексация и поиск по корпусу | Подключение к базе знаний инструмента | doc-assistant skill | `phases/03-text-and-documents/04-vector-stores` |
+| 3.5 | Production RAG | Гибридный ретривер (vector+keyword) + reranking с нуля | GraphRAG / managed retrieval + RAGAS-оценка | production-rag pipeline + eval-отчёт | `phases/03-text-and-documents/05-production-rag` |
 
 **Домашнее задание.** Собрать doc-assistant над собственным корпусом документов и проверить точность ответов.
 
@@ -186,11 +193,11 @@ CLAUDE.md                       инструкции проекта для Claud
 
 | # | Урок | Build It | Use It | Ship It | Папка |
 |---|---|---|---|---|---|
-| 4.1 | Skills и SKILL.md | Написать SKILL.md с нуля | Установка через SkillKit, запуск в агенте | Кросс-платформенный skill | `phases/04-skills-memory-projects/04-skills-and-skill-md` |
-| 4.2 | Память: короткая и длинная | Файловое хранилище памяти с поиском и темпоральностью | Память платформы (ChatGPT Memory, session memory) | Модуль памяти для агента | `phases/04-skills-memory-projects/04-memory-short-and-long` |
-| 4.3 | Проекты и рабочие пространства | Сборка проекта: knowledge + system prompt | Custom GPTs / Claude Projects / Gemini Gems | Настроенный ассистент с базой знаний | `phases/04-skills-memory-projects/04-projects-and-workspaces` |
+| 4.1 | Skills и SKILL.md | Написать SKILL.md с нуля | Установка через SkillKit, запуск в агенте | Кросс-платформенный skill | `phases/04-skills-memory-projects/01-skills-and-skill-md` |
+| 4.2 | Память: короткая и длинная | Файловое хранилище памяти с поиском и темпоральностью | Память платформы (ChatGPT Memory, session memory) | Модуль памяти для агента | `phases/04-skills-memory-projects/02-memory-short-and-long` |
+| 4.3 | Проекты и рабочие пространства | Сборка проекта: knowledge + system prompt | Custom GPTs / Claude Projects / Gemini Gems | Настроенный ассистент с базой знаний | `phases/04-skills-memory-projects/03-projects-and-workspaces` |
 | 4.4 | Контекст-инжиниринг | Схема сборки и компакции контекста | Связка с RAG и со стоимостью | Политика управления контекстом и outputs/ | `phases/04-skills-memory-projects/04-context-engineering` |
-| 4.5 | Агентные платформы: OpenClaw / Hermes | Загрузка скилла (SKILL.md / agentskills.io) в локальный рантайм | OpenClaw / Hermes: скиллы + память + мульти-модель + MCP | Свой агент на self-hosted платформе | `phases/04-skills-memory-projects/04-agent-platforms-openclaw-hermes` |
+| 4.5 | Агентные платформы: OpenClaw / Hermes | Загрузка скилла (SKILL.md / agentskills.io) в локальный рантайм | OpenClaw / Hermes: скиллы + память + мульти-модель + MCP | Свой агент на self-hosted платформе | `phases/04-skills-memory-projects/05-agent-platforms-openclaw-hermes` |
 
 **Домашнее задание.** Собрать skill + проект с базой знаний + модуль памяти под один реальный процесс.
 
@@ -208,10 +215,10 @@ CLAUDE.md                       инструкции проекта для Claud
 
 | # | Урок | Build It | Use It | Ship It | Папка |
 |---|---|---|---|---|---|
-| 5.1 | ИИ как аналитик | Pandas-анализ под управлением промпта | Загрузка CSV/Excel в ChatGPT и Claude | Шаблон аналитического запроса | `phases/05-data-and-analytics/05-ai-as-analyst` |
-| 5.2 | Code Interpreter | Свой sandbox-исполнитель кода (упрощённый) | Code Interpreter: расчёты и графики | Набор аналитических промптов | `phases/05-data-and-analytics/05-code-interpreter` |
-| 5.3 | NL→SQL и семантический слой | NL→SQL прототип + определения метрик | Запросы к БД на естественном языке | Семантический слой проекта | `phases/05-data-and-analytics/05-nl-to-sql-semantic-layer` |
-| 5.4 | BI-агенты | Агент, выбирающий шаги анализа | Genie / Spotter / Hex (обзор и практика) | Сценарий BI-расследования | `phases/05-data-and-analytics/05-bi-agents` |
+| 5.1 | ИИ как аналитик | Pandas-анализ под управлением промпта | Загрузка CSV/Excel в ChatGPT и Claude | Шаблон аналитического запроса | `phases/05-data-and-analytics/01-ai-as-analyst` |
+| 5.2 | Code Interpreter | Свой sandbox-исполнитель кода (упрощённый) | Code Interpreter: расчёты и графики | Набор аналитических промптов | `phases/05-data-and-analytics/02-code-interpreter` |
+| 5.3 | NL→SQL и семантический слой | NL→SQL прототип + определения метрик | Запросы к БД на естественном языке | Семантический слой проекта | `phases/05-data-and-analytics/03-nl-to-sql-semantic-layer` |
+| 5.4 | BI-агенты | Агент, выбирающий шаги анализа | Genie / Spotter / Hex (обзор и практика) | Сценарий BI-расследования | `phases/05-data-and-analytics/04-bi-agents` |
 | 5.5 | Валидация, аномалии, автоотчёты | Проверки результата и поиск аномалий | Автоотчёт по расписанию | Аналитический агент + MCP-коннектор к БД | `phases/05-data-and-analytics/05-validation-anomalies-reports` |
 
 **Домашнее задание.** Собрать сквозной пайплайн: данные → ИИ-анализ → проверка → автоотчёт, через агента и MCP.
@@ -230,11 +237,11 @@ CLAUDE.md                       инструкции проекта для Claud
 
 | # | Урок | Build It | Use It | Ship It | Папка |
 |---|---|---|---|---|---|
-| 6.1 | Tool use / function calling изнутри | Цикл function-calling с нуля | Tool use через API провайдера | Описание набора инструментов (схемы) | `phases/06-tools-and-protocols-mcp/06-tool-use-function-calling` |
-| 6.2 | Архитектура MCP | Разбор host ↔ client ↔ server; tools/resources/prompts | Подключение готовых MCP-коннекторов | Карта MCP под свой стек | `phases/06-tools-and-protocols-mcp/06-mcp-architecture` |
-| 6.3 | Свой MCP-сервер на FastMCP | Сервер с tools/resources на FastMCP (mcp 1.27.x) | Транспорты STDIO и Streamable HTTP | Рабочий MCP-сервер | `phases/06-tools-and-protocols-mcp/06-build-mcp-server-fastmcp` |
-| 6.4 | Тест и подключение | Прогон через MCP Inspector | Подключение к Claude Desktop / Cursor | Документированный сервер с примерами | `phases/06-tools-and-protocols-mcp/06-testing-and-connecting` |
-| 6.5 | Безопасность и доступ | Аутентификация, права, изоляция | Что нельзя отдавать модели — практика | Чек-лист безопасности MCP | `phases/06-tools-and-protocols-mcp/06-security-and-access` |
+| 6.1 | Tool use / function calling изнутри | Цикл function-calling с нуля | Tool use через API провайдера | Описание набора инструментов (схемы) | `phases/06-tools-and-protocols-mcp/01-tool-use-function-calling` |
+| 6.2 | Архитектура MCP | Разбор host ↔ client ↔ server; tools/resources/prompts | Подключение готовых MCP-коннекторов | Карта MCP под свой стек | `phases/06-tools-and-protocols-mcp/02-mcp-architecture` |
+| 6.3 | Свой MCP-сервер на FastMCP | Сервер с tools/resources на FastMCP (mcp 1.27.x) | Транспорты STDIO и Streamable HTTP | Рабочий MCP-сервер | `phases/06-tools-and-protocols-mcp/03-build-mcp-server-fastmcp` |
+| 6.4 | Тест и подключение | Прогон через MCP Inspector | Подключение к Claude Desktop / Cursor | Документированный сервер с примерами | `phases/06-tools-and-protocols-mcp/04-testing-and-connecting` |
+| 6.5 | Безопасность и доступ | Аутентификация, права, изоляция | Что нельзя отдавать модели — практика | Чек-лист безопасности MCP | `phases/06-tools-and-protocols-mcp/05-security-and-access` |
 
 **Домашнее задание.** Собрать MCP-сервер, который ходит в БД/файлы, протестировать в Inspector и подключить к агенту.
 
@@ -252,12 +259,12 @@ CLAUDE.md                       инструкции проекта для Claud
 
 | # | Урок | Build It | Use It | Ship It | Папка |
 |---|---|---|---|---|---|
-| 7.1 | Цикл reason → act → observe | Agent loop ~120 строк чистого Python | Тот же агент через Claude / фреймворк | agent-loop skill | `phases/07-agent-engineering/07-reason-act-observe-loop` |
-| 7.2 | Память и планирование агента | Подключение модуля памяти из Фазы 4 + планировщик | Многошаговая задача в реальном инструменте | Агент с памятью и планом | `phases/07-agent-engineering/07-agent-memory-and-planning` |
-| 7.3 | Human-in-the-loop и guardrails | Точки подтверждения и валидация действий | Контроль агента на критичных шагах | Шаблон guardrails | `phases/07-agent-engineering/07-human-in-the-loop-guardrails` |
-| 7.4 | Где агенты ломаются | Воспроизведение петель и дрейфа цели | Инженерные приёмы контроля и ограничения шагов | prompt-debug-agent | `phases/07-agent-engineering/07-where-agents-break` |
-| 7.5 | Evals агентов | Offline eval-harness агента на тест-сете + метрики | Online-evals в проде, регрессии | agent-eval skill | `phases/07-agent-engineering/07-agent-evals` |
-| 7.6 | Realtime и голосовые агенты | Турновый streaming-цикл агента (события вход/выход) с нуля | OpenAI Realtime / Gemini Live: голос и низкая задержка | Голосовой/realtime агент-демо | `phases/07-agent-engineering/07-realtime-voice-agents` |
+| 7.1 | Цикл reason → act → observe | Agent loop ~120 строк чистого Python | Тот же агент через Claude / фреймворк | agent-loop skill | `phases/07-agent-engineering/01-reason-act-observe-loop` |
+| 7.2 | Память и планирование агента | Подключение модуля памяти из Фазы 4 + планировщик | Многошаговая задача в реальном инструменте | Агент с памятью и планом | `phases/07-agent-engineering/02-agent-memory-and-planning` |
+| 7.3 | Human-in-the-loop и guardrails | Точки подтверждения и валидация действий | Контроль агента на критичных шагах | Шаблон guardrails | `phases/07-agent-engineering/03-human-in-the-loop-guardrails` |
+| 7.4 | Где агенты ломаются | Воспроизведение петель и дрейфа цели | Инженерные приёмы контроля и ограничения шагов | prompt-debug-agent | `phases/07-agent-engineering/04-where-agents-break` |
+| 7.5 | Evals агентов | Offline eval-harness агента на тест-сете + метрики | Online-evals в проде, регрессии | agent-eval skill | `phases/07-agent-engineering/05-agent-evals` |
+| 7.6 | Realtime и голосовые агенты | Турновый streaming-цикл агента (события вход/выход) с нуля | OpenAI Realtime / Gemini Live: голос и низкая задержка | Голосовой/realtime агент-демо | `phases/07-agent-engineering/06-realtime-voice-agents` |
 
 **Домашнее задание.** Поставить агенту реальную многошаговую задачу с human-in-the-loop и довести до результата.
 
@@ -275,10 +282,10 @@ CLAUDE.md                       инструкции проекта для Claud
 
 | # | Урок | Build It | Use It | Ship It | Папка |
 |---|---|---|---|---|---|
-| 8.1 | Оркестратор и субагенты | Оркестратор, раздающий роли субагентам | Agent teams (Claude) на практике | Мульти-агентный сценарий | `phases/08-multi-agent-orchestration/08-orchestrator-and-subagents` |
-| 8.2 | A2A и MCP Server Cards | Протокол передачи задач между агентами | Автообнаружение инструментов | Схема A2A-взаимодействия | `phases/08-multi-agent-orchestration/08-a2a-and-server-cards` |
-| 8.3 | Координация и контекст | Передача состояния и предотвращение конфликтов | Прогон мульти-агентного процесса | Рабочий мульти-агентный процесс | `phases/08-multi-agent-orchestration/08-coordination-and-context` |
-| 8.4 | Оркестрация: фреймворки vs no-code | Мини-граф процесса своими руками (как LangGraph) | Тот же процесс в LangGraph / n8n | Матрица «когда фреймворк, когда no-code» | `phases/08-multi-agent-orchestration/08-frameworks-vs-nocode` |
+| 8.1 | Оркестратор и субагенты | Оркестратор, раздающий роли субагентам | Agent teams (Claude) на практике | Мульти-агентный сценарий | `phases/08-multi-agent-orchestration/01-orchestrator-and-subagents` |
+| 8.2 | A2A и MCP Server Cards | Протокол передачи задач между агентами | Автообнаружение инструментов | Схема A2A-взаимодействия | `phases/08-multi-agent-orchestration/02-a2a-and-server-cards` |
+| 8.3 | Координация и контекст | Передача состояния и предотвращение конфликтов | Прогон мульти-агентного процесса | Рабочий мульти-агентный процесс | `phases/08-multi-agent-orchestration/03-coordination-and-context` |
+| 8.4 | Оркестрация: фреймворки vs no-code | Мини-граф процесса своими руками (как LangGraph) | Тот же процесс в LangGraph / n8n | Матрица «когда фреймворк, когда no-code» | `phases/08-multi-agent-orchestration/04-frameworks-vs-nocode` |
 
 **Домашнее задание.** Собрать процесс из 2–3 агентов (оркестратор + субагенты) под реальную задачу.
 
@@ -296,10 +303,10 @@ CLAUDE.md                       инструкции проекта для Claud
 
 | # | Урок | Build It | Use It | Ship It | Папка |
 |---|---|---|---|---|---|
-| 9.1 | Цены 2026 и за что платишь | Калькулятор стоимости по токенам ввода/вывода | Сверка с тарифами провайдеров | Бюджет-калькулятор | `phases/09-model-economics-finops/09-pricing-2026` |
-| 9.2 | Какую модель под какую задачу | Классификатор сложности запроса | Маршрут: дешёвые → средние → топ | Матрица маршрутизации | `phases/09-model-economics-finops/09-model-per-task` |
-| 9.3 | Паттерны экономии | Роутер + каскад с quality-gate | Prompt caching и batch API провайдеров | cost-aware router skill | `phases/09-model-economics-finops/09-cost-saving-patterns` |
-| 9.4 | FinOps для ИИ | Тегирование запросов (команда/модель/cache-hit) | Лимиты, алерты, мониторинг токенов | Бюджет-дашборд + расчёт ROI | `phases/09-model-economics-finops/09-finops-for-ai` |
+| 9.1 | Цены 2026 и за что платишь | Калькулятор стоимости по токенам ввода/вывода | Сверка с тарифами провайдеров | Бюджет-калькулятор | `phases/09-model-economics-finops/01-pricing-2026` |
+| 9.2 | Какую модель под какую задачу | Классификатор сложности запроса | Маршрут: дешёвые → средние → топ | Матрица маршрутизации | `phases/09-model-economics-finops/02-model-per-task` |
+| 9.3 | Паттерны экономии | Роутер + каскад с quality-gate | Prompt caching и batch API провайдеров | cost-aware router skill | `phases/09-model-economics-finops/03-cost-saving-patterns` |
+| 9.4 | FinOps для ИИ | Тегирование запросов (команда/модель/cache-hit) | Лимиты, алерты, мониторинг токенов | Бюджет-дашборд + расчёт ROI | `phases/09-model-economics-finops/04-finops-for-ai` |
 
 **Домашнее задание.** Спроектировать схему оркестрации под свой процесс и посчитать бюджет «до/после».
 
@@ -317,10 +324,10 @@ CLAUDE.md                       инструкции проекта для Claud
 
 | # | Урок | Build It | Use It | Ship It | Папка |
 |---|---|---|---|---|---|
-| 10.1 | Интеграция в рабочие пакеты | Сценарии встраивания в существующие процессы | Copilot в M365, Gemini в Workspace | План интеграции для команды | `phases/10-production-and-integration/10-integration-into-workspaces` |
-| 10.2 | Деплой и мониторинг | Логирование prompt/response и ошибок | Запуск процесса в проде | Мониторинг-конфиг | `phases/10-production-and-integration/10-deploy-and-monitoring` |
-| 10.3 | Телеметрия и воспроизводимость | Учёт токенов/стоимости на процесс | Дашборд расходов и качества | Встроенный в рабочий процесс ассистент | `phases/10-production-and-integration/10-telemetry-and-reproducibility` |
-| 10.4 | Observability и трейсинг агентов | Трейсер шагов агента (spans) с нуля | LangSmith / Langfuse / Arize | observability/tracing skill | `phases/10-production-and-integration/10-observability-tracing` |
+| 10.1 | Интеграция в рабочие пакеты | Сценарии встраивания в существующие процессы | Copilot в M365, Gemini в Workspace | План интеграции для команды | `phases/10-production-and-integration/01-integration-into-workspaces` |
+| 10.2 | Деплой и мониторинг | Логирование prompt/response и ошибок | Запуск процесса в проде | Мониторинг-конфиг | `phases/10-production-and-integration/02-deploy-and-monitoring` |
+| 10.3 | Телеметрия и воспроизводимость | Учёт токенов/стоимости на процесс | Дашборд расходов и качества | Встроенный в рабочий процесс ассистент | `phases/10-production-and-integration/03-telemetry-and-reproducibility` |
+| 10.4 | Observability и трейсинг агентов | Трейсер шагов агента (spans) с нуля | LangSmith / Langfuse / Arize | observability/tracing skill | `phases/10-production-and-integration/04-observability-tracing` |
 
 **Домашнее задание.** Развернуть один процесс в рабочем инструменте команды с логированием и дашбордом.
 
@@ -338,11 +345,11 @@ CLAUDE.md                       инструкции проекта для Claud
 
 | # | Урок | Build It | Use It | Ship It | Папка |
 |---|---|---|---|---|---|
-| 11.1 | Конфиденциальность и корпоративные данные | Классификация данных: что можно отдавать модели | Настройки приватности в инструментах | Политика обработки данных | `phases/11-ethics-safety-governance/11-privacy-and-corporate-data` |
-| 11.2 | Фактчекинг и борьба с галлюцинациями | Пайплайн проверки утверждений | Перекрёстная проверка моделями и источниками | Чек-лист фактчекинга | `phases/11-ethics-safety-governance/11-fact-checking-hallucinations` |
-| 11.3 | Предвзятость и юридические риски | Разбор кейсов смещения и авторских рисков | Аудит вывода на риски | Реестр рисков | `phases/11-ethics-safety-governance/11-bias-and-legal-risks` |
-| 11.4 | Корпоративные политики ИИ | Шаблон политики использования ИИ | Согласование с реальными процессами | Чек-лист политики ИИ | `phases/11-ethics-safety-governance/11-ai-usage-policy` |
-| 11.5 | Prompt injection и безопасность агентов | Демо prompt injection + RAG-poisoning и базовая защита (sanitization, allowlist) | OWASP LLM01 чек-лист, MCP-гейты, runtime-guardrails | Чек-лист защиты от prompt injection | `phases/11-ethics-safety-governance/11-prompt-injection-agent-security` |
+| 11.1 | Конфиденциальность и корпоративные данные | Классификация данных: что можно отдавать модели | Настройки приватности в инструментах | Политика обработки данных | `phases/11-ethics-safety-governance/01-privacy-and-corporate-data` |
+| 11.2 | Фактчекинг и борьба с галлюцинациями | Пайплайн проверки утверждений | Перекрёстная проверка моделями и источниками | Чек-лист фактчекинга | `phases/11-ethics-safety-governance/02-fact-checking-hallucinations` |
+| 11.3 | Предвзятость и юридические риски | Разбор кейсов смещения и авторских рисков | Аудит вывода на риски | Реестр рисков | `phases/11-ethics-safety-governance/03-bias-and-legal-risks` |
+| 11.4 | Корпоративные политики ИИ | Шаблон политики использования ИИ | Согласование с реальными процессами | Чек-лист политики ИИ | `phases/11-ethics-safety-governance/04-ai-usage-policy` |
+| 11.5 | Prompt injection и безопасность агентов | Демо prompt injection + RAG-poisoning и базовая защита (sanitization, allowlist) | OWASP LLM01 чек-лист, MCP-гейты, runtime-guardrails | Чек-лист защиты от prompt injection | `phases/11-ethics-safety-governance/05-prompt-injection-agent-security` |
 
 **Домашнее задание.** Подготовить политику использования ИИ и чек-лист рисков для своей команды.
 
@@ -360,9 +367,9 @@ CLAUDE.md                       инструкции проекта для Claud
 
 | # | Урок | Build It | Use It | Ship It | Папка |
 |---|---|---|---|---|---|
-| 12.1 | Выбор процесса и спецификация | Спецификация: цель, метрики, ограничения, бюджет | Согласование с реальной задачей | Проектная спецификация | `phases/12-capstone/12-process-selection-and-spec` |
-| 12.2 | Сборка решения | Агент + MCP + cost-aware оркестрация + память | Интеграция в рабочий инструмент | Работающий end-to-end процесс | `phases/12-capstone/12-building-the-solution` |
-| 12.3 | Презентация и защита | Замеры «до/после»: время, качество, стоимость | Демо и обратная связь | Презентация + чек-лист компетенций | `phases/12-capstone/12-presentation-and-defense` |
+| 12.1 | Выбор процесса и спецификация | Спецификация: цель, метрики, ограничения, бюджет | Согласование с реальной задачей | Проектная спецификация | `phases/12-capstone/01-process-selection-and-spec` |
+| 12.2 | Сборка решения | Агент + MCP + cost-aware оркестрация + память | Интеграция в рабочий инструмент | Работающий end-to-end процесс | `phases/12-capstone/02-building-the-solution` |
+| 12.3 | Презентация и защита | Замеры «до/после»: время, качество, стоимость | Демо и обратная связь | Презентация + чек-лист компетенций | `phases/12-capstone/03-presentation-and-defense` |
 
 **Домашнее задание.** Защитить capstone: рабочий процесс, метрики эффекта и расчёт ROI.
 
@@ -383,8 +390,9 @@ CLAUDE.md                       инструкции проекта для Claud
 ## Документы проекта
 
 - [ROADMAP.md](ROADMAP.md) — дорожная карта (13 фаз · 59 уроков).
+- [LESSON_CONTRACT.md](LESSON_CONTRACT.md) — педагогический контракт и Definition of Done урока.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — как добавлять уроки + Definition of Done.
-- [LESSON_TEMPLATE.md](LESSON_TEMPLATE.md) — шаблон урока (6 шагов).
+- [LESSON_TEMPLATE.md](LESSON_TEMPLATE.md) — конструктор целесообразной структуры урока.
 - [glossary/terms.md](glossary/terms.md) — глоссарий терминов.
 - [site/](site/) — статичный сайт курса (`node site/build.js`).
 - [LICENSE](LICENSE) — MIT.

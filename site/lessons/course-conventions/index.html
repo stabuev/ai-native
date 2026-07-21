@@ -4,11 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>0.4 Соглашения курса — AI Native</title>
-  <meta name="description" content="Единый формат урока — чтобы код, разбор и артефакт всегда лежали на своих местах.">
+  <meta name="description" content="Общий контракт — не одинаковое оглавление, а одинаковая требовательность к результату.">
   <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/course-conventions/">
   <meta property="og:type" content="article">
   <meta property="og:title" content="0.4 Соглашения курса — AI Native">
-  <meta property="og:description" content="Единый формат урока — чтобы код, разбор и артефакт всегда лежали на своих местах.">
+  <meta property="og:description" content="Общий контракт — не одинаковое оглавление, а одинаковая требовательность к результату.">
   <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/course-conventions/">
   <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
   <meta name="twitter:card" content="summary_large_image">
@@ -31,316 +31,551 @@
   <section class="container" style="padding-top:24px">
     <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
     <div class="lessonbar" id="lessonbar"></div>
-    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 0.4 · Соглашения курса</h1><p><strong>Фаза 0 — Setup &amp; Tooling</strong> · <strong>Результат фазы:</strong> Настроить окружение, ключи и агента; осознанно выбрать модель под задачу.</p><p><strong>Последний урок Фазы 0 — про то, как устроен сам курс.</strong> Дальше будет 59 уроков в едином формате: фиксированные папки, 6 шагов разбора и проверяемый критерий готовности. Поймёшь формат один раз — и любой урок читается одинаково, а свои материалы сможешь оформлять так же (и проверять автоматически).</p><blockquote><strong>MOTTO.</strong> Единый формат урока — чтобы код, разбор и артефакт всегда лежали на своих местах.</blockquote><h2>PROBLEM</h2><p>Когда у каждого урока своя раскладка, репозиторий превращается в свалку: непонятно, где код, где разбор, где готовый артефакт, а «урок готов или нет» можно понять только глазами. На 59 уроков это смертельно. Нужен <strong>общий контракт</strong> структуры и автоматическая проверка готовности.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Соглашение — это <strong>контракт</strong>, а не бюрократия. Договорились раз: что где лежит и что значит «готово» — и дальше не думаешь об этом на каждом уроке. Главный выигрыш в том, что готовность становится <strong>машинно-проверяемой</strong>: вместо «вроде всё на месте» — функция, которая возвращает список того, чего не хватает. Такую проверку можно повесить в CI, чтобы незаконченные уроки не проходили.</p><h3>Как это работает</h3><p>Каждый урок — это тройка папок и цикл шагов в <code>docs/ru.md</code>:</p><pre><code>phases/&lt;NN&gt;-&lt;phase-slug&gt;/&lt;NN&gt;-&lt;lesson-slug&gt;/
-├── code/      Build It (с нуля) + Use It + тест test_*.py   ← может отсутствовать
-├── docs/ru.md разбор по шагам (MOTTO · PROBLEM · CONCEPT · BUILD IT · USE IT · SHIP IT)
-└── outputs/   артефакт: prompt · skill · agent · MCP</code></pre><p><strong>Definition of Done (актуальный):</strong> обязательны заполненный <code>docs/ru.md</code> со всеми секциями и непустой <code>outputs/</code> с артефактом. А вот <strong>код и тест — не догма</strong>: концептуальные/обзорные уроки бывают без <code>code/</code>, а тест добавляем там, где он реально что-то проверяет. Если код в уроке есть — он запускается офлайн на CPU без платных ключей, и <code>pytest &lt;lesson&gt;/code</code> зелёный.</p><p>Где код содержательный, <strong>BUILD IT оформляется как упражнение</strong>: спека + тесты как ТЗ, эталонное решение под катом, и три пути пройти его — собрать самому, подсмотреть эталон или делегировать ИИ (с обязательной самопроверкой тестами). Это и есть AI-native практика 4D из урока 0.1.</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Посмотрим, как готовность проверяется кодом. <code>scaffold_lesson()</code> создаёт пустой урок (папки + стаб <code>ru.md</code> со всеми секциями), а <code>validate_lesson()</code> возвращает список нарушений.</p><p><strong>Шаг 1 — свежий стаб.</strong> Папки и <code>ru.md</code> со всеми секциями есть, но <code>outputs/</code> пуст:</p><pre><code>validate_lesson(новый_стаб) → ["пустой outputs/ (нет артефакта)"]</code></pre><p>Секции на месте (их даёт стаб), кода нет — но это не нарушение (урок может быть концептуальным). Не хватает только артефакта.</p><p><strong>Шаг 2 — положили артефакт</strong> в <code>outputs/</code>:</p><pre><code>validate_lesson(урок) → []      # пустой список = готов по структуре</code></pre><p>Готово: <code>docs/ru.md</code> со всеми секциями плюс артефакт. Код и тест — по необходимости урока. Именно так «готовность» перестаёт быть вкусовщиной и проверяется одной функцией.</p><h2>BUILD IT</h2><p>Scaffolder и валидатор урока с нуля, без зависимостей (читай и запусти): <a href="#f-phases-00-setup-and-tooling-00-course-conventions-code-conventions-py"><code>code/conventions.py</code></a>.</p><ul><li><code>scaffold_lesson(root, phase_dir, lesson_dir, id, title)</code> — создаёт дерево <code>code/docs/outputs</code> и стаб <code>docs/ru.md</code> со всеми шагами;</li><li><code>validate_lesson(path)</code> — список нарушений DoD: нет <code>docs/ru.md</code> или секции, пустой <code>outputs/</code>. Код/тест не требует — они по необходимости.</li></ul><pre><code>python code/conventions.py
-pytest code -q</code></pre><p>Демо создаёт демо-урок во временной папке и тут же проверяет: свежий стаб «не готов» (нет артефакта) — ровно как и должно быть до наполнения.</p><h2>USE IT</h2><p>Те же соглашения уже автоматизированы скиллом курса — <code>/lesson-author &lt;id&gt;</code> (см. <a href="#f-claude-skills-lesson-author-skill-md"><code>.claude/skills/lesson-author</code></a>):</p><pre><code>/lesson-author 2.3     # находит урок в README, заводит папки, пишет стаб ru.md,
-                       # ведёт по Build It / Use It / Ship It и прогоняет pytest</code></pre><p>Цикл сдачи урока: <code>scaffold</code> → наполнить (где есть код — оформить как упражнение) → <code>validate_lesson</code> зелёный → отметить <code>[x]</code> в <code>PROGRESS.md</code> → коммит <strong>после всей фазы</strong>.</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Заготовка репозитория курса → <a href="#f-phases-00-setup-and-tooling-00-course-conventions-outputs-course-kit-conventions-md"><code>outputs/course-kit/</code></a></p><p>Мини-кит для старта своего курса в этом формате: <code>conventions.py</code> (scaffolder + валидатор) и <code>CONVENTIONS.md</code> (контракт структуры и DoD). Тот же валидатор можно повесить в CI, чтобы незаконченные уроки не проходили проверку.</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Считать «код+тест» обязательными для каждого урока.</strong> Нет: обязательны только разбор и артефакт. Код и тест — там, где они реально объясняют механизм; иначе получается тест ради галочки.</li><li><strong>Проверять готовность глазами.</strong> «Вроде всё на месте» не масштабируется на 59 уроков. Гоняй <code>validate_lesson</code> (хоть в CI) — он вернёт конкретный список нехватки.</li><li><strong>Свой формат на каждый урок.</strong> Разъезжающаяся структура превращает репозиторий в свалку. Держи фиксированные <code>code/docs/outputs</code> и общие секции.</li><li><strong>Складывать артефакт не в <code>outputs/</code>.</strong> Артефакт (prompt · skill · agent · MCP) живёт в <code>outputs/</code> — там его ищут и студент, и валидатор.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="0.4"></div><h2>Материалы</h2><ul><li><a href="https://docs.pytest.org/en/stable/getting-started.html" target="_blank" rel="noopener">pytest — Get started</a> — как писать и запускать тесты урока.</li><li><a href="https://docs.pytest.org/en/stable/explanation/goodpractices.html" target="_blank" rel="noopener">pytest — Good Integration Practices</a> — где хранить тесты, автопоиск и конвенция <code>test_*.py</code> (как в DoD курса).</li><li><a href="https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview" target="_blank" rel="noopener">Agent Skills — overview</a> — механика скиллов, на которой стоит <code>/lesson-author</code>.</li><li><a href="https://diataxis.fr/" target="_blank" rel="noopener">Diátaxis</a> — рамка организации техдоков (tutorial · how-to · reference · explanation); помогает так же структурировать свои материалы.</li><li><a href="https://github.com/rohitg00/ai-engineering-from-scratch" target="_blank" rel="noopener">ai-engineering-from-scratch (rohitg00)</a> — образец каркаса «фазы → уроки → артефакты», вдохновивший формат курса.</li><li><a href="https://developers.google.com/tech-writing" target="_blank" rel="noopener">Google — Technical Writing</a> — бесплатные курсы по ясной техдокументации; помогают оформлять свои материалы так же чётко.</li><li><a href="https://www.markdownguide.org/" target="_blank" rel="noopener">Markdown Guide</a> — полный справочник по Markdown, на котором пишутся <code>docs/ru.md</code>.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><h3>Код урока (Build It)</h3><details class="filebox" id="f-phases-00-setup-and-tooling-00-course-conventions-code-conventions-py" open><summary><span class="fname">code/conventions.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Соглашения курса: scaffolder + валидатор урока — Build It для урока 0.4.
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 0.4 · Соглашения курса</h1><p><strong>Фаза 0 — Setup &amp; Tooling</strong> · <strong>Результат фазы:</strong> Настроить окружение, ключи и агента; осознанно выбрать модель под задачу.</p><p><strong>Последний урок Фазы 0 — про то, как устроен сам курс.</strong> Дальше будет 59 уроков с общим педагогическим контрактом, но не обязательно с одинаковым оглавлением. Структурную заполненность можно проверить автоматически; необходимость каждого блока — только по тому, помогает ли он студенту достичь результата.</p><blockquote><strong>MOTTO.</strong> Общий контракт — не одинаковое оглавление, а одинаковая требовательность к результату.</blockquote><h2>PROBLEM</h2><p>Без соглашений курс превращается в свалку, но жёсткий шаблон создаёт другую проблему: автор добавляет код, квиз, артефакт и шесть секций даже там, где они ничего не учат. Нужен <strong>общий контракт результата</strong> и гибкая структура, в которой каждый элемент проходит проверку на целесообразность.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Соглашение — это <strong>контракт</strong>, а не бюрократия. Договорились раз, что урок должен привести к наблюдаемому действию, проверке и переносу. А вот форма следует из outcome: вычислению нужен код, решению — рубрика, процедуре — сценарий. Автоматика может найти незаполненный стаб, но не может решить, нужен ли конкретному уроку <code>BUILD IT</code> или отдельный артефакт.</p><h3>Как это работает</h3><p>У каждого урока есть обязательный материал и опциональные носители практики:</p><pre><code>phases/&lt;PP&gt;-&lt;phase-slug&gt;/&lt;LL&gt;-&lt;lesson-slug&gt;/
+├── docs/ru.md   обязательный связный материал
+├── code/        опционально: исполняемая практика + тесты
+├── outputs/     опционально: переиспользуемый артефакт
+└── quiz.json    опционально: диагностический квиз</code></pre><p><code>PP</code> — номер фазы, а <code>LL</code> — порядковый номер урока внутри неё. Поэтому урок 7.4 лежит в <code>phases/07-agent-engineering/04-where-agents-break/</code>: цифры отвечают на разные вопросы и не дублируют друг друга.</p><p><strong>Definition of Done состоит из двух слоёв.</strong> Структурно обязателен заполненный <code>docs/ru.md</code> без следов стаба. Педагогически урок готов, когда студент без скрытых предпосылок выполняет заявленное действие, проверяет результат и переносит его в новую задачу. <code>MOTTO</code>, <code>PROBLEM</code>, <code>CONCEPT</code>, <code>BUILD IT</code>, <code>USE IT</code>, <code>SHIP IT</code>, ошибки, квиз и материалы можно оставить, объединить или опустить. Полный внутренний контракт курса лежит в <a href="#f-lesson-contract-md"><code>LESSON_CONTRACT.md</code></a>.</p><p><strong>Код, тест, квиз и артефакт — не догма.</strong> Добавляем их только там, где они доказывают или переносят outcome. Если код есть, он запускается офлайн на CPU без платных ключей, а тест проверяет содержательное поведение.</p><p>Где код содержательный, <strong>BUILD IT оформляется как упражнение</strong>: спека + тесты как ТЗ, эталонное решение под катом, и три пути пройти его — собрать самому, подсмотреть эталон или делегировать ИИ с обязательной самопроверкой.</p><blockquote><strong>Врезка: AI Fluency («свободное владение ИИ») и рамка 4D — как делегировать упражнение.</strong> Четыре компетенции помогают не превращать делегирование в кнопку «сделай за меня»: <strong>Delegation</strong> — решить, какую часть отдать ИИ, а какую оставить себе; <strong>Description</strong> — описать задачу, контекст и критерии приёмки; <strong>Discernment</strong> — проверить результат тестами и смыслом, заметить ограничения; <strong>Diligence</strong> — сохранить ответственность за итог, защитить данные и честно обозначить использование ИИ. Это не четыре последовательных шага, а четыре контрольных вопроса, которые сопровождают работу. Полная рамка — в <a href="../../glossary.html">глоссарии</a> и первоисточнике <a href="https://www-cdn.anthropic.com/b383cf6baddbfc72fdf8b0ed533a518e2872d531.pdf" target="_blank" rel="noopener">AI Fluency Framework</a>.</blockquote><h2>РАЗБОР ПО ШАГАМ</h2><p>Посмотрим, какую часть готовности можно проверить кодом. <code>scaffold_lesson()</code> создаёт только обязательный <code>docs/ru.md</code> с минимальным паспортом, а <code>validate_lesson()</code> ищет незаполненный стаб.</p><p><strong>Шаг 1 — свежий стаб.</strong> Паспорт ещё содержит плейсхолдеры:</p><pre><code>validate_lesson(новый_стаб) → ["в docs/ru.md остались маркеры незаполненного стаба"]</code></pre><p>Валидатор не требует секции и дополнительные файлы: он не знает, какие из них нужны outcome.</p><p><strong>Шаг 2 — заполнили связный материал</strong> без стандартных секций и артефакта:</p><pre><code>validate_lesson(урок) → []      # пустой список = готов по структуре</code></pre><p>Структурно готово: материал заполнен. Теперь нужен содержательный аудит: соответствует ли выбранная структура outcome и не добавлено ли что-нибудь только ради шаблона.</p><h2>BUILD IT</h2><p>Scaffolder и валидатор урока с нуля, без зависимостей (читай и запусти): <a href="#f-phases-00-setup-and-tooling-04-course-conventions-code-conventions-py"><code>code/conventions.py</code></a>.</p><ul><li><code>scaffold_lesson(root, phase_dir, lesson_dir, id, title)</code> — создаёт минимальный <code>docs/ru.md</code> с паспортом;</li><li><code>validate_lesson(path)</code> — проверяет наличие заголовка и отсутствие маркеров стаба. Секции, код, квиз и артефакт намеренно не требует.</li></ul><pre><code>python code/conventions.py
+pytest code -q</code></pre><p>Демо создаёт временный урок и показывает, что незаполненный паспорт не проходит проверку.</p><h2>USE IT</h2><p>Те же соглашения уже автоматизированы скиллом курса — <code>/lesson-author &lt;id&gt;</code> (см. <a href="#f-claude-skills-lesson-author-skill-md"><code>.claude/skills/lesson-author</code></a>):</p><pre><code>/lesson-author 2.3     # восстанавливает outcome и соседей,
+                       # выбирает целесообразные блоки и проверки</code></pre><p>Цикл сдачи урока: определить наблюдаемый результат → <code>scaffold</code> → наполнить → пройти педагогическое ревью → получить зелёный <code>validate_lesson</code> и соразмерные тесты → отметить <code>[x]</code> в <code>PROGRESS.md</code> → коммит <strong>после всей фазы</strong>.</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Заготовка репозитория курса → <a href="#f-phases-00-setup-and-tooling-04-course-conventions-outputs-course-kit-conventions-md"><code>outputs/course-kit/</code></a></p><p>Мини-кит для старта своего курса: <code>conventions.py</code> создаёт минимальный материал и ловит незаполненный стаб, а <code>CONVENTIONS.md</code> объясняет выбор структуры по outcome.</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Считать шесть секций обязательными.</strong> Если блок не влияет на outcome, ошибку, проверку или перенос, его нужно объединить или убрать.</li><li><strong>Считать «код+тест» обязательными.</strong> Они нужны для исполняемого механизма, но вредны как ритуал в уроке про решение или объяснение.</li><li><strong>Считать зелёный валидатор доказательством обучения.</strong> Он видит заполненность текста, но не видит скрытые пререквизиты, копирование примера или отсутствие переноса.</li><li><strong>Проверять структурную комплектацию глазами.</strong> «Вроде всё на месте» не масштабируется на 59 уроков. Гоняй <code>validate_lesson</code> (хоть в CI) — он вернёт конкретный список нехватки.</li><li><strong>Произвольная структура без причины.</strong> Гибкость не отменяет контракт: каждое решение «оставить / объединить / опустить» должно поддерживать результат.</li><li><strong>Создавать пустой артефакт ради Ship It.</strong> Если отдельный файл не будет переиспользован, достаточно доказанного действия и понятного переноса.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="0.4"></div><h2>Материалы</h2><ul><li><a href="https://www-cdn.anthropic.com/b383cf6baddbfc72fdf8b0ed533a518e2872d531.pdf" target="_blank" rel="noopener">Anthropic — AI Fluency Framework</a> — полная рамка 4D и границы ответственного делегирования ИИ.</li><li><a href="https://docs.pytest.org/en/stable/getting-started.html" target="_blank" rel="noopener">pytest — Get started</a> — как писать и запускать тесты урока.</li><li><a href="https://docs.pytest.org/en/stable/explanation/goodpractices.html" target="_blank" rel="noopener">pytest — Good Integration Practices</a> — где хранить тесты, автопоиск и конвенция <code>test_*.py</code> (как в DoD курса).</li><li><a href="https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview" target="_blank" rel="noopener">Agent Skills — overview</a> — механика скиллов, на которой стоит <code>/lesson-author</code>.</li><li><a href="https://diataxis.fr/" target="_blank" rel="noopener">Diátaxis</a> — рамка организации техдоков (tutorial · how-to · reference · explanation); помогает так же структурировать свои материалы.</li><li><a href="https://github.com/rohitg00/ai-engineering-from-scratch" target="_blank" rel="noopener">ai-engineering-from-scratch (rohitg00)</a> — образец каркаса «фазы → уроки → артефакты», вдохновивший формат курса.</li><li><a href="https://developers.google.com/tech-writing" target="_blank" rel="noopener">Google — Technical Writing</a> — бесплатные курсы по ясной техдокументации; помогают оформлять свои материалы так же чётко.</li><li><a href="https://www.markdownguide.org/" target="_blank" rel="noopener">Markdown Guide</a> — полный справочник по Markdown, на котором пишутся <code>docs/ru.md</code>.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><h3>Код урока</h3><details class="filebox" id="f-phases-00-setup-and-tooling-04-course-conventions-code-conventions-py" open><summary><span class="fname">code/conventions.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Scaffolder и мягкий структурный валидатор урока — Build It для урока 0.4.
 
-Без зависимостей. `scaffold_lesson()` создаёт дерево урока
-phases/&lt;NN&gt;/&lt;lesson&gt;/{code,docs,outputs} и стаб docs/ru.md по 6 шагам.
-`validate_lesson()` проверяет Definition of Done: docs/ru.md со всеми секциями и
-непустой артефакт в outputs/. Код и тест — по необходимости урока (концептуальные
-уроки бывают без code/), поэтому их отсутствие нарушением не считается.
+Без зависимостей. `scaffold_lesson()` создаёт только обязательный `docs/ru.md` с
+минимальным паспортом. `validate_lesson()` проверяет наличие заголовка и отсутствие
+следов незаполненного стаба. Секции, код, квиз и артефакт намеренно не требуются:
+их целесообразность определяется педагогическим контрактом.
 """
 from __future__ import annotations
-from pathlib import Path
 
-# Секции, обязательные в docs/ru.md (MOTTO — отдельной строкой-цитатой).
-SECTIONS = ("PROBLEM", "CONCEPT", "BUILD IT", "USE IT", "SHIP IT")
+from pathlib import Path
+import re
+
+
+STUB_MARKERS = (
+    "&lt;наблюдаемое действие",
+    "&lt;что уже освоено&gt;",
+    "&lt;где результат понадобится&gt;",
+    "&lt;Связный учебный переход",
+    "(стаб — заполнить",
+)
 
 STUB_TEMPLATE = """# Урок {id} · {title}
 
-&gt; **MOTTO.** &lt;идея урока в одну строку&gt;
+**Результат урока:** после урока студент сможет &lt;наблюдаемое действие + критерий качества&gt;.
+**Опора:** &lt;что уже освоено&gt; · **Дальше:** &lt;где результат понадобится&gt;
 
-## PROBLEM
-&lt;конкретная боль&gt;
-
-## CONCEPT
-&lt;интуиция, диаграмма&gt;
-
-## BUILD IT
-&lt;механизм с нуля в `code/`, если урок его требует; иначе обзорно&gt;
-
-## USE IT
-&lt;то же через реальный инструмент/API&gt;
-
-## SHIP IT
-**Артефакт:** &lt;из колонки Ship It&gt; → `outputs/`
+&lt;Связный учебный переход; выбери только целесообразные секции&gt;
 
 ---
-**DoD:** ru.md заполнен, артефакт на месте (код запускается и тест зелёный — если урок их предполагает). (стаб — заполнить через /lesson-author {id})
+**DoD:** результат доказан; структура целесообразна; соразмерные проверки зелёные. (стаб — заполнить через /lesson-author {id})
 """
 
 
+def numbering_problems(phase_dir: str, lesson_dir: str, lesson_id: str) -&gt; list[str]:
+    """Проверить PP фазы и LL урока относительно id вида ``phase.lesson``."""
+    match = re.fullmatch(r"(\d+)\.(\d+)", lesson_id)
+    if not match:
+        return [f"некорректный id урока: {lesson_id!r}; ожидается &lt;phase&gt;.&lt;lesson&gt;"]
+    phase, lesson = (int(part) for part in match.groups())
+    problems = []
+    if not phase_dir.startswith(f"{phase:02d}-"):
+        problems.append(
+            f"папка фазы должна начинаться с {phase:02d}- для урока {lesson_id}"
+        )
+    if not lesson_dir.startswith(f"{lesson:02d}-"):
+        problems.append(
+            f"папка урока должна начинаться с {lesson:02d}- для урока {lesson_id}"
+        )
+    return problems
+
+
 def scaffold_lesson(root, phase_dir: str, lesson_dir: str, lesson_id: str, title: str) -&gt; Path:
-    """Создать папки урока и стаб docs/ru.md. Возвращает путь к уроку."""
+    """Создать обязательный docs/ru.md. Возвращает путь к уроку."""
+    problems = numbering_problems(phase_dir, lesson_dir, lesson_id)
+    if problems:
+        raise ValueError("; ".join(problems))
     base = Path(root) / "phases" / phase_dir / lesson_dir
-    for sub in ("code", "docs", "outputs"):
-        (base / sub).mkdir(parents=True, exist_ok=True)
-    doc = base / "docs" / "ru.md"
+    docs = base / "docs"
+    docs.mkdir(parents=True, exist_ok=True)
+    doc = docs / "ru.md"
     if not doc.exists():
         doc.write_text(STUB_TEMPLATE.format(id=lesson_id, title=title), encoding="utf-8")
     return base
 
 
 def validate_lesson(lesson_path) -&gt; list[str]:
-    """Список нарушений DoD (пустой список = урок готов по структуре)."""
-    base = Path(lesson_path)
-    problems = []
-
-    doc = base / "docs" / "ru.md"
+    """Проверить только заполненность материала, не его педагогическую достаточность."""
+    doc = Path(lesson_path) / "docs" / "ru.md"
     if not doc.exists():
-        problems.append("нет docs/ru.md")
+        return ["нет docs/ru.md"]
+
+    text = doc.read_text(encoding="utf-8").strip()
+    problems = []
+    if not text:
+        problems.append("пустой docs/ru.md")
+    if not text.startswith("# Урок "):
+        problems.append("в docs/ru.md нет заголовка '# Урок …'")
     else:
-        text = doc.read_text(encoding="utf-8")
-        for sec in SECTIONS:
-            if sec not in text:
-                problems.append(f"в docs/ru.md нет секции {sec}")
-
-    # Код и тест не обязательны: концептуальные уроки бывают без code/,
-    # а тест добавляем там, где он осмыслен (см. CLAUDE.md, Definition of Done).
-
-    out = base / "outputs"
-    artifacts = [p for p in out.glob("*") if p.name != ".gitkeep"] if out.exists() else []
-    if not artifacts:
-        problems.append("пустой outputs/ (нет артефакта)")
-
+        match = re.match(r"# Урок\s+(\d+\.\d+)\b", text)
+        if match:
+            problems.extend(numbering_problems(doc.parent.parent.parent.name, doc.parent.parent.name, match.group(1)))
+    if any(marker in text for marker in STUB_MARKERS):
+        problems.append("в docs/ru.md остались маркеры незаполненного стаба")
     return problems
 
 
 if __name__ == "__main__":
     import tempfile
+
     with tempfile.TemporaryDirectory() as tmp:
-        lesson = scaffold_lesson(tmp, "99-demo", "99-demo-lesson", "9.9", "Демо-урок")
+        lesson = scaffold_lesson(tmp, "99-demo", "01-demo-lesson", "99.1", "Демо-урок")
         print("Создан урок:", lesson.relative_to(tmp))
         print("Проверка свежего стаба:", validate_lesson(lesson))
-</code></pre></details><details class="filebox" id="f-phases-00-setup-and-tooling-00-course-conventions-code-test-conventions-py" open data-test="1"><summary><span class="fname">code/test_conventions.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from conventions import scaffold_lesson, validate_lesson, SECTIONS
+</code></pre></details><details class="filebox" id="f-phases-00-setup-and-tooling-04-course-conventions-code-test-conventions-py" open data-test="1"><summary><span class="fname">code/test_conventions.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>import pytest
+
+from conventions import STUB_MARKERS, numbering_problems, scaffold_lesson, validate_lesson
 
 
-def test_scaffold_creates_tree_and_stub(tmp_path):
-    base = scaffold_lesson(tmp_path, "99-demo", "99-demo-lesson", "9.9", "Демо")
-    assert (base / "code").is_dir()
+def test_scaffold_creates_only_required_material(tmp_path):
+    base = scaffold_lesson(tmp_path, "99-demo", "01-demo-lesson", "99.1", "Демо")
     assert (base / "docs" / "ru.md").is_file()
-    assert (base / "outputs").is_dir()
+    assert not (base / "code").exists()
+    assert not (base / "outputs").exists()
+
+
+def test_validate_flags_unfilled_stub(tmp_path):
+    base = scaffold_lesson(tmp_path, "99-demo", "01-demo-lesson", "99.1", "Демо")
+    problems = validate_lesson(base)
+    assert any("стаба" in problem for problem in problems)
     text = (base / "docs" / "ru.md").read_text(encoding="utf-8")
-    for sec in SECTIONS:
-        assert sec in text                      # стаб содержит все 6 шагов
+    assert all(marker in text for marker in STUB_MARKERS)
 
 
-def test_validate_flags_missing_artifact(tmp_path):
-    base = scaffold_lesson(tmp_path, "99-demo", "99-demo-lesson", "9.9", "Демо")
-    problems = validate_lesson(base)            # ru.md со всеми секциями есть, но outputs/ пуст
-    assert any("outputs" in p for p in problems)
-
-
-def test_validate_passes_conceptual_lesson_without_code(tmp_path):
-    # мягкий DoD: достаточно docs/ru.md + артефакта; код/тест не обязательны
-    base = scaffold_lesson(tmp_path, "99-demo", "99-demo-lesson", "9.9", "Демо")
-    (base / "outputs" / "artifact.md").write_text("# артефакт\n", encoding="utf-8")
+def test_validate_passes_purposeful_lesson_without_standard_sections_or_artifact(tmp_path):
+    base = scaffold_lesson(tmp_path, "99-demo", "01-demo-lesson", "99.1", "Демо")
+    (base / "docs" / "ru.md").write_text(
+        "# Урок 99.1 · Демо\n\n"
+        "**Результат урока:** выбрать подход из двух и обосновать решение.\n\n"
+        "Сравни два сценария, выбери вариант и проверь решение по трём критериям.\n",
+        encoding="utf-8",
+    )
     assert validate_lesson(base) == []
-</code></pre></details><h3>Артефакт (Ship It)</h3><details class="filebox" id="f-phases-00-setup-and-tooling-00-course-conventions-outputs-course-kit-conventions-md" open><summary><span class="fname">outputs/course-kit/CONVENTIONS.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Соглашения курса (course-kit)
 
-Контракт структуры и Definition of Done для курса в формате **Build It / Use It / Ship It**.
-Используй вместе с `conventions.py` (scaffolder + валидатор) из этой же папки.
 
-## Структура урока
+def test_validate_requires_lesson_title(tmp_path):
+    base = tmp_path / "lesson"
+    (base / "docs").mkdir(parents=True)
+    (base / "docs" / "ru.md").write_text("Заполненный текст без заголовка", encoding="utf-8")
+    assert any("заголовка" in problem for problem in validate_lesson(base))
 
+
+def test_numbering_uses_phase_prefix_and_lesson_order_prefix():
+    assert numbering_problems("04-skills", "03-projects", "4.3") == []
+    assert numbering_problems("04-skills", "04-projects", "4.3") == [
+        "папка урока должна начинаться с 03- для урока 4.3"
+    ]
+
+
+def test_scaffold_rejects_mismatched_lesson_prefix(tmp_path):
+    with pytest.raises(ValueError, match="начинаться с 03-"):
+        scaffold_lesson(tmp_path, "04-skills", "04-projects", "4.3", "Проекты")
+</code></pre></details><h3>Артефакт</h3><details class="filebox" id="f-phases-00-setup-and-tooling-04-course-conventions-outputs-course-kit-conventions-md" open><summary><span class="fname">outputs/course-kit/CONVENTIONS.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Соглашения курса (course-kit)
+
+Build It / Use It / Ship It — конструктор учебного перехода, а не обязательное
+оглавление. Используй этот файл вместе с `conventions.py`.
+
+## Физическая структура
+
+```text
+phases/&lt;PP&gt;-&lt;phase-slug&gt;/&lt;LL&gt;-&lt;lesson-slug&gt;/
+├── docs/ru.md   обязательный связный материал
+├── code/        опционально: исполняемая практика + тесты
+├── outputs/     опционально: переиспользуемый артефакт
+└── quiz.json    опционально: диагностический квиз
 ```
-phases/&lt;NN&gt;-&lt;phase-slug&gt;/&lt;NN&gt;-&lt;lesson-slug&gt;/
-├── code/      Build It (с нуля, без фреймворков) + Use It + тест test_*.py
-├── docs/ru.md разбор по 6 шагам
-└── outputs/   артефакт: prompt · skill · agent · MCP
-```
 
-## 6 шагов в docs/ru.md
+`PP` — номер фазы, `LL` — порядковый номер урока внутри фазы. Для урока `3.2`
+ожидается путь `phases/03-&lt;phase&gt;/02-&lt;lesson&gt;/`.
 
-1. **MOTTO** — идея урока в одну строку.
-2. **PROBLEM** — конкретная боль.
-3. **CONCEPT** — интуиция и диаграммы (ASCII/mermaid).
-4. **BUILD IT** — реализация с нуля в `code/`, запускается на CPU офлайн. Не догма: концептуальные/обзорные уроки бывают без `code/`. Где код содержательный — оформляй BUILD IT как **упражнение**: спека + тесты как ТЗ, эталон под катом, и три пути пройти его (собрать самому · подсмотреть эталон · делегировать ИИ).
-5. **USE IT** — то же через реальный инструмент/API (платный ключ → пометка `**Requires:**`).
-6. **SHIP IT** — артефакт в `outputs/` + как переиспользовать.
+## Выбор элементов
 
-## Definition of Done
+Перед написанием реши для каждого элемента: **оставить / объединить / опустить**.
 
-- `docs/ru.md` со всеми секциями (`MOTTO·PROBLEM·CONCEPT·BUILD IT·USE IT·SHIP IT`).
-- В `outputs/` обещанный артефакт (непустой).
-- **Если урок предполагает Build It-код:** рабочий код и, где осмысленно, проходящий `test_*.py`; `pytest &lt;lesson&gt;/code` зелёный. Код/тест только там, где они реально что-то объясняют.
-- Код без платных ключей (исключения помечены `**Requires:**`).
+- `MOTTO` нужен, если одна фраза организует понимание.
+- `PROBLEM` и `CONCEPT` получают отдельные секции, только если постановке и механизму
+  действительно нужно отдельное место.
+- `BUILD IT` нужен, если сборка делает механизм наблюдаемым или входит в outcome.
+- `USE IT` нужен, если реальный инструмент даёт отдельный перенос, а не повторяет пример.
+- `SHIP IT` нужен, если отдельный артефакт будет переиспользован.
+- Ошибки, квиз и материалы получают отдельные блоки только при самостоятельной пользе.
+
+Заголовки можно переименовать и объединить. Нельзя сохранять пустую секцию ради
+симметрии с соседними уроками.
+
+## Два слоя готовности
+
+**Педагогическая готовность** означает, что студент без скрытых пререквизитов выполняет
+наблюдаемое действие, проверяет результат и переносит его в новую задачу. Форма практики
+и проверки следует из outcome.
+
+**Структурная готовность** означает только, что существует заполненный `docs/ru.md` без
+маркеров стаба. Код, артефакт, квиз и материалы не обязательны. Если они добавлены, то
+должны быть рабочими и поддерживать результат урока.
 
 ## Автоматизация
 
 ```bash
-python conventions.py                 # демо: scaffold + validate во временной папке
-python -c "from conventions import validate_lesson as v; print(v('phases/01-how-llms-work/01-tokens-and-tokenization'))"
+python conventions.py
+python -c "from conventions import validate_lesson as v; print(v('phases/01-demo'))"
 ```
 
-`validate_lesson(path)` возвращает список нарушений (пустой = готов). Повесь его в CI,
-чтобы незаконченные уроки не проходили проверку.
-</code></pre></details><details class="filebox" id="f-phases-00-setup-and-tooling-00-course-conventions-outputs-course-kit-conventions-py" open><summary><span class="fname">outputs/course-kit/conventions.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Соглашения курса: scaffolder + валидатор урока — Build It для урока 0.4.
+`validate_lesson(path)` не требует стандартные секции и `outputs/`. Пустой список
+означает «материал заполнен», но не доказывает его педагогическую достаточность или
+целесообразность выбранной структуры.
+</code></pre></details><details class="filebox" id="f-phases-00-setup-and-tooling-04-course-conventions-outputs-course-kit-conventions-py" open><summary><span class="fname">outputs/course-kit/conventions.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Scaffolder и мягкий структурный валидатор урока — Build It для урока 0.4.
 
-Без зависимостей. `scaffold_lesson()` создаёт дерево урока
-phases/&lt;NN&gt;/&lt;lesson&gt;/{code,docs,outputs} и стаб docs/ru.md по 6 шагам.
-`validate_lesson()` проверяет Definition of Done: docs/ru.md со всеми секциями и
-непустой артефакт в outputs/. Код и тест — по необходимости урока (концептуальные
-уроки бывают без code/), поэтому их отсутствие нарушением не считается.
+Без зависимостей. `scaffold_lesson()` создаёт только обязательный `docs/ru.md` с
+минимальным паспортом. `validate_lesson()` проверяет наличие заголовка и отсутствие
+следов незаполненного стаба. Секции, код, квиз и артефакт намеренно не требуются:
+их целесообразность определяется педагогическим контрактом.
 """
 from __future__ import annotations
-from pathlib import Path
 
-# Секции, обязательные в docs/ru.md (MOTTO — отдельной строкой-цитатой).
-SECTIONS = ("PROBLEM", "CONCEPT", "BUILD IT", "USE IT", "SHIP IT")
+from pathlib import Path
+import re
+
+
+STUB_MARKERS = (
+    "&lt;наблюдаемое действие",
+    "&lt;что уже освоено&gt;",
+    "&lt;где результат понадобится&gt;",
+    "&lt;Связный учебный переход",
+    "(стаб — заполнить",
+)
 
 STUB_TEMPLATE = """# Урок {id} · {title}
 
-&gt; **MOTTO.** &lt;идея урока в одну строку&gt;
+**Результат урока:** после урока студент сможет &lt;наблюдаемое действие + критерий качества&gt;.
+**Опора:** &lt;что уже освоено&gt; · **Дальше:** &lt;где результат понадобится&gt;
 
-## PROBLEM
-&lt;конкретная боль&gt;
-
-## CONCEPT
-&lt;интуиция, диаграмма&gt;
-
-## BUILD IT
-&lt;механизм с нуля в `code/`, если урок его требует; иначе обзорно&gt;
-
-## USE IT
-&lt;то же через реальный инструмент/API&gt;
-
-## SHIP IT
-**Артефакт:** &lt;из колонки Ship It&gt; → `outputs/`
+&lt;Связный учебный переход; выбери только целесообразные секции&gt;
 
 ---
-**DoD:** ru.md заполнен, артефакт на месте (код запускается и тест зелёный — если урок их предполагает). (стаб — заполнить через /lesson-author {id})
+**DoD:** результат доказан; структура целесообразна; соразмерные проверки зелёные. (стаб — заполнить через /lesson-author {id})
 """
 
 
+def numbering_problems(phase_dir: str, lesson_dir: str, lesson_id: str) -&gt; list[str]:
+    """Проверить PP фазы и LL урока относительно id вида ``phase.lesson``."""
+    match = re.fullmatch(r"(\d+)\.(\d+)", lesson_id)
+    if not match:
+        return [f"некорректный id урока: {lesson_id!r}; ожидается &lt;phase&gt;.&lt;lesson&gt;"]
+    phase, lesson = (int(part) for part in match.groups())
+    problems = []
+    if not phase_dir.startswith(f"{phase:02d}-"):
+        problems.append(
+            f"папка фазы должна начинаться с {phase:02d}- для урока {lesson_id}"
+        )
+    if not lesson_dir.startswith(f"{lesson:02d}-"):
+        problems.append(
+            f"папка урока должна начинаться с {lesson:02d}- для урока {lesson_id}"
+        )
+    return problems
+
+
 def scaffold_lesson(root, phase_dir: str, lesson_dir: str, lesson_id: str, title: str) -&gt; Path:
-    """Создать папки урока и стаб docs/ru.md. Возвращает путь к уроку."""
+    """Создать обязательный docs/ru.md. Возвращает путь к уроку."""
+    problems = numbering_problems(phase_dir, lesson_dir, lesson_id)
+    if problems:
+        raise ValueError("; ".join(problems))
     base = Path(root) / "phases" / phase_dir / lesson_dir
-    for sub in ("code", "docs", "outputs"):
-        (base / sub).mkdir(parents=True, exist_ok=True)
-    doc = base / "docs" / "ru.md"
+    docs = base / "docs"
+    docs.mkdir(parents=True, exist_ok=True)
+    doc = docs / "ru.md"
     if not doc.exists():
         doc.write_text(STUB_TEMPLATE.format(id=lesson_id, title=title), encoding="utf-8")
     return base
 
 
 def validate_lesson(lesson_path) -&gt; list[str]:
-    """Список нарушений DoD (пустой список = урок готов по структуре)."""
-    base = Path(lesson_path)
-    problems = []
-
-    doc = base / "docs" / "ru.md"
+    """Проверить только заполненность материала, не его педагогическую достаточность."""
+    doc = Path(lesson_path) / "docs" / "ru.md"
     if not doc.exists():
-        problems.append("нет docs/ru.md")
+        return ["нет docs/ru.md"]
+
+    text = doc.read_text(encoding="utf-8").strip()
+    problems = []
+    if not text:
+        problems.append("пустой docs/ru.md")
+    if not text.startswith("# Урок "):
+        problems.append("в docs/ru.md нет заголовка '# Урок …'")
     else:
-        text = doc.read_text(encoding="utf-8")
-        for sec in SECTIONS:
-            if sec not in text:
-                problems.append(f"в docs/ru.md нет секции {sec}")
-
-    # Код и тест не обязательны: концептуальные уроки бывают без code/,
-    # а тест добавляем там, где он осмыслен (см. CLAUDE.md, Definition of Done).
-
-    out = base / "outputs"
-    artifacts = [p for p in out.glob("*") if p.name != ".gitkeep"] if out.exists() else []
-    if not artifacts:
-        problems.append("пустой outputs/ (нет артефакта)")
-
+        match = re.match(r"# Урок\s+(\d+\.\d+)\b", text)
+        if match:
+            problems.extend(numbering_problems(doc.parent.parent.parent.name, doc.parent.parent.name, match.group(1)))
+    if any(marker in text for marker in STUB_MARKERS):
+        problems.append("в docs/ru.md остались маркеры незаполненного стаба")
     return problems
 
 
 if __name__ == "__main__":
     import tempfile
+
     with tempfile.TemporaryDirectory() as tmp:
-        lesson = scaffold_lesson(tmp, "99-demo", "99-demo-lesson", "9.9", "Демо-урок")
+        lesson = scaffold_lesson(tmp, "99-demo", "01-demo-lesson", "99.1", "Демо-урок")
         print("Создан урок:", lesson.relative_to(tmp))
         print("Проверка свежего стаба:", validate_lesson(lesson))
-</code></pre></details><h3>Связанные файлы</h3><details class="filebox" id="f-claude-skills-lesson-author-skill-md" open><summary><span class="fname">.claude/skills/lesson-author/SKILL.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>---
+</code></pre></details><h3>Связанные файлы</h3><details class="filebox" id="f-lesson-contract-md" open><summary><span class="fname">LESSON_CONTRACT.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Контракт урока AI Native
+
+Этот документ — источник правды для создания и педагогического аудита уроков курса.
+`LESSON_TEMPLATE.md` предлагает конструктор, а этот контракт определяет, когда урок
+действительно готов. Наличие всех секций и зелёных тестов само по себе этого не
+доказывает; отсутствие отдельной секции само по себе не является дефектом.
+
+## Что такое урок
+
+Урок — один необходимый учебный переход:
+
+```text
+что студент уже умеет
+→ какая новая проблема возникает
+→ какую модель или механизм он осваивает
+→ какое действие выполняет самостоятельно
+→ какую реалистичную ошибку распознаёт
+→ как проверяет результат
+→ куда переносит новый способ работы
+```
+
+Если внутри материала несколько независимых переходов, урок нужно сузить или разделить.
+Если переход уже освоен или не нужен следующему шагу, урок следует объединить с соседом,
+перенести в факультативную траекторию или удалить.
+
+## Паспорт урока
+
+До написания или аудита должны быть определены:
+
+```text
+Роль в маршруте: обязательный / факультативный
+Результат урока: после урока студент сможет &lt;действие&gt; &lt;над объектом&gt; &lt;с критерием качества&gt;
+Опоры: какие термины, механизмы и предметные знания уже освоены
+Следующий шаг: где результат урока понадобится дальше
+Самостоятельное действие: что студент делает без копирования демонстрации
+Доказательство результата: тест / рубрика / сценарий / объяснение / иной подходящий способ
+Переносимый результат: что остаётся после урока, если отдельный артефакт действительно нужен
+Критерии приёмки: по каким признакам видно, что действие выполнено правильно
+Структурные решения: какие блоки нужны, какие объединены или опущены и почему
+```
+
+Формулировки «узнает», «познакомится» и «поймёт тему» не являются результатом урока без
+наблюдаемого действия.
+
+## Принцип целесообразности
+
+Контракт требует учебные функции, а не одинаковое оглавление. Перед написанием или
+аудитом каждый возможный элемент получает решение **оставить / объединить / опустить**:
+
+| Элемент | Оставить, когда | Объединить или опустить, когда |
+|---|---|---|
+| `MOTTO` | одна фраза действительно организует понимание | получается декоративный слоган |
+| `PROBLEM` | новая рабочая проблема требует отдельной постановки | ситуация уже очевидна и естественно помещается во введение |
+| `CONCEPT` | студент осваивает новую модель или причинный механизм | достаточно короткого пояснения внутри примера |
+| `BUILD IT` | сборка делает механизм наблюдаемым или входит в outcome | код, CLI или ручная реализация не меняют понимание |
+| `USE IT` | перенос в реальный инструмент отличается от учебного примера | применение уже является самой практикой или создаёт повтор |
+| `SHIP IT` | самостоятельный артефакт будет реально переиспользован | результатом является решение, диагностика или объяснение без полезного файла |
+| `ЧАСТЫЕ ОШИБКИ` | есть типичная ошибка с существенной ценой | достаточно разобрать ошибку рядом с действием и проверкой |
+| `ПРОВЕРЬ СЕБЯ` / квиз | вопросы диагностируют неверную модель | результат надёжнее проверяется практикой, рубрикой или сценарием |
+| `Материалы` | источник закрывает конкретную границу или углубление | ссылки не добавляют ничего к достижению outcome |
+
+Заголовки можно переименовывать, объединять и располагать в другой последовательности.
+Нельзя оставлять пустой или искусственный блок ради симметрии с соседними уроками. Если
+элемент опущен, его учебная функция либо выполняется в другом месте, либо признана
+ненужной для результата этого урока.
+
+## Педагогический Definition of Done
+
+Урок педагогически готов, только если выполнены все применимые условия.
+
+### 1. Роль и границы
+
+- Результат нужен целевой аудитории и поддерживает результат фазы.
+- Понятно, почему урок находится именно в этой точке маршрута.
+- Урок делает один связный переход и не забирает самостоятельные темы следующих уроков.
+- Обязательное содержание отделено от факультативного углубления.
+
+### 2. Пререквизиты
+
+- Все существенные термины, механизмы и предметные модели либо освоены раньше, либо
+  получают короткий достаточный мост до первого использования.
+- Практика и оценивание не требуют знания, которое появится только позже.
+- Обязательная опора не спрятана только в дополнительном чтении.
+
+### 3. Объяснение
+
+- Урок показывает конкретную ситуацию, понятную без знания ответа.
+- Если вводится новый механизм, он объяснён причинно, а не каталогом API, терминов и
+  исключений.
+- Новый термин сначала раскрывается обычным языком и примером.
+- Первый пример делает механизм наблюдаемым; по возможности студент сначала прогнозирует
+  смысл или результат.
+- Граница применимости и реалистичная ошибка раскрыты там, где они меняют решение.
+
+### 4. Самостоятельная практика
+
+- Практика проверяет заявленный результат урока.
+- Студент принимает решение, делает прогноз, строит результат или диагностирует ошибку,
+  а не перепечатывает показанный пример.
+- Формат соответствует действию: исполняемый механизм проверяется поведением; решение,
+  план или спецификация — содержательной рубрикой; процедура — сценарием и критериями
+  наблюдения.
+- Код добавляется только тогда, когда программный или вычислительный механизм входит в
+  результат урока.
+- Делегирование ИИ допустимо как отдельный путь, но студент обязан проверить и объяснить
+  полученный результат по тем же критериям приёмки.
+
+### 5. Проверка понимания
+
+- Выбран подходящий способ доказать результат: тест, рубрика, сценарий, диагностика,
+  объяснение или другой наблюдаемый способ.
+- Проверка отличает понимание механизма от правдоподобной типичной ошибки, если такая
+  ошибка существенна для результата.
+- Для кода тестируется ключевое поведение и хотя бы один реалистичный failure mode, а не
+  только факт запуска.
+- Для неисполняемого артефакта есть критерии качества, требующие содержательного решения,
+  а не наличия заголовков.
+- Квиз добавляется только если он закрепляет или диагностирует понимание; он не заменяет
+  самостоятельное действие.
+
+### 6. Перенос и результат
+
+- Студент понимает, как применить новое действие за пределами демонстрации урока.
+- Если отдельный артефакт полезен, он соответствует outcome и не существует ради
+  единообразия структуры.
+- Для переносимого результата указано, как его адаптировать, запустить, повторить или
+  передать в новой задаче.
+- Критерии приёмки позволяют проверить действие и, при наличии, артефакт.
+
+## Структурный и технический Definition of Done
+
+Структурный DoD поддерживает педагогический контракт, но не заменяет его:
+
+- существует непустой `docs/ru.md` с явным результатом урока и связным учебным
+  переходом; обязательного набора заголовков нет;
+- для каждого добавленного блока понятна его функция; пустых стабов и секций ради
+  шаблона нет;
+- `code/`, `outputs/`, `quiz.json` и блок `Материалы` существуют только когда нужны
+  выбранной практике, проверке или переносу;
+- если код входит в результат — упражнение имеет понятное ТЗ, запускается на CPU,
+  нетривиальное поведение покрыто тестами, а `pytest &lt;lesson&gt;/code -q` проходит;
+- если есть артефакт, квиз или дополнительные материалы, они соответствуют критериям
+  качества из педагогического DoD;
+- внешние ключи, сеть, платные сервисы и иные ограничения явно отмечены через
+  `**Requires:**`; обязательный Build It не зависит от платного доступа;
+- изменчивые факты и рекомендации опираются на проверенные первичные источники;
+- после изменения урока пересобран сайт и выполнены соразмерные проверки.
+
+`validate_lesson()` подтверждает только наличие заполненного материала без следов стаба.
+Он намеренно не требует именованные секции и артефакт: их целесообразность определяется
+педагогическим аудитом. Пустой список нарушений не означает, что урок прошёл аудит.
+
+## Что не является обязательным
+
+- код, CLI и юнит-тест в каждом уроке;
+- фиксированные секции `MOTTO / PROBLEM / CONCEPT / BUILD IT / USE IT / SHIP IT`;
+- одинаковый объём секций;
+- демонстрация всех провайдеров и альтернативных инструментов;
+- энциклопедическая полнота и редкие параметры;
+- отдельный артефакт, квиз и дополнительное чтение в каждом уроке;
+- сохранение урока только потому, что он уже есть в программе.
+
+## Решение по итогам аудита
+
+Каждый аудит заканчивается одним решением:
+
+1. **Оставить** — результат и место урока оправданы.
+2. **Сузить** — результат нужен, но содержание выходит за его границы.
+3. **Объединить** — самостоятельный переход искусственен и лучше работает с соседом.
+4. **Удалить или отложить** — тема не нужна в основном маршруте либо должна появиться
+   позже.
+
+После решения фиксируются только доказанные пробелы и точечные изменения. Редактура
+начинается отдельно, чтобы сначала не улучшать урок, который нужно перенести или
+объединить.
+</code></pre></details><details class="filebox" id="f-claude-skills-lesson-author-skill-md" open><summary><span class="fname">.claude/skills/lesson-author/SKILL.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>---
 name: lesson-author
-description: "Используй для создания или доработки урока курса AI Native. Триггеры: «напиши урок &lt;id&gt;», «сделай урок», «заполни docs/ru.md», «scaffold lesson», упоминание Build It / Use It / Ship It или папки phases/. Скилл задаёт структуру урока (6 шагов), раскладку папок и definition of done."
+description: "Используй для создания или доработки урока курса AI Native. Триггеры: «напиши урок &lt;id&gt;», «сделай урок», «заполни docs/ru.md», «scaffold lesson», упоминание Build It / Use It / Ship It или папки phases/. Скилл выбирает целесообразную структуру, практику и definition of done по outcome урока."
 ---
 
 # lesson-author — автор уроков курса AI Native
 
-Скилл помогает писать уроки единообразно по каркасу курса (см. `CLAUDE.md` и `README.md`).
+Источник педагогического контракта — `LESSON_CONTRACT.md`; правила проекта —
+`CLAUDE.md` и `README.md`. Build It / Use It / Ship It — конструктор, а не обязательный
+набор секций.
 
 ## Аргумент
 
-ID урока, напр. `2.3`. Найди его в `README.md` (название, Build It / Use It / Ship It, папку).
+ID урока, например `2.3`. Найди его в `README.md`: название, место в фазе, заявленные
+Build It / Use It / Ship It и папку. Эти колонки — исходная гипотеза, которую можно
+сузить по контракту урока.
 
 ## Шаги
 
-1. **Определи папку** из колонки «Папка» в README. Создай `code/`, `docs/`, `outputs/` если их нет.
-2. **Напиши `docs/ru.md`** по шаблону ниже — все 6 шагов, на русском.
-3. **Build It → `code/` (если урок этого требует).** Реализуй механизм урока с нуля, без внешних фреймворков; должно запускаться на CPU офлайн. Концептуальные/обзорные уроки (setup, карты, обзоры) либо уроки, чей механизм дублирует более поздний, могут не иметь `code/` — тогда переходи к Ship It.
-4. **Тест → `code/test_&lt;name&gt;.py`, где он осмыслен.** Для нетривиального кода — минимум один проходящий юнит-тест на ключевое поведение. Тривиальный код (данные, простая формула) можно оставить без теста.
-   - **Оформи Build It как упражнение** (для содержательного кода). Поставь маркер `&lt;!-- exercise --&gt;` (сайт раскроет тесты как ТЗ и свернёт решение в «Показать решение»). Задачу ставь **подробно**, чтобы было ясно, что делать:
-     1. одна строка «**Задание:** собери …»;
-     2. какой файл создать и **контракт каждой функции** — вход, что делает, выход/инвариант;
-     3. «**Готово, когда** все тесты зелёные» + что должно показывать демо;
-     4. команды запуска (red→green);
-     5. короткая подсказка «с чего начать»;
-     6. ссылка `[эталонное решение](#lesson-files)`.
-     - Блок «**Три пути**» (собери сам · подсмотри эталон · делегируй ИИ) и кнопку «Скопировать промпт для ИИ» сайт вставляет **сам** для exercise-уроков — в `docs/ru.md` их писать не нужно, только укажи в конце BUILD IT, что три пути и тесты ждут в [«Исходниках урока»](#lesson-files).
-5. **Use It.** Покажи то же через реальный инструмент/API. Платный ключ → пометь `**Requires:**` в шапке урока.
-6. **Ship It → `outputs/`.** Положи артефакт, указанный в колонке Ship It (prompt/skill/agent/MCP), и опиши переиспользование.
-7. **Материалы.** Добавь блок `## Материалы` — 2–4 ссылки на офиц. доки/первоисточники по теме урока. **Каждый URL проверь** (WebSearch/WebFetch), не выдумывай ссылки.
-8. **Проверь DoD** (см. CLAUDE.md); если в уроке есть код — прогони `pytest` по папке урока.
-9. **Отметь готовность (автообновление).** Когда DoD выполнен:
-   - в `PROGRESS.md` поменяй `- [ ] &lt;id&gt; …` на `- [x] &lt;id&gt; …`;
-   - в конце `docs/ru.md` в строке DoD добавь `✅ **Урок готов**`.
-10. **Коммит после фазы.** Когда **все** уроки фазы отмечены `[x]` в `PROGRESS.md`, сделай один коммит на фазу:
-   ```bash
-   git add -A &amp;&amp; git commit -m "Phase &lt;N&gt; (&lt;phase-slug&gt;): lessons complete"
-   ```
-   Внутри фазы отдельные уроки не коммить — только по завершении всей фазы. Пуш оставь пользователю.
+1. **Определи роль урока.** По результату фазы и соседним урокам зафиксируй наблюдаемый
+   outcome, пререквизиты, следующий шаг, самостоятельное действие и способ доказать
+   результат.
+2. **Проверь целесообразность структуры.** Для `MOTTO`, `PROBLEM`, `CONCEPT`, `BUILD IT`,
+   `USE IT`, `SHIP IT`, ошибок, квиза и материалов выбери: оставить, объединить или
+   опустить. Не заполняй блок ради симметрии.
+3. **Определи папку** из README. Обязателен только `docs/ru.md`; `code/`, `outputs/` и
+   `quiz.json` создавай по выбранной практике и проверке.
+4. **Напиши связный материал** на русском. Заголовки можно переименовывать и располагать
+   иначе, если учебный переход остаётся понятным.
+5. **Добавь самостоятельную практику по outcome:**
+   - вычисление или технический workflow → исполняемая практика и behavioral tests;
+   - решение, план, спецификация или ревью → самостоятельный результат и рубрика;
+   - процедура или роль → сценарий, наблюдаемые критерии и повторная попытка.
+6. **Build It — только при необходимости.** Если сборка механизма входит в outcome,
+   реализуй её офлайн на CPU. Содержательный код оформи как exercise: задание, контракт
+   функций, критерий готовности, команды red→green, подсказка, тесты-ТЗ и эталон под
+   катом. Поставь `&lt;!-- exercise --&gt;`.
+7. **Use It — только при отдельном переносе.** Добавь реальный инструмент/API, когда это
+   даёт новое действие, а не повторяет практику. Внешний доступ пометь `**Requires:**`.
+8. **Ship It — только при полезном артефакте.** Если отдельный файл будет переиспользован,
+   положи его в `outputs/` и дай критерии приёмки. Иначе опиши перенос результата без
+   искусственного файла.
+9. **Выбери проверку.** Квиз не обязателен. Используй его, только если дистракторы
+   диагностируют неверную модель лучше основной практики. Существенную реалистичную
+   ошибку покажи рядом с действием или отдельным блоком.
+10. **Добавь материалы по необходимости.** Каждый источник должен закрывать конкретную
+    границу или углубление. URL проверь; фиксированной квоты нет.
+11. **Проверь DoD** по `LESSON_CONTRACT.md`, запусти соразмерные тесты и пересобери сайт.
+12. **Отметь готовность.** Только после педагогической и технической проверки обнови
+    `PROGRESS.md` и добавь в урок `✅ **Урок готов**`.
+13. **Коммит после фазы.** Когда вся фаза готова, сделай один коммит. Пуш оставь
+    пользователю.
 
-## Шаблон docs/ru.md
+## Минимальная основа docs/ru.md
 
 ```markdown
 # Урок &lt;id&gt; · &lt;название&gt;
 
 **Фаза &lt;N&gt; — &lt;фаза&gt;** · **Результат фазы:** &lt;outcome&gt;
-&lt;!-- **Requires:** платный API-ключ &lt;провайдер&gt; — только если применимо --&gt;
-&lt;!-- если Build It оформлен как упражнение (эталон под катом) — добавь отдельной строкой маркер exercise в HTML-комментарии --&gt;
+**Результат урока:** после урока студент сможет &lt;наблюдаемое действие + критерий качества&gt;.
+**Опора:** &lt;что уже освоено&gt; · **Дальше:** &lt;где результат понадобится&gt;
+&lt;!-- **Requires:** внешний доступ или платный ключ — только если применимо --&gt;
 
-&gt; **MOTTO.** &lt;идея в одну строку&gt;
-
-## PROBLEM
-&lt;конкретная боль&gt;
-
-## CONCEPT
-&lt;интуиция, диаграмма ASCII/mermaid&gt;
-
-## BUILD IT
-&lt;что собираем с нуля; ссылка на code/&gt;
-
-## USE IT
-&lt;то же через реальный инструмент/API&gt;
-
-## SHIP IT
-**Артефакт:** &lt;из колонки Ship It&gt; → `outputs/`
-&lt;как переиспользовать&gt;
-
-## Материалы
-- [&lt;название&gt;](&lt;проверенный URL&gt;) — &lt;чем полезно&gt;
-&lt;2–4 ссылки на офиц. доки/первоисточники&gt;
+&lt;Связный учебный переход; структура выбрана по целесообразности&gt;
 
 ---
-**Часы:** ~&lt;n&gt; · **DoD:** ru.md заполнен, артефакт на месте (код запускается и тест зелёный — если урок их предполагает).
+**Часы:** ~&lt;n&gt; · **DoD:** результат доказан; структура целесообразна; соразмерные проверки зелёные.
 ```
 
 ## Правила
 
-- Никаких заглушек — только рабочий код.
-- Объяснения по-русски, код по-английски, минимум зависимостей.
+- Не требуй именованные секции, код, CLI, тест, квиз, материалы или артефакт по умолчанию.
+- Не сохраняй элемент, если он не влияет на outcome, ошибку, проверку или перенос.
+- Никаких заглушек в рабочем коде; объяснения по-русски, идентификаторы по-английски.
 - Не меняй зафиксированные слаги папок.
-- Образец: `phases/01-how-llms-work/01-tokens-and-tokenization/`.
-</code></pre></details></section><hr><p><strong>Часы:</strong> ~2 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+- Наличие файлов доказывает комплектацию, но не педагогическую готовность.
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~2 · <strong>DoD:</strong> результат доказан; структура целесообразна; соразмерные проверки зелёные. ✅ <strong>Урок готов</strong></p></article>
     <div class="nav-prevnext" id="prevnext"><a href="../../lessons/agent-and-skillkit/"><small>← 0.3</small>Агент и SkillKit</a><a href="../../lessons/tokens-and-tokenization/" style="text-align:right"><small>1.1 →</small>Токены и токенизация</a></div>
   </section>
 
