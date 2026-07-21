@@ -1,60 +1,92 @@
-"""check_env.py — самодостаточный валидатор окружения (drop-in, без зависимостей).
+"""Локально проверить, что настроен API-ключ хотя бы одного провайдера.
 
-Запуск:  python check_env.py [путь_к_.env]   (по умолчанию ./.env)
-Код выхода 0 — всё ок, 1 — есть проблемы. Сети не делает.
+Скрипт не использует сторонние библиотеки, не обращается к сети и не печатает
+значения ключей. Успешная проверка подтверждает только наличие и грубый формат,
+но не действительность ключа или доступ к конкретной модели.
 """
+
+from __future__ import annotations
+
 import sys
 from pathlib import Path
 
-PLACEHOLDERS = {"", "your-key-here", "changeme", "xxx", "...", "todo"}
-KEY_HINTS = {"ANTHROPIC_API_KEY": "sk-ant-", "OPENAI_API_KEY": "sk-", "GOOGLE_API_KEY": ""}
-REQUIRED = list(KEY_HINTS)
+
+PLACEHOLDERS = {"your-key-here", "changeme", "xxx", "...", "todo"}
+PROVIDERS = {
+    "ANTHROPIC_API_KEY": ("Anthropic", "sk-ant-"),
+    "OPENAI_API_KEY": ("OpenAI", "sk-"),
+    "GEMINI_API_KEY": ("Google Gemini", ""),
+}
 
 
-def _clean(val):
-    val = val.strip()
-    if val[:1] in {'"', "'"}:
-        return val[1:].split(val[0], 1)[0]
-    return val.split(" #", 1)[0].strip()
+def _clean(value: str) -> str:
+    """Убрать внешние кавычки и комментарий после значения."""
+    value = value.strip()
+    if value[:1] in {'"', "'"}:
+        quote = value[0]
+        return value[1:].split(quote, 1)[0]
+    return value.split(" #", 1)[0].strip()
 
 
-def parse_env(text):
-    env = {}
+def parse_env(text: str) -> dict[str, str]:
+    """Прочитать простые строки KEY=VALUE из текста .env."""
+    env: dict[str, str] = {}
     for raw in text.splitlines():
         line = raw.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
         if line.startswith("export "):
             line = line[len("export "):].strip()
-        key, _, val = line.partition("=")
-        env[key.strip()] = _clean(val)
+        key, _, value = line.partition("=")
+        env[key.strip()] = _clean(value)
     return env
 
 
-def validate(env, required=REQUIRED):
-    problems = []
-    for key in required:
-        val = env.get(key)
-        if val is None:
-            problems.append(f"{key}: отсутствует")
-        elif val.lower() in PLACEHOLDERS:
-            problems.append(f"{key}: похоже на плейсхолдер")
-        else:
-            hint = KEY_HINTS.get(key, "")
-            if hint and not val.startswith(hint):
-                problems.append(f"{key}: ожидался префикс {hint!r}")
-    return problems
+def validate(env: dict[str, str]) -> tuple[list[str], list[str]]:
+    """Вернуть найденные проблемы и названия настроенных провайдеров."""
+    problems: list[str] = []
+    configured: list[str] = []
+
+    for key, (provider, prefix) in PROVIDERS.items():
+        value = env.get(key, "").strip()
+        if not value:
+            continue
+        if value.lower() in PLACEHOLDERS:
+            problems.append(f"{key}: осталось учебное значение вместо ключа")
+            continue
+        if prefix and not value.startswith(prefix):
+            problems.append(f"{key}: значение не похоже на ключ {provider}")
+            continue
+        configured.append(provider)
+
+    if not configured and not problems:
+        problems.append("не настроен ни один поддерживаемый API-ключ")
+
+    return problems, configured
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = list(sys.argv[1:] if argv is None else argv)
+    if len(args) > 1:
+        print("Использование: python check_env.py [путь_к_.env]")
+        return 2
+
+    path = Path(args[0] if args else ".env")
+    if not path.is_file():
+        print(f"Нет файла {path}. Скопируй .env.example в .env.")
+        return 1
+
+    problems, configured = validate(parse_env(path.read_text(encoding="utf-8")))
+    if problems:
+        print("Проблемы окружения:")
+        for problem in problems:
+            print(f"  - {problem}")
+        return 1
+
+    print("Локальная проверка пройдена. Настроено:", ", ".join(configured))
+    print("Важно: действительность ключа и доступ к модели проверяет только API-запрос.")
+    return 0
 
 
 if __name__ == "__main__":
-    path = Path(sys.argv[1] if len(sys.argv) > 1 else ".env")
-    if not path.exists():
-        print(f"Нет файла {path}. Скопируй .env.example в .env и заполни.")
-        sys.exit(1)
-    problems = validate(parse_env(path.read_text(encoding="utf-8")))
-    if problems:
-        print("Проблемы окружения:")
-        for p in problems:
-            print("  -", p)
-        sys.exit(1)
-    print("Окружение в порядке: все ключи заданы.")
+    raise SystemExit(main())

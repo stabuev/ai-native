@@ -108,7 +108,7 @@ CLAUDE.md                       инструкции проекта для Claud
 | # | Урок | Build It | Use It | Ship It | Папка |
 |---|---|---|---|---|---|
 | 0.1 | Карта инструментов ИИ: как выбирать под задачу | — | Сравнение двух доступных вариантов на своих примерах | Личная карта выбора с критерием успеха и эскалацией | `phases/00-setup-and-tooling/01-ai-tools-map` |
-| 0.2 | Аккаунты, тарифы, API-ключи, окружение | Python venv, .env, первый запрос к API | Консоли Anthropic / OpenAI / Google | Готовое окружение + проверочный скрипт | `phases/00-setup-and-tooling/02-accounts-keys-env` |
+| 0.2 | API-доступ, ключи и локальное окружение | — | Настройка и диагностика одного провайдера; первый API-запрос при наличии доступа | Безопасный `env-starter` + локальное окружение | `phases/00-setup-and-tooling/02-accounts-keys-env` |
 | 0.3 | Агент и SkillKit | Установка агента (Claude/Cursor/Codex) со SkillKit | Запуск /find-your-level | Персональный маршрут с оценкой часов | `phases/00-setup-and-tooling/03-agent-and-skillkit` |
 | 0.4 | Соглашения курса | Структура папок phases/<PP>-<phase>/<LL>-<lesson>/ (code, docs, outputs) | Шаблон урока и сдачи артефактов | Заготовка репозитория курса | `phases/00-setup-and-tooling/04-course-conventions` |
 
