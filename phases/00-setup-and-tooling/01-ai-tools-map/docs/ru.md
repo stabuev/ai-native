@@ -200,13 +200,16 @@
 
 ## Необязательный справочник
 
-Эти страницы нужны, когда дойдёшь до выбора конкретной модели через API. Читать все каталоги перед практикой не нужно.
+Эти материалы не обязательны для практики. Открывай их по порядку, только когда выбираешь конкретную модель через API: сначала способ выбора, затем короткий список, после этого — один каталог выбранного провайдера.
 
-- [OpenAI — Models](https://developers.openai.com/api/docs/models) — актуальный каталог и назначение моделей OpenAI; используй для короткого списка кандидатов, а не как замену своему тесту.
-- [Anthropic — Models overview](https://platform.claude.com/docs/en/about-claude/models/overview) — текущие модели Claude, идентификаторы и различия возможностей.
-- [Google — Gemini models](https://ai.google.dev/gemini-api/docs/models) — стабильные, предварительные (preview) и экспериментальные версии Gemini и правила их именования.
-- [DeepSeek — Models & Pricing](https://api-docs.deepseek.com/quick_start/pricing) — официальный текущий список моделей и тарифов DeepSeek.
-- [Artificial Analysis](https://artificialanalysis.ai/) — живая сравнительная панель качества, цены и скорости; годится для отбора кандидатов, но не заменяет проверку на своих задачах.
+1. [OpenAI — Model selection, раздел Core principles](https://developers.openai.com/api/docs/guides/model-selection) — пример процесса: сначала задать цель качества и проверочный набор, затем снижать стоимость и задержку, не теряя достигнутого качества. Названия моделей относятся к OpenAI, но сам порядок действий применим и к другим провайдерам.
+2. [Artificial Analysis — LLM Leaderboard](https://artificialanalysis.ai/leaderboards/models) — сравни колонки Intelligence, Price и Speed, чтобы выбрать двух кандидатов для собственного прогона. Перед выводами посмотри [методику Intelligence Index](https://artificialanalysis.ai/methodology/intelligence-benchmarking): чужой сводный рейтинг не доказывает качество на твоей задаче.
+3. Если результат нужен через API, открой **только каталог выбранного провайдера** и зафиксируй точный идентификатор модели, её статус и дату проверки:
+
+- [OpenAI — Models](https://developers.openai.com/api/docs/models) — текущие идентификаторы и назначение моделей OpenAI.
+- [Anthropic — Models overview, раздел Latest models comparison](https://platform.claude.com/docs/en/about-claude/models/overview) — актуальные модели Claude, их API ID и различия возможностей.
+- [Google — Gemini models](https://ai.google.dev/gemini-api/docs/models) — актуальные модели Gemini и различие между stable и preview.
+- [DeepSeek — Models & Pricing](https://api-docs.deepseek.com/quick_start/pricing/) — текущие API ID, ограничения и тарифы моделей DeepSeek.
 
 ---
 **Часы:** ~2 · **Готово, когда:** три карты решений заполнены; один сравнительный прогон выполнен; критерии и эскалация зафиксированы. ✅
