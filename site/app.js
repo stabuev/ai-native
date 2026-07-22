@@ -9,14 +9,14 @@ document.addEventListener("click", (e) => {
   if (!btn) return;
   e.preventDefault();                      // не сворачивать <details> при клике в summary
   const code = btn.closest(".filebox")?.querySelector("pre code");
-  if (!code || !navigator.clipboard) return;
+  if (!code) return;
   flashCopy(btn, code.textContent, "Скопировано ✓");
 });
 
 /* кнопка «Скопировать промпт для ИИ» — собирает промпт из задания (BUILD IT) + тестов */
 document.addEventListener("click", (e) => {
   const btn = e.target.closest(".ai-prompt-btn");
-  if (!btn || !navigator.clipboard) return;
+  if (!btn) return;
   e.preventDefault();
   const bi = [...document.querySelectorAll("#lesson h2")].find((h) => h.textContent.trim() === "BUILD IT");
   let task = "";
@@ -34,10 +34,36 @@ document.addEventListener("click", (e) => {
   flashCopy(btn, prompt, "Промпт скопирован ✓");
 });
 
+async function copyText(text) {
+  if (navigator.clipboard?.writeText) {
+    const copied = await Promise.race([
+      navigator.clipboard.writeText(text).then(() => true).catch(() => false),
+      new Promise((resolve) => setTimeout(() => resolve(false), 400)),
+    ]);
+    if (copied) return true;
+  }
+
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.setAttribute("readonly", "");
+  area.style.position = "fixed";
+  area.style.opacity = "0";
+  document.body.appendChild(area);
+  area.select();
+  try {
+    return document.execCommand("copy");
+  } catch (e) {
+    return false;
+  } finally {
+    area.remove();
+  }
+}
+
 function flashCopy(btn, text, okLabel) {
-  navigator.clipboard.writeText(text).then(() => {
+  copyText(text).then((copied) => {
     const old = btn.textContent;
-    btn.textContent = okLabel; btn.classList.add("copied");
+    btn.textContent = copied ? okLabel : "Не удалось скопировать";
+    if (copied) btn.classList.add("copied");
     setTimeout(() => { btn.textContent = old; btn.classList.remove("copied"); }, 1600);
   });
 }

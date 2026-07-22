@@ -10,6 +10,7 @@
  */
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 
 const ROOT = path.join(__dirname, "..");
 const PHASES_DIR = path.join(ROOT, "phases");
@@ -342,7 +343,7 @@ function build() {
 // ---------- SEO: статическая страница на каждый урок (SSR-контент + мета) ----------
 // Контент рендерится в HTML на этапе сборки, поэтому краулер видит текст урока без JS.
 // Пути к ассетам относительные (../../) — работает и локально (/), и в подпапке (/courses/ainative/).
-function staticLessonHtml(l, prev, next) {
+function staticLessonHtml(l, prev, next, assetVersion) {
   const title = escAttr(`${l.id} ${l.title} — AI Native`);
   const desc = escAttr(l.motto || `Урок ${l.id} курса AI Native: ${l.title}. Практический материал с проверяемым результатом.`);
   const url = `${SITE_ORIGIN}${DEPLOY_BASE}lessons/${l.slug}/`;
@@ -366,7 +367,7 @@ function staticLessonHtml(l, prev, next) {
   <meta property="og:image" content="${SITE_ORIGIN}${DEPLOY_BASE}og-image.png">
   <meta name="twitter:card" content="summary_large_image">
   <script>(function(){try{var t=localStorage.getItem("theme")||"light";document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
-  <link rel="stylesheet" href="../../style.css">
+  <link rel="stylesheet" href="../../style.css?v=${assetVersion}">
   <!-- Yandex.Metrika counter -->
   <script type="text/javascript">
       (function(m,e,t,r,i,k,a){
@@ -391,16 +392,16 @@ function staticLessonHtml(l, prev, next) {
   <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
 
   <script>window.__BASE__="../../";</script>
-  <script src="../../data.js"></script>
-  <script src="../../progress.js"></script>
-  <script src="../../header.js"></script>
-  <script src="../../app.js"></script>
+  <script src="../../data.js?v=${assetVersion}"></script>
+  <script src="../../progress.js?v=${assetVersion}"></script>
+  <script src="../../header.js?v=${assetVersion}"></script>
+  <script src="../../app.js?v=${assetVersion}"></script>
 </body>
 </html>
 `;
 }
 
-function writeStaticLessons(phases) {
+function writeStaticLessons(phases, assetVersion) {
   const lessonsDir = path.join(__dirname, "lessons");
   fs.rmSync(lessonsDir, { recursive: true, force: true });   // чистим устаревшее
   const flat = phases.flatMap((p) => p.lessons).filter((l) => l.slug && l.html);
@@ -408,9 +409,17 @@ function writeStaticLessons(phases) {
     const l = flat[i];
     const dir = path.join(lessonsDir, l.slug);
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, "index.html"), staticLessonHtml(l, flat[i - 1], flat[i + 1]));
+    fs.writeFileSync(path.join(dir, "index.html"), staticLessonHtml(l, flat[i - 1], flat[i + 1], assetVersion));
   }
   return flat.length;
+}
+
+function staticAssetVersion() {
+  const hash = crypto.createHash("sha256");
+  for (const name of ["style.css", "data.js", "progress.js", "header.js", "app.js"]) {
+    hash.update(fs.readFileSync(path.join(__dirname, name)));
+  }
+  return hash.digest("hex").slice(0, 12);
 }
 
 function writeSitemap(phases) {
@@ -433,7 +442,7 @@ function main() {
     + "const PHASES = " + JSON.stringify(phases) + ";\n"
     + "const GLOSSARY = " + JSON.stringify(glossary) + ";\n";
   fs.writeFileSync(path.join(__dirname, "data.js"), out);
-  const nPages = writeStaticLessons(phases);
+  const nPages = writeStaticLessons(phases, staticAssetVersion());
   const nUrls = writeSitemap(phases);
   console.log(`data.js: фаз ${meta.phases}, уроков ${meta.lessons} (готово ${meta.done}), ~${meta.hours} ч, глоссарий ${glossary.length}`);
   console.log(`SEO: статических страниц уроков ${nPages}, sitemap.xml URL ${nUrls}`);
