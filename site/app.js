@@ -13,23 +13,24 @@ document.addEventListener("click", (e) => {
   flashCopy(btn, code.textContent, "Скопировано ✓");
 });
 
-/* кнопка «Скопировать промпт для ИИ» — собирает промпт из задания (BUILD IT) + тестов */
+/* кнопка «Скопировать промпт для ИИ» — собирает практику (BUILD IT / SHIP IT) + тесты */
 document.addEventListener("click", (e) => {
   const btn = e.target.closest(".ai-prompt-btn");
   if (!btn) return;
   e.preventDefault();
-  const bi = [...document.querySelectorAll("#lesson h2")].find((h) => h.textContent.trim() === "BUILD IT");
-  let task = "";
-  if (bi) {
+  const exerciseHeads = [...document.querySelectorAll("#lesson h2")]
+    .filter((h) => ["BUILD IT", "SHIP IT"].includes(h.textContent.trim()));
+  const tasks = exerciseHeads.map((heading) => {
     const buf = [];
-    for (let n = bi.nextElementSibling; n && n.tagName !== "H2"; n = n.nextElementSibling) buf.push(n.innerText);
-    task = buf.join("\n").trim();
-  }
+    for (let n = heading.nextElementSibling; n && n.tagName !== "H2"; n = n.nextElementSibling) buf.push(n.innerText);
+    return `# ${heading.textContent.trim()}\n${buf.join("\n").trim()}`;
+  });
+  const task = tasks.join("\n\n");
   const tests = [...document.querySelectorAll('.lesson-files .filebox[data-test="1"] pre code')]
     .map((c) => c.textContent).join("\n\n");
   const prompt =
-    "Реши учебное упражнение. Напиши код на Python (только стандартная библиотека), который проходит "
-    + "приведённые тесты pytest. Тесты не меняй. Верни только код файла, без пояснений.\n\n"
+    "Реши учебное упражнение. Напиши необходимые файлы на Python (только стандартная библиотека), которые проходят "
+    + "приведённые тесты pytest. Тесты не меняй. Для каждого файла укажи его имя и верни отдельный блок кода; иных пояснений не добавляй.\n\n"
     + "# Задание\n" + task + "\n\n# Тесты (pytest)\n" + tests;
   flashCopy(btn, prompt, "Промпт скопирован ✓");
 });

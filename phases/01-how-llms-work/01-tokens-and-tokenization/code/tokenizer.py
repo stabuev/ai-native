@@ -1,68 +1,69 @@
-"""Мини-токенизатор (BPE) с нуля — Build It для урока 1.1.
+"""Учебный byte-level BPE для урока 1.1.
 
-Без внешних зависимостей. Учит merge-правила на маленьком корпусе,
-кодирует текст в токены и декодирует обратно. Цель — понять, что
-токен != слово и != символ, а результат алгоритма слияния пар.
+Реализация намеренно невелика: UTF-8 текст превращается в отдельные байты,
+частые соседние пары байтов сливаются, а выученные правила затем применяются
+к новому тексту. Здесь нет pre-tokenization и специальных токенов production-
+токенизатора, зато основной механизм BPE и точный round-trip наблюдаемы.
 """
 from collections import Counter
 
-END = "</w>"  # маркер конца слова
+Token = bytes
+Merge = tuple[Token, Token]
 
 
-def _words(corpus):
-    """Корпус -> {слово как кортеж символов + END: частота}."""
-    vocab = Counter()
-    for line in corpus:
-        for word in line.split():
-            vocab[tuple(list(word) + [END])] += 1
-    return vocab
+def _byte_tokens(text: str) -> list[Token]:
+    """UTF-8 текст -> список однобайтовых токенов."""
+    return [bytes([value]) for value in text.encode("utf-8")]
 
 
-def _merge(word, pair):
-    """Слить все вхождения пары (a, b) в одном слове."""
+def _merge(tokens: list[Token], pair: Merge) -> list[Token]:
+    """Слить все непересекающиеся вхождения пары слева направо."""
     a, b = pair
     out, i = [], 0
-    while i < len(word):
-        if i < len(word) - 1 and word[i] == a and word[i + 1] == b:
+    while i < len(tokens):
+        if i < len(tokens) - 1 and tokens[i] == a and tokens[i + 1] == b:
             out.append(a + b)
             i += 2
         else:
-            out.append(word[i])
+            out.append(tokens[i])
             i += 1
-    return tuple(out)
+    return out
 
 
-def train_bpe(corpus, num_merges):
-    """Выучить список merge-правил по частоте соседних пар."""
-    vocab = _words(corpus)
-    merges = []
+def train_bpe(corpus: list[str], num_merges: int) -> list[Merge]:
+    """Выучить до ``num_merges`` правил по частоте соседних byte-токенов."""
+    if num_merges < 0:
+        raise ValueError("num_merges must be non-negative")
+
+    sequences = [_byte_tokens(text) for text in corpus]
+    merges: list[Merge] = []
     for _ in range(num_merges):
-        pairs = Counter()
-        for word, freq in vocab.items():
-            for i in range(len(word) - 1):
-                pairs[(word[i], word[i + 1])] += freq
-        if not pairs:
+        pair_counts: Counter[Merge] = Counter()
+        for tokens in sequences:
+            pair_counts.update(zip(tokens, tokens[1:]))
+
+        if not pair_counts:
             break
-        best = max(pairs, key=pairs.get)
+
+        # При равной частоте выбираем лексикографически меньшую пару: один и тот
+        # же корпус всегда даёт один и тот же порядок правил.
+        best = min(pair_counts, key=lambda pair: (-pair_counts[pair], pair))
         merges.append(best)
-        vocab = {_merge(w, best): f for w, f in vocab.items()}
+        sequences = [_merge(tokens, best) for tokens in sequences]
     return merges
 
 
-def encode(text, merges):
-    """Текст -> список токенов с применением выученных merge-правил."""
-    tokens = []
-    for word in text.split():
-        symbols = tuple(list(word) + [END])
-        for pair in merges:
-            symbols = _merge(symbols, pair)
-        tokens.extend(symbols)
+def encode(text: str, merges: list[Merge]) -> list[Token]:
+    """Текст -> byte-токены с применением правил в порядке обучения."""
+    tokens = _byte_tokens(text)
+    for pair in merges:
+        tokens = _merge(tokens, pair)
     return tokens
 
 
-def decode(tokens):
-    """Токены -> исходный текст."""
-    return "".join(tokens).replace(END, " ").strip()
+def decode(tokens: list[Token]) -> str:
+    """Byte-токены -> исходный UTF-8 текст без потери пробелов и Unicode."""
+    return b"".join(tokens).decode("utf-8")
 
 
 if __name__ == "__main__":
