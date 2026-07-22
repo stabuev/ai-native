@@ -137,7 +137,7 @@ git. Дальше он копирует в неё только нужные ша
 | # | Урок | Build It | Use It | Ship It | Папка |
 |---|---|---|---|---|---|
 | 1.1 | Токены и токенизация | Мини-токенизатор (BPE) с нуля | Подсчёт токенов через tokenizer провайдера | prompt-token-budgeter | `phases/01-how-llms-work/01-tokens-and-tokenization` |
-| 1.2 | Контекстное окно и inference | Учебный sampling-loop на массиве вероятностей | Тот же вызов через API со стримингом | Памятка по бюджету контекста | `phases/01-how-llms-work/02-context-window-and-inference` |
+| 1.2 | Контекстное окно и inference | Авторегрессивный inference-loop на готовых распределениях | Streaming одного выбранного API | Проверяемый бюджет контекста своей задачи | `phases/01-how-llms-work/02-context-window-and-inference` |
 | 1.3 | Сэмплирование, температура, детерминизм | Реализация top-k / top-p / temperature | Эксперименты с параметрами на 3 платформах | Гайд по параметрам генерации | `phases/01-how-llms-work/03-sampling-temperature` |
 | 1.4 | Галлюцинации и границы доверия | Тест-набор на провокацию галлюцинаций | Сравнение моделей и версий на одном наборе | Чек-лист доверия к ответу | `phases/01-how-llms-work/04-hallucinations-and-trust` |
 

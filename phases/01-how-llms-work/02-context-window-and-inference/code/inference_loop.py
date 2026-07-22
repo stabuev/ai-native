@@ -1,66 +1,91 @@
-"""Учебный inference-loop + контекстное окно — Build It для урока 1.2.
+"""Наблюдаемый autoregressive inference-loop для урока 1.2.
 
-Без зависимостей. Показывает, что inference — это цикл: модель раз за разом
-предсказывает следующий токен по предыдущим и дописывает его в контекст.
-Модель здесь игрушечная (n-граммы с backoff по маленькому корпусу), но механизм
-тот же, что у LLM. Контекстное окно — сколько последних токенов модель видит:
-что вышло за окно, для модели «исчезает».
+Таблица ``model`` заменяет нейросеть только на одной границе:
+видимый контекст -> распределение следующего токена. Это позволяет изучить
+сам цикл генерации, не добавляя отдельную задачу обучения игрушечной модели.
 """
-from collections import defaultdict, Counter
 
 
-def train_ngram(corpus, order=3):
-    """Для каждого суффикса длины 1..order — распределение следующего токена."""
-    counts = defaultdict(Counter)
-    for seq in corpus:
-        for i in range(len(seq)):
-            for n in range(1, order + 1):
-                if i - n >= 0:
-                    counts[tuple(seq[i - n:i])][seq[i]] += 1
-    model = {}
-    for ctx, c in counts.items():
-        total = sum(c.values())
-        model[ctx] = {tok: n / total for tok, n in c.items()}
-    return model
+def visible_context(context, window):
+    """Вернуть последние ``window`` токенов новым списком."""
+    if window <= 0:
+        raise ValueError("window must be positive")
+    return list(context[-window:])
 
 
-def next_token_probs(model, context, order=3):
-    """Распределение по самому длинному суффиксу контекста (до order), что есть в модели.
+def greedy_next_token(probabilities):
+    """Вернуть токен с наибольшей вероятностью."""
+    if not probabilities:
+        raise ValueError("probabilities must not be empty")
+    return max(probabilities, key=probabilities.get)
 
-    Это backoff: нет длинного совпадения — отступаем к более короткому.
+
+def generate(model, prompt, max_new_tokens, window, stop_token="<STOP>"):
+    """Сгенерировать токены жадным выбором и вернуть подробную трассу.
+
+    ``model`` — словарь вида ``{tuple(context): {token: probability}}``.
+    Stop-токен фиксируется в трассе, но не входит в пользовательские tokens.
     """
-    for n in range(min(order, len(context)), 0, -1):
-        ctx = tuple(context[-n:])
-        if ctx in model:
-            return model[ctx]
-    return {}
+    if max_new_tokens < 0:
+        raise ValueError("max_new_tokens must be non-negative")
 
-
-def generate(model, prompt, max_tokens=10, window=8, order=3):
-    """Жадная авторегрессия: на каждом шаге берём самый вероятный next-token.
-
-    `window` — контекстное окно: модель видит только последние `window` токенов.
-    """
     context = list(prompt)
-    out = []
-    for _ in range(max_tokens):
-        visible = context[-window:]                  # контекстное окно
-        probs = next_token_probs(model, visible, order)
-        if not probs:
-            break                                    # нечего предсказать — стоп
-        nxt = max(probs, key=probs.get)              # greedy = argmax
-        out.append(nxt)
-        context.append(nxt)
-    return out
+    tokens = []
+    trace = []
+
+    for step in range(1, max_new_tokens + 1):
+        current_context = visible_context(context, window)
+        probabilities = model.get(tuple(current_context))
+
+        if not probabilities:
+            return {
+                "tokens": tokens,
+                "trace": trace,
+                "stop_reason": "no_distribution",
+            }
+
+        chosen_token = greedy_next_token(probabilities)
+        trace.append(
+            {
+                "step": step,
+                "visible_context": current_context,
+                "probabilities": dict(probabilities),
+                "chosen_token": chosen_token,
+            }
+        )
+
+        if chosen_token == stop_token:
+            return {
+                "tokens": tokens,
+                "trace": trace,
+                "stop_reason": "stop_token",
+            }
+
+        tokens.append(chosen_token)
+        context.append(chosen_token)
+
+    return {
+        "tokens": tokens,
+        "trace": trace,
+        "stop_reason": "max_new_tokens",
+    }
 
 
 if __name__ == "__main__":
-    corpus = [
-        ["the", "cat", "sat", "on", "the", "mat"],
-        ["the", "cat", "ate", "the", "fish"],
-        ["a", "dog", "sat", "on", "the", "rug"],
-    ]
-    model = train_ngram(corpus, order=3)
-    print("Контекст ['the','cat'] →", next_token_probs(model, ["the", "cat"]))
-    print("generate(['the','cat']) →", generate(model, ["the", "cat"], max_tokens=4))
-    print("Окно=1, ['a','dog','sat'] →", generate(model, ["a", "dog", "sat"], 3, window=1))
+    toy_model = {
+        ("remember", "blue"): {"sky": 0.9, "sea": 0.1},
+        ("blue",): {"sky": 0.2, "sea": 0.8},
+        ("blue", "sky"): {"<STOP>": 1.0},
+        ("sky",): {"<STOP>": 1.0},
+        ("sea",): {"<STOP>": 1.0},
+    }
+    prompt = ["remember", "blue"]
+
+    for context_window in (2, 1):
+        result = generate(
+            toy_model,
+            prompt,
+            max_new_tokens=3,
+            window=context_window,
+        )
+        print(f"window={context_window}: {result}")
