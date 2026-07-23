@@ -44,8 +44,7 @@ phases/<PP>-<phase-slug>/<LL>-<lesson-slug>/
 Проверить структуру автоматически:
 
 ```bash
-python -c "import sys; sys.path.insert(0,'phases/00-setup-and-tooling/04-course-conventions/code'); \
-from conventions import validate_lesson; print(validate_lesson('phases/<...>') or 'OK')"
+python course_validation.py phases/<PP-phase>/<LL-lesson>
 ```
 
 Валидатор подтверждает только наличие заполненного материала. Он намеренно не требует
@@ -65,6 +64,7 @@ from conventions import validate_lesson; print(validate_lesson('phases/<...>') o
 ```bash
 pip install -r requirements.txt
 pytest -q                 # все тесты зелёные
+python course_validation.py
 node site/build.js        # пересобрать сайт (data.js), если менял уроки
 ```
 

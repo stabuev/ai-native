@@ -1,6 +1,6 @@
 # Урок 1.3 · Сэмплирование, температура и границы воспроизводимости
 
-**Фаза 1 — Как работают LLM** · **Результат фазы:** Объяснить токены, контекст и inference; собрать токен-бюджетер; отличать надёжный ответ от галлюцинации.
+**Фаза 1 — Как работают LLM** · **Результат фазы:** Объяснить токены, контекст и inference; собрать токен-бюджетер; проверять, достаточно ли у ответа доказательств для использования.
 <!-- exercise -->
 
 **Requires (только для необязательного USE IT):** API-ключ одного провайдера и модель, которая принимает хотя бы один параметр сэмплирования. Основной урок, BUILD IT и артефакт можно пройти полностью офлайн.
@@ -323,14 +323,25 @@ python course-work/1.3/sampling.py
 
 ## Дополнительное чтение
 
-- [Holtzman et al., 2019 — Nucleus Sampling (top-p)](https://arxiv.org/abs/1904.09751) — первоисточник top-p и почему greedy/argmax деградирует.
-- [Anthropic — Messages API](https://platform.claude.com/docs/en/api/messages) — параметры запроса и ограничения по моделям.
-- [OpenAI — Prompt engineering best practices](https://help.openai.com/en/articles/6654000-best-practices-for-prompt-engineering-with-the-openai-api) — про temperature и выбор параметров.
-- [Hugging Face — How to generate text](https://huggingface.co/blog/how-to-generate) — greedy / beam / top-k / top-p / temperature с кодом и разбором репетативности.
-- [Fan et al., 2018 — Hierarchical Neural Story Generation](https://arxiv.org/abs/1805.04833) — первоисточник top-k (дополняет Holtzman по top-p).
-- [Thinking Machines — Defeating Nondeterminism in LLM Inference](https://thinkingmachines.ai/blog/defeating-nondeterminism-in-llm-inference/) — почему вывод недетерминирован даже при temperature=0 (батчинг, неассоциативность float) и как это чинят batch-invariant ядрами.
-- [Maxime Labonne — Decoding Strategies in LLMs](https://huggingface.co/blog/mlabonne/decoding-strategies) — глубокий разбор greedy / beam / top-k / nucleus и роли температуры, с кодом.
-- [Nguyen et al., 2024 — Min-p Sampling (ICLR 2025 oral)](https://arxiv.org/abs/2407.01082) — следующий шаг после top-p: порог обрезки масштабируется от уверенности модели (доли top-токена); принят в Hugging Face Transformers и vLLM.
+Не читай список подряд. Для необязательного USE IT открой контракт только своего
+провайдера. Чтобы закрепить механизм, выбери один практический разбор. Исследовательские
+материалы нужны лишь для углубления в top-p и причины недетерминизма.
+
+### 1. Для эксперимента с API — выбери своего провайдера
+
+- [Anthropic — Messages API](https://platform.claude.com/docs/en/api/messages) — проверь параметры запроса и ограничения точного model ID; наличие поля в SDK ещё не гарантирует его поддержку выбранной моделью.
+- [OpenAI — Models](https://developers.openai.com/api/docs/models) — открой карточку точного model ID и проверь поддерживаемые параметры: возможности соседней модели нельзя переносить автоматически.
+- [Gemini — Text generation](https://ai.google.dev/gemini-api/docs/text-generation) — найди `generation_config`, затем сверь доступность параметра для выбранной модели и используемого API.
+
+### 2. Чтобы закрепить механизм — выбери один материал
+
+- [Hugging Face — How to generate text](https://huggingface.co/blog/how-to-generate) — практический разбор greedy, top-k, top-p и temperature с кодом; сопоставь порядок операций со своим `sampling.py`.
+- [Maxime Labonne — Decoding Strategies in LLMs](https://huggingface.co/blog/mlabonne/decoding-strategies) — более подробное продолжение с реализациями стратегий декодирования; открывай, если одного учебного шага уже недостаточно.
+
+### 3. Для глубокого погружения
+
+- [Holtzman et al., 2019 — Nucleus Sampling](https://arxiv.org/abs/1904.09751) — первоисточник top-p; начни с abstract и иллюстрации вырождения текста при максимизации вероятности.
+- [Thinking Machines — Defeating Nondeterminism in LLM Inference](https://thinkingmachines.ai/blog/defeating-nondeterminism-in-llm-inference/) — техническое объяснение, почему даже `temperature=0` не всегда обеспечивает одинаковый удалённый результат; для завершения урока детали вычислительных ядер не нужны.
 
 ---
 **Часы:** ~3 · **DoD:** личные тесты сэмплера зелёные; до запуска записаны и после него объяснены прогнозы для temperature/top-k/top-p; заполнена карточка контролируемого эксперимента; сформулирована граница между локальной повторяемостью, поведением API и истинностью ответа. ✅ **Урок готов**
