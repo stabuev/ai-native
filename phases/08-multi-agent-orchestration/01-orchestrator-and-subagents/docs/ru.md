@@ -116,7 +116,7 @@ Agent teams на практике (мульти-провайдер):
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [Anthropic — How we built our multi-agent research system](https://www.anthropic.com/engineering/multi-agent-research-system) — orchestrator-worker на практике, цифры и принципы.
 - [Anthropic — Building Effective Agents](https://www.anthropic.com/research/building-effective-agents) — паттерн orchestrator-workers.

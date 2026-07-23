@@ -119,7 +119,7 @@ python code/a2a.py  # демо: sql → sql-agent, поиск → doc-agent, к�
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [A2A Protocol](https://a2a-protocol.org/latest/) — стандарт agent-to-agent (карточки, Task/Artifact).
 - [a2aproject/A2A](https://github.com/a2aproject/A2A) — спецификация и реализации.

@@ -113,7 +113,7 @@ final = map_reduce(chunks, summarize, reduce_)
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [Anthropic — Long context prompting tips](https://platform.claude.com/docs/en/docs/build-with-claude/prompt-engineering/long-context-tips) — как работать с большим окном.
 - [LangChain — Text splitters](https://docs.langchain.com/oss/python/integrations/splitters) — стратегии chunking (recursive, по токенам, по структуре).

@@ -125,7 +125,7 @@ def llm_policy(goal, history):
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [ReAct: Reasoning + Acting (arXiv 2210.03629)](https://arxiv.org/abs/2210.03629) — первоисточник цикла reason→act→observe.
 - [Anthropic — Building Effective Agents](https://www.anthropic.com/research/building-effective-agents) — агент как LLM с инструментами в цикле; когда он вообще нужен.

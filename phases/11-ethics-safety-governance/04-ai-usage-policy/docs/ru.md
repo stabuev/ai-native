@@ -113,7 +113,7 @@ python code/policy.py   # демо: неполная политика + 3 кей
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [NIST — AI Risk Management Framework](https://www.nist.gov/itl/ai-risk-management-framework) — функция Govern и управление рисками на всём жизненном цикле.
 - [ISO/IEC 42001:2023 — AI management systems](https://www.iso.org/standard/42001) — сертифицируемая система управления ИИ (AIMS), цикл PDCA.

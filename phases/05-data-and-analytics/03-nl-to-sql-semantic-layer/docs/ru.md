@@ -121,7 +121,7 @@ sql = Anthropic().messages.create(model="claude-sonnet-4-6", max_tokens=200,
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [dbt — Semantic Layer](https://docs.getdbt.com/docs/use-dbt-semantic-layer/dbt-sl) — определять метрики централизованно.
 - [dbt — Creating metrics](https://docs.getdbt.com/docs/build/metrics-overview) — типы метрик и их описание.

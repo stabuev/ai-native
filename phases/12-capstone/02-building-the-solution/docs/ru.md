@@ -124,7 +124,7 @@ python code/solution.py # демо: простая→haiku, сложная→opu
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [Anthropic — Building Effective Agents](https://www.anthropic.com/research/building-effective-agents) — паттерны сборки агентных систем.
 - [Anthropic — Agent SDK overview](https://platform.claude.com/docs/en/agent-sdk/overview) — agent loop, инструменты, контекст.

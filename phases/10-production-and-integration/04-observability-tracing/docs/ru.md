@@ -113,7 +113,7 @@ python code/tracer.py # демо: agent_run → retrieve + llm_call, узкое 
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [Arize Phoenix](https://arize.com/docs/phoenix) — open-source трейсинг/eval на OpenTelemetry.
 - [LangSmith](https://docs.langchain.com/langsmith/) — трейсинг и оценка агентов.

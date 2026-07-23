@@ -259,8 +259,17 @@ function injectFiles(html, collected, exercise) {
         { pick: (it) => it.kind === "output", title: "Артефакт",   collapsed: false, note: "" },
         { pick: (it) => it.kind === "other",  title: "Связанные файлы",       collapsed: false, note: "" },
       ];
+  const hasCode = items.some((it) => it.kind === "code");
+  const hasOutput = items.some((it) => it.kind === "output");
+  const filesNote = hasCode && hasOutput
+    ? "Код и артефакт встроены прямо здесь — открывать GitHub не нужно."
+    : hasCode
+      ? "Код урока встроен прямо здесь — открывать GitHub не нужно."
+      : hasOutput
+        ? "Артефакт встроен прямо здесь — открывать GitHub не нужно."
+        : "Связанные файлы встроены прямо здесь — открывать GitHub не нужно.";
   let sec = `<section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2>`
-    + `<p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p>`;
+    + `<p class="muted">${filesNote}</p>`;
   if (exercise) {
     sec += `<div class="three-ways"><h3>Три пути пройти упражнение</h3><ol>`
       + `<li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li>`

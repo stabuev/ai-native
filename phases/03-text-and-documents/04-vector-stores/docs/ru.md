@@ -112,7 +112,7 @@ col.query(query_texts=["вопрос"], n_results=5)
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [Chroma — Introduction](https://docs.trychroma.com/docs/overview/introduction) — открытое векторное хранилище для RAG.
 - [facebookresearch/faiss](https://github.com/facebookresearch/faiss) — быстрый ANN-поиск по плотным векторам.

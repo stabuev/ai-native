@@ -123,7 +123,7 @@ tools = [{"name": "add", "description": "сложить два числа",
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [Anthropic — Tool use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview) — tool use в Claude изнутри (tool_use / tool_result).
 - [OpenAI — Function calling](https://platform.openai.com/docs/guides/function-calling) — схемы и цикл tool calling.

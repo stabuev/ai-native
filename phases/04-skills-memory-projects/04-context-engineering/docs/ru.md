@@ -115,7 +115,7 @@ python code/context_engine.py  # демо: что влезло в бюджет 6
 
 Хочешь квиз по всей фазе — спроси агента: `/check-understanding 4`.
 
-## Материалы
+## Дополнительное чтение
 
 - [Anthropic — Effective context engineering for AI agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) — context rot, бюджет внимания, стратегии.
 - [Anthropic — Long context prompting tips](https://platform.claude.com/docs/en/docs/build-with-claude/prompt-engineering/long-context-tips) — порядок данных в окне.

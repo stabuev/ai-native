@@ -113,7 +113,7 @@ python code/memory_store.py # демо: поиск «кофе» — свежая
 
 Хочешь квиз по всей фазе — спроси агента: `/check-understanding 4`.
 
-## Материалы
+## Дополнительное чтение
 
 - [OpenAI — Memory FAQ](https://help.openai.com/en/articles/8590148-memory-faq) — как устроена память ChatGPT и управление ей.
 - [OpenAI — Memory and new controls (blog)](https://openai.com/index/memory-and-new-controls-for-chatgpt/) — анонс и принципы.

@@ -113,7 +113,7 @@ python code/fact_check.py # демо: «14 дней» supported, «100 лет» 
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [Anthropic — Reduce hallucinations](https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations) — цитаты, «не знаю», низкая температура.
 - [anthropics/courses — Avoiding Hallucinations](https://github.com/anthropics/courses/blob/master/prompt_engineering_interactive_tutorial/Anthropic%201P/08_Avoiding_Hallucinations.ipynb) — практика.

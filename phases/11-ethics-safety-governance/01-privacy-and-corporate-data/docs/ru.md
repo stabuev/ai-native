@@ -107,7 +107,7 @@ python code/data_classifier.py # демо: текст с ключом → restri
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [Anthropic — How long do you store my data](https://privacy.claude.com/en/articles/10023548-how-long-do-you-store-my-data) — retention и приватность.
 - [Anthropic — Commercial Customers (privacy)](https://privacy.claude.com/en/collections/10663361-commercial-customers) — данные бизнеса не идут на обучение.

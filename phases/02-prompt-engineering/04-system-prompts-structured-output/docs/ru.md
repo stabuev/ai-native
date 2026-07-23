@@ -141,7 +141,7 @@ genai.Client().models.generate_content(model="gemini-2.x-flash", contents="...",
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [OpenAI — Structured model outputs](https://platform.openai.com/docs/guides/structured-outputs) — гарантированное соответствие JSON-схеме.
 - [OpenAI — Introducing Structured Outputs](https://openai.com/index/introducing-structured-outputs-in-the-api/) — зачем и чем отличается от JSON mode.

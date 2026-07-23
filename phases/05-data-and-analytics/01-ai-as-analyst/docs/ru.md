@@ -145,7 +145,7 @@ df.groupby("region")["amount"].sum().sort_values(ascending=False)   # = aggregat
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [pandas — Getting started](https://pandas.pydata.org/docs/getting_started/index.html) — стандартный инструмент анализа данных (`groupby`).
 - [OpenAI — Data analysis / Code Interpreter](https://help.openai.com/en/articles/8437071-code-interpreter) — анализ загруженных файлов кодом.

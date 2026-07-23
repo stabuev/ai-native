@@ -126,7 +126,7 @@ python code/finops.py # демо: расходы по разрезам, cache-hi
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [FinOps Foundation — FinOps for AI](https://www.finops.org/wg/finops-for-ai-overview/) — фреймворк управления стоимостью ИИ.
 - [CloudZero — FinOps for AI](https://www.cloudzero.com/blog/finops-for-ai/) — почему ИИ меняет cost management.

@@ -129,7 +129,7 @@ ls ~/.claude/skills/*/SKILL.md   # личные скиллы
 
 Хочешь квиз по всей фазе — спроси агента: `/check-understanding 4`.
 
-## Материалы
+## Дополнительное чтение
 
 - [Anthropic — Agent Skills overview](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview) — что такое скиллы, три уровня загрузки, требования к полям.
 - [Agent Skills — best practices](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices) — как писать `description` и тело, чтобы скилл срабатывал.

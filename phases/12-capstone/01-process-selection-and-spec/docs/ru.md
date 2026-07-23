@@ -127,7 +127,7 @@ python code/spec.py   # демо: валидная спека → "нет — г
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [Anthropic — Define success criteria & build evaluations](https://platform.claude.com/docs/en/docs/build-with-claude/define-success) — критерии успеха SMART, bad-vs-good примеры, дизайн и грейдинг eval.
 - [Anthropic — Evals cookbook](https://platform.claude.com/cookbook/misc-building-evals) — код-примеры human/code/LLM-грейдинга качества.

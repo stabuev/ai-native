@@ -133,7 +133,7 @@ final = stage("Перепиши в деловом тоне", edited)
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [Anthropic — Prompting best practices](https://platform.claude.com/docs/en/docs/build-with-claude/prompt-engineering/claude-4-best-practices) — приёмы для качественных текстовых задач.
 - [Anthropic — Prompt engineering overview](https://platform.claude.com/docs/en/docs/build-with-claude/prompt-engineering/overview) — обзор техник.

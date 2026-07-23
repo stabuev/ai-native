@@ -124,7 +124,7 @@ python code/metrics.py  # демо: +70% / +80% / +25.7% улучшения и R
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [FinOps Foundation — FinOps for AI](https://www.finops.org/wg/finops-for-ai-overview/) — стоимость AI, unit-экономика, cost per inference/outcome.
 - [Anthropic — Define success criteria & build evaluations](https://platform.claude.com/docs/en/docs/build-with-claude/define-success) — измерение качества: методы грейдинга.

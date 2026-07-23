@@ -135,7 +135,7 @@ python code/coordination.py # демо: researcher→writer→rogue, конфл�
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [Anthropic — Multi-agent research system](https://www.anthropic.com/engineering/multi-agent-research-system) — shared memory и реконсиляция результатов.
 - [Anthropic — Effective context engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) — управление контекстом на длинных горизонтах.

@@ -136,7 +136,7 @@ chain = [ChainStep("outline", step_llm("Составь план")),
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [Anthropic — Chain complex prompts](https://platform.claude.com/docs/en/docs/build-with-claude/prompt-engineering/chain-prompts) — когда и как дробить задачу на цепочку.
 - [Wei et al., 2022 — Chain-of-Thought](https://arxiv.org/abs/2201.11903) — пошаговое рассуждение как основа декомпозиции.

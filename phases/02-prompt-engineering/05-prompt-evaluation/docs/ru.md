@@ -121,7 +121,7 @@ print(compare({"claude": v_claude, "openai": v_openai, "gemini": v_gemini}, CASE
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [Anthropic — Define success criteria & build evaluations](https://platform.claude.com/docs/en/docs/build-with-claude/define-success) — что измерять (SMART-критерии) и как строить eval-наборы и грейдинг.
 - [anthropics/anthropic-cookbook — building_evals](https://github.com/anthropics/anthropic-cookbook/blob/main/misc/building_evals.ipynb) — практический ноутбук по evals.

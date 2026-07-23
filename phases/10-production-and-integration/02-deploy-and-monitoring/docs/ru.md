@@ -108,7 +108,7 @@ python code/monitoring.py # демо: error_rate 0.2, p95 1500, последни
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [OpenTelemetry — GenAI observability](https://opentelemetry.io/blog/2026/genai-observability/) — трейсинг вызовов LLM.
 - [OpenTelemetry — for Generative AI](https://opentelemetry.io/blog/2024/otel-generative-ai/) — семантические конвенции `gen_ai.*`.

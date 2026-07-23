@@ -109,7 +109,7 @@ python code/bi_agent.py # демо: итог 270 → разбивка → топ
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [Databricks — AI/BI Genie](https://docs.databricks.com/aws/en/genie/) — разговорная аналитика над данными.
 - [ThoughtSpot — Spotter](https://www.thoughtspot.com/product/agents/spotter) — агент-аналитик с governance.

@@ -110,7 +110,7 @@ python code/risk_audit.py # демо: bias(high) + overclaim(medium) + copyright
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [NIST — AI Risk Management Framework](https://www.nist.gov/itl/ai-risk-management-framework) — Govern/Map/Measure/Manage.
 - [EU AI Act — regulatory framework](https://digital-strategy.ec.europa.eu/en/policies/regulatory-framework-ai) — риск-ориентированное регулирование.

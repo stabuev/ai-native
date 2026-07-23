@@ -137,7 +137,7 @@ hits = col.query(query_texts=["мой вопрос"], n_results=3)
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [Lewis et al., 2020 — Retrieval-Augmented Generation](https://arxiv.org/abs/2005.11401) — первоисточник RAG.
 - [OpenAI — Embeddings guide](https://platform.openai.com/docs/guides/embeddings) — нейроэмбеддинги и косинусная близость.

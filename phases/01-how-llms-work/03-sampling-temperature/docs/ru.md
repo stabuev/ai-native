@@ -321,7 +321,7 @@ python course-work/1.3/sampling.py
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [Holtzman et al., 2019 — Nucleus Sampling (top-p)](https://arxiv.org/abs/1904.09751) — первоисточник top-p и почему greedy/argmax деградирует.
 - [Anthropic — Messages API](https://platform.claude.com/docs/en/api/messages) — параметры запроса и ограничения по моделям.

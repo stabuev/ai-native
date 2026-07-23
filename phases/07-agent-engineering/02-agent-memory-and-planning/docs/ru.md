@@ -117,7 +117,7 @@ python code/planner_agent.py # демо: (2+3)*4-1 = 19, видны шаги и 
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [Anthropic — Agent SDK overview](https://platform.claude.com/docs/en/agent-sdk/overview) — agent loop, контекст, инструменты.
 - [Anthropic — Memory tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool) — память агента между сессиями.

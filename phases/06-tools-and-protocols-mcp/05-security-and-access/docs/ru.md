@@ -116,7 +116,7 @@ python code/mcp_security.py # демо: ok / нет инструмента / pat
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [MCP — Security best practices](https://modelcontextprotocol.io/docs/tutorials/security/security_best_practices) — риски и меры (в т.ч. confused deputy).
 - [MCP — Authorization (spec)](https://modelcontextprotocol.io/specification/2025-11-25) — OAuth 2.1, Resource Indicators.

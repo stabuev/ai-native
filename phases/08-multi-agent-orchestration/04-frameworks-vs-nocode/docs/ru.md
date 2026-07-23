@@ -115,7 +115,7 @@ python code/mini_graph.py # демо: цикл inc до n=3, потом done
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [LangGraph — overview](https://docs.langchain.com/oss/python/langgraph/overview) — стейтовый граф агентов, low-level контроль.
 - [crewAIInc/crewAI](https://github.com/crewAIInc/crewAI) — оркестрация по ролям.

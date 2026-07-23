@@ -125,7 +125,7 @@ for prompt in (zero, few, cot):
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [Brown et al., 2020 — Language Models are Few-Shot Learners (GPT-3)](https://arxiv.org/abs/2005.14165) — откуда взялся few-shot (in-context learning).
 - [Wei et al., 2022 — Chain-of-Thought Prompting](https://arxiv.org/abs/2201.11903) — первоисточник CoT.

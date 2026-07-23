@@ -113,7 +113,7 @@ python code/sandbox.py # демо: считает среднее; блокиру
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [OpenAI — Code Interpreter (API)](https://platform.openai.com/docs/guides/tools-code-interpreter) — инструмент исполнения кода.
 - [OpenAI — Data analysis with ChatGPT](https://help.openai.com/en/articles/8437071-code-interpreter) — как устроена изоляция и работа с файлами.

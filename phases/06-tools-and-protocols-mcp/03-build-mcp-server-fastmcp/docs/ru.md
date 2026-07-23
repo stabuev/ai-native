@@ -133,7 +133,7 @@ FastMCP сам строит `inputSchema` из аннотаций типов (`a
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [MCP — Build an MCP server](https://modelcontextprotocol.io/docs/develop/build-server) — пошаговый гайд.
 - [modelcontextprotocol/python-sdk](https://github.com/modelcontextprotocol/python-sdk) — официальный SDK с FastMCP.

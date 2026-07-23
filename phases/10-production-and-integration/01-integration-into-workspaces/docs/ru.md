@@ -111,7 +111,7 @@ python code/integration.py # демо: ИИ работает / упал → fall
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [Microsoft 365 Copilot — Overview](https://learn.microsoft.com/en-us/copilot/microsoft-365/microsoft-365-copilot-overview) — ИИ в рабочих приложениях.
 - [Gemini for Google Workspace](https://support.google.com/docs/answer/13952129) — ИИ в Gmail/Docs/Sheets.

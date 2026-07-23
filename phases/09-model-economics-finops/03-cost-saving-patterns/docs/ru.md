@@ -133,7 +133,7 @@ python code/cost_router.py # демо: простой → flash, сложный 
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [Chen et al., 2023 — FrugalGPT](https://arxiv.org/abs/2305.05176) — каскад LLM, экономия вплоть до 98%.
 - [Anthropic — Prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching) — чтение из кэша за 0.1× входа.

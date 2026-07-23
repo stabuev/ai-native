@@ -133,7 +133,7 @@ python code/mcp_architecture.py # демо: discovery + вызов tool/resource
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [MCP — Specification](https://modelcontextprotocol.io/specification/2025-11-25) — протокол, примитивы, capability negotiation.
 - [Anthropic — Introducing MCP](https://www.anthropic.com/news/model-context-protocol) — зачем нужен стандарт.

@@ -125,7 +125,7 @@ python code/telemetry.py # демо: расходы по процессам + о
 
 {{quiz}}
 
-## Материалы
+## Дополнительное чтение
 
 - [Langfuse — Get started with tracing](https://langfuse.com/docs/observability/get-started) — токены, сессии, трейсы.
 - [OpenTelemetry — GenAI observability](https://opentelemetry.io/blog/2026/genai-observability/) — стандартные поля токенов/латентности.
