@@ -13,7 +13,7 @@
   <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
   <meta name="twitter:card" content="summary_large_image">
   <script>(function(){try{var t=localStorage.getItem("theme")||"light";document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
-  <link rel="stylesheet" href="../../style.css?v=2e036a695312">
+  <link rel="stylesheet" href="../../style.css?v=51f05d43973e">
   <!-- Yandex.Metrika counter -->
   <script type="text/javascript">
       (function(m,e,t,r,i,k,a){
@@ -117,15 +117,15 @@
 Обсудили перевод всех пользователей на новый поток в сентябре,
 но решения по этому вопросу не приняли.
 Метрики пилота: доля успешных оплат и число обращений в поддержку.
-Ответственный за итоговый отчёт пока не назначен.</code></pre><p>До запуска предскажем судьбу пяти ответов:</p><table><thead><tr><th>Ответ</th><th>Ожидаемый первый непройденный gate</th></tr></thead><tbody><tr><td><code>status=refusal</code> без JSON</td><td>status</td></tr><tr><td><code>status=incomplete</code>, JSON обрезан</td><td>status, до парсинга</td></tr><tr><td>JSON обёрнут в тройные обратные кавычки</td><td>structure/syntax: это не голый JSON structured output</td></tr><tr><td>Поле <code>category="plan"</code></td><td>structure: значение вне enum</td></tr><tr><td>Все поля верны, но 10% заменены всеми пользователями</td><td>meaning</td></tr></tbody></table><p>Последняя строка принципиальна. Если все ошибки объявить «ошибками JSON», студент научится доверять форме больше, чем источнику.</p><h3>Неизвестное значение — не значение по умолчанию</h3><p>В заметках не назначен ответственный за отчёт. Нельзя молча подставить условного владельца, <code>priority=3</code> или <code>urgent=false</code>: валидная схема лишь сделает выдумку аккуратно оформленной.</p><p>Контракт должен явно различать:</p><ul><li>значение известно → передать его;</li><li>значение допустимо не знать → передать <code>null</code>;</li><li>без значения продолжать опасно → остановить процесс или поставить <code>needs_review</code>;</li><li>бизнес действительно утвердил default → применить его и назвать правило, а не приписывать значение источнику.</li></ul><p>В нашей схеме <code>owner</code> и <code>deadline</code> всегда присутствуют, но могут быть <code>null</code>. Так потребителю не приходится различать «модель забыла поле» и «в источнике нет значения».</p><h2>BUILD IT: собери boundary gate</h2><p><strong>Задание:</strong> реализуй офлайн-модуль, который принимает нормализованный ответ провайдера, проводит машинные gates и не разрешает продолжение без зафиксированного смыслового решения.</p><blockquote><strong>Перед запуском.</strong> Создай рабочую папку <code>ai-native/2.4-structured-output/code/</code>. Скопируй в неё тест <code>test_structured_output.py</code>, затем создай <code>structured_output.py</code>. Нужны Python 3 и <code>pytest</code>; сеть и API-ключ не требуются.</blockquote><p>Готовыми даны:</p><ul><li><code>SOURCE_NOTES</code> — заметки из сценария 2.3;</li><li><code>SYSTEM_INSTRUCTION</code> — постоянные правила извлечения;</li><li><code>OUTPUT_SCHEMA</code> — настоящая JSON Schema для передачи провайдеру;</li><li><code>ALLOWED_CATEGORIES</code> и <code>FACT_FIELDS</code> — предметные ограничения.</li></ul><p>Реализуй четыре функции.</p><h3>1. <code>validate_structure(data) -&gt; list[str]</code></h3><p>Проверь точный контракт объекта:</p><ul><li>корень — объект только с полем <code>facts</code>;</li><li><code>facts</code> — непустой массив;</li><li>каждый элемент — объект ровно с <code>category</code>, <code>statement</code>, <code>evidence</code>, <code>owner</code>, <code>deadline</code>;</li><li><code>category</code> входит в разрешённый набор;</li><li><code>statement</code> и <code>evidence</code> — непустые строки;</li><li><code>owner</code> и <code>deadline</code> — непустая строка либо <code>None</code>.</li></ul><p>Верни все найденные ошибки. Пустой список означает только правильную форму.</p><h3>2. <code>validate_evidence(data, source) -&gt; list[str]</code></h3><p>Для каждого факта проверь, что <code>evidence</code> дословно входит в <code>source</code>. Верни путь ошибки вида <code>facts[0].evidence: not found in source</code>.</p><p>Не пытайся этой функцией доказать, что <code>statement</code> правильно истолковывает цитату. Это отдельный meaning gate.</p><h3>3. <code>inspect_response(response, source) -&gt; dict</code></h3><p>Поддержи три нормализованных вида ответа:</p><pre><code>{"status": "completed", "output_text": "..."}
+Ответственный за итоговый отчёт пока не назначен.</code></pre><p>До запуска предскажем судьбу пяти ответов:</p><table><thead><tr><th>Ответ</th><th>Ожидаемый первый непройденный gate</th></tr></thead><tbody><tr><td><code>status=refusal</code> без JSON</td><td>status</td></tr><tr><td><code>status=incomplete</code>, JSON обрезан</td><td>status, до парсинга</td></tr><tr><td>JSON обёрнут в тройные обратные кавычки</td><td>structure/syntax: это не голый JSON structured output</td></tr><tr><td>Поле <code>category="plan"</code></td><td>structure: значение вне enum</td></tr><tr><td>Все поля верны, но 10% заменены всеми пользователями</td><td>meaning</td></tr></tbody></table><p>Последняя строка принципиальна. Если все ошибки объявить «ошибками JSON», студент научится доверять форме больше, чем источнику.</p><h3>Неизвестное значение — не значение по умолчанию</h3><p>В заметках не назначен ответственный за отчёт. Нельзя молча подставить условного владельца, <code>priority=3</code> или <code>urgent=false</code>: валидная схема лишь сделает выдумку аккуратно оформленной.</p><p>Контракт должен явно различать:</p><ul><li>значение известно → передать его;</li><li>значение допустимо не знать → передать <code>null</code>;</li><li>без значения продолжать опасно → остановить процесс или поставить <code>needs_review</code>;</li><li>бизнес действительно утвердил default → применить его и назвать правило, а не приписывать значение источнику.</li></ul><p>В нашей схеме <code>owner</code> и <code>deadline</code> всегда присутствуют, но могут быть <code>null</code>. Так потребителю не приходится различать «модель забыла поле» и «в источнике нет значения».</p><h2>BUILD IT: собери boundary gate</h2><p><strong>Задание:</strong> реализуй офлайн-модуль, который принимает нормализованный ответ провайдера, проводит машинные gates и не разрешает продолжение без зафиксированного смыслового решения.</p><blockquote><strong>Перед запуском.</strong> Создай в личном workspace папку <code>course-work/2.4/</code>. Из блока <a href="#lesson-files">«Исходники урока»</a> скопируй туда <code>starter_structured_output.py</code> под именем <code>structured_output.py</code>, а рядом — <code>test_structured_output.py</code>. Эталонный <code>structured_output.py</code> пока не открывай. Нужны Python 3 и <code>pytest</code>; сеть и API-ключ не требуются.</blockquote><p>Готовыми даны:</p><ul><li><code>SOURCE_NOTES</code> — заметки из сценария 2.3;</li><li><code>SYSTEM_INSTRUCTION</code> — постоянные правила извлечения;</li><li><code>OUTPUT_SCHEMA</code> — настоящая JSON Schema для передачи провайдеру;</li><li><code>ALLOWED_CATEGORIES</code> и <code>FACT_FIELDS</code> — предметные ограничения.</li></ul><p>Реализуй четыре функции.</p><h3>1. <code>validate_structure(data) -&gt; list[str]</code></h3><p>Проверь точный контракт объекта:</p><ul><li>корень — объект только с полем <code>facts</code>;</li><li><code>facts</code> — непустой массив;</li><li>каждый элемент — объект ровно с <code>category</code>, <code>statement</code>, <code>evidence</code>, <code>owner</code>, <code>deadline</code>;</li><li><code>category</code> входит в разрешённый набор;</li><li><code>statement</code> и <code>evidence</code> — непустые строки;</li><li><code>owner</code> и <code>deadline</code> — непустая строка либо <code>None</code>.</li></ul><p>Верни все найденные ошибки. Пустой список означает только правильную форму.</p><h3>2. <code>validate_evidence(data, source) -&gt; list[str]</code></h3><p>Для каждого факта проверь, что <code>evidence</code> дословно входит в <code>source</code>. Верни путь ошибки вида <code>facts[0].evidence: not found in source</code>.</p><p>Не пытайся этой функцией доказать, что <code>statement</code> правильно истолковывает цитату. Это отдельный meaning gate.</p><h3>3. <code>inspect_response(response, source) -&gt; dict</code></h3><p>Поддержи три нормализованных вида ответа:</p><pre><code>{"status": "completed", "output_text": "..."}
 {"status": "refusal", "reason": "..."}
 {"status": "incomplete", "reason": "..."}</code></pre><p>Порядок проверок является частью контракта:</p><ol><li>не-completed ответ → <code>decision="stop"</code>, <code>stage="status"</code>;</li><li>completed без корректного голого JSON → <code>stop/syntax</code>;</li><li>ошибка предметной структуры → <code>stop/structure</code>;</li><li>evidence отсутствует в источнике → <code>stop/source</code>;</li><li>все машинные проверки пройдены → <code>review/meaning</code>, но не <code>continue</code>.</li></ol><p>Возвращай единый отчёт:</p><pre><code>{
     "decision": "stop | review | continue",
     "stage": "status | syntax | structure | source | meaning | accepted",
     "errors": [],
     "data": None
-}</code></pre><h3>4. <code>finish_semantic_review(report, approved, reason) -&gt; dict</code></h3><p>Функцию можно вызвать только для отчёта с <code>decision="review"</code>. Непустой <code>reason</code> обязателен и при принятии, и при отклонении:</p><ul><li><code>approved=True</code> → <code>continue/accepted</code>;</li><li><code>approved=False</code> → <code>stop/meaning</code>;</li><li>попытка пропустить проваленный машинный gate → <code>ValueError</code>.</li></ul><p>Так в трейсе остаётся не только решение, но и его обоснование.</p><h3>Прогон red → green</h3><pre><code>pytest code -q                    # сначала красное
-python code/structured_output.py  # затем демонстрация двух решений gate</code></pre><p><strong>Готово, когда</strong> зелёны 11 тестов. Они проверяют настоящую закрытую JSON Schema, refusal и incomplete до парсинга, fenced JSON, пропуски и лишние поля, <code>null</code>, доказательство вне источника, обязательный meaning review, отклонение семантически ложного объекта и запрет обходить проваленный gate.</p><p>После зелёного прогона объясни своими словами три утверждения:</p><ol><li>почему fenced JSON в этом упражнении считается ошибкой, хотя его можно было бы очистить строковым кодом;</li><li>почему <code>validate_structure(...) == []</code> не разрешает продолжение;</li><li>почему <code>finish_semantic_review</code> нельзя применять к incomplete-ответу.</li></ol><p>Если ответы непонятны, одних зелёных тестов недостаточно. Эталонное решение и тесты-ТЗ доступны ниже в <a href="#lesson-files">«Исходниках урока»</a>.</p><h2>USE IT: перенеси контракт в один доступный API</h2><p>Не нужно вызывать всех провайдеров. Выбери один доступный API и сохрани точный model ID, SDK и дату прогона. Названия полей меняются, но разделение ответственности остаётся.</p><table><thead><tr><th>Часть контракта</th><th>OpenAI Responses</th><th>Anthropic Messages</th><th>Google Gemini</th></tr></thead><tbody><tr><td>Постоянная инструкция</td><td><code>instructions</code> либо <code>developer</code>/<code>system</code> message</td><td>верхнеуровневый <code>system</code></td><td><code>system_instruction</code></td></tr><tr><td>Динамический вход</td><td><code>input</code> / user message</td><td><code>messages</code> с ролью <code>user</code></td><td><code>input</code> либо <code>contents</code></td></tr><tr><td>Схема ответа</td><td><code>text.format</code> с <code>type=json_schema</code></td><td><code>output_config.format</code></td><td><code>response_format</code> либо schema в generation config</td></tr><tr><td>Перед парсингом</td><td><code>status</code>, incomplete details, refusal content</td><td><code>stop_reason</code>, тип content block</td><td>finish/status/error поля выбранного API</td></tr></tbody></table><p>Минимальная форма запроса выглядит так; конкретный model ID выбери в актуальном каталоге своего провайдера:</p><pre><code># OpenAI Responses
+}</code></pre><h3>4. <code>finish_semantic_review(report, approved, reason) -&gt; dict</code></h3><p>Функцию можно вызвать только для отчёта с <code>decision="review"</code>. Непустой <code>reason</code> обязателен и при принятии, и при отклонении:</p><ul><li><code>approved=True</code> → <code>continue/accepted</code>;</li><li><code>approved=False</code> → <code>stop/meaning</code>;</li><li>попытка пропустить проваленный машинный gate → <code>ValueError</code>.</li></ul><p>Так в трейсе остаётся не только решение, но и его обоснование.</p><h3>Прогон red → green</h3><pre><code>python -m pytest course-work/2.4 -q          # сначала красное
+python course-work/2.4/structured_output.py  # затем демонстрация двух решений gate</code></pre><p><strong>Готово, когда</strong> зелёны 11 тестов. Они проверяют настоящую закрытую JSON Schema, refusal и incomplete до парсинга, fenced JSON, пропуски и лишние поля, <code>null</code>, доказательство вне источника, обязательный meaning review, отклонение семантически ложного объекта и запрет обходить проваленный gate.</p><p>После зелёного прогона объясни своими словами три утверждения:</p><ol><li>почему fenced JSON в этом упражнении считается ошибкой, хотя его можно было бы очистить строковым кодом;</li><li>почему <code>validate_structure(...) == []</code> не разрешает продолжение;</li><li>почему <code>finish_semantic_review</code> нельзя применять к incomplete-ответу.</li></ol><p>Если ответы непонятны, одних зелёных тестов недостаточно. Эталонное решение и тесты-ТЗ доступны ниже в <a href="#lesson-files">«Исходниках урока»</a>.</p><h2>USE IT: перенеси контракт в один доступный API</h2><p>Не нужно вызывать всех провайдеров. Выбери один доступный API и сохрани точный model ID, SDK и дату прогона. Названия полей меняются, но разделение ответственности остаётся.</p><table><thead><tr><th>Часть контракта</th><th>OpenAI Responses</th><th>Anthropic Messages</th><th>Google Gemini</th></tr></thead><tbody><tr><td>Постоянная инструкция</td><td><code>instructions</code> либо <code>developer</code>/<code>system</code> message</td><td>верхнеуровневый <code>system</code></td><td><code>system_instruction</code></td></tr><tr><td>Динамический вход</td><td><code>input</code> / user message</td><td><code>messages</code> с ролью <code>user</code></td><td><code>input</code> либо <code>contents</code></td></tr><tr><td>Схема ответа</td><td><code>text.format</code> с <code>type=json_schema</code></td><td><code>output_config.format</code></td><td><code>response_format</code> либо schema в generation config</td></tr><tr><td>Перед парсингом</td><td><code>status</code>, incomplete details, refusal content</td><td><code>stop_reason</code>, тип content block</td><td>finish/status/error поля выбранного API</td></tr></tbody></table><p>Минимальная форма запроса выглядит так; конкретный model ID выбери в актуальном каталоге своего провайдера:</p><pre><code># OpenAI Responses
 response = OpenAI().responses.create(
     model=MODEL_ID,
     instructions=SYSTEM_INSTRUCTION,
@@ -156,7 +156,169 @@ response = genai.Client().interactions.create(
         "mime_type": "application/json",
         "schema": OUTPUT_SCHEMA,
     },
-)</code></pre><p>Эти фрагменты показывают <strong>размещение трёх частей контракта</strong>, а не универсальный адаптер ответа. Для своего провайдера:</p><ol><li>сначала обработай отказ, incomplete и API error по его документации;</li><li>только затем получи структурированное содержимое;</li><li>нормализуй его в учебный конверт либо передай typed object в предметные проверки;</li><li>проверь evidence и смысл;</li><li>сохрани status, model ID, решение gate и причину.</li></ol><p>Если API использует Pydantic, Zod или другой typed parser, применяй его вместо самописной повторной реализации JSON Schema. Собственный код должен добавлять предметные и смысловые ограничения, а не конкурировать со стандартом.</p><h2>Самостоятельная практика и перенос</h2><p>После готового Build It измени один аспект сценария, чтобы не копировать демонстрацию.</p><h3>Вариант A: продолжить цепочку 2.3</h3><p>Добавь в корректный объект все решения, действия, условия, открытые вопросы и метрики из заметок. Затем подготовь четыре мутации:</p><ol><li>удали обязательное поле;</li><li>добавь неизвестное поле;</li><li>замени evidence фразой, отсутствующей в источнике;</li><li>оставь evidence настоящим, но искази смысл statement.</li></ol><p>До запуска назови первый gate, который должен остановить каждую мутацию. Затем проверь прогноз кодом и вручную.</p><h3>Вариант B: перенести в свою безопасную задачу</h3><p>Выбери повторяемое извлечение или классификацию, где ответ действительно пойдёт в код. Не используй чувствительные данные в неутверждённом сервисе.</p><p>Спроектируй:</p><ul><li>постоянную инструкцию без меняющихся данных;</li><li>небольшой реальный JSON Schema;</li><li>политику отсутствующих значений;</li><li>status, structure, source и meaning gates;</li><li>действие для <code>stop</code>, <code>review</code> и <code>continue</code>;</li><li>один schema-invalid и один schema-valid-but-wrong пример.</li></ul><p>Если результат нужен только человеку как текст, structured output может быть лишним. Сильное решение начинается с вопроса о потребителе, а не с желания везде использовать JSON.</p><h2>Переносимый результат</h2><p>Сохрани заполненную <a href="#f-phases-02-prompt-engineering-04-system-prompts-structured-output-outputs-response-contract-md"><code>карточку машинного контракта ответа</code></a>. Она объединяет постоянную инструкцию, динамический вход, JSON Schema, нормализацию статусов, последовательность gates и тестовые случаи.</p><p>Карточка готова, если другой человек может:</p><ul><li>понять, почему здесь нужен structured output;</li><li>собрать один вызов без устных пояснений;</li><li>отличить provider guarantee от проверок приложения;</li><li>воспроизвести отказ и семантически ложный ответ;</li><li>определить, когда процесс останавливается, требует review или продолжается.</li></ul><h2>Где здесь 4D</h2><table><thead><tr><th>4D</th><th>Решение в машинном контракте</th></tr></thead><tbody><tr><td><strong>Delegation</strong></td><td>Передать модели извлечение явных фактов, но не право придумывать отсутствующие значения или автоматически публиковать результат</td></tr><tr><td><strong>Description</strong></td><td>Разделить постоянную инструкцию, вход и схему; описать <code>null</code>, категории, доказательства и статусы без противоречий</td></tr><tr><td><strong>Discernment</strong></td><td>Не спутать валидный JSON, соответствие схеме, наличие цитаты и правильность утверждения; проверить самый дорогой смысловой сбой</td></tr><tr><td><strong>Diligence</strong></td><td>Не отправлять чувствительные данные в неподходящую среду, сохранить model ID и трейс, обработать refusal/incomplete и отвечать за решение <code>continue</code></td></tr></tbody></table><p>4D здесь не декоративная вставка. Каждая компетенция соответствует отдельному решению: что делегировать, как описать контракт, по чему принять результат и кто отвечает за его дальнейшее использование.</p><h2>Типичные ошибки</h2><ul><li><strong>Дублировать схему криком в системной инструкции.</strong> Инструкция объясняет задачу и смысловые границы; форма передаётся в schema-параметре.</li><li><strong>Путать structured output с function calling.</strong> Формат ответа и просьба выполнить действие решают разные задачи.</li><li><strong>Парсить до проверки статуса.</strong> Refusal или обрезанный ответ не становится обычным результатом только потому, что код вызвал <code>json.loads</code>.</li><li><strong>Называть несколько <code>isinstance</code> реализацией JSON Schema.</strong> Предметный валидатор полезен, но не реализует стандарт.</li><li><strong>Считать schema-valid ответ истинным.</strong> Схема не знает, было в источнике 10% или все пользователи.</li><li><strong>Придумывать defaults для отсутствующих фактов.</strong> Используй <code>null</code>, review или остановку, если бизнес явно не утвердил правило по умолчанию.</li><li><strong>Сразу писать в БД/API.</strong> Сначала пройди все применимые gates и сохрани основание решения.</li><li><strong>Тестировать только счастливый путь.</strong> Refusal, incomplete и schema-valid-but-wrong — обязательные случаи этой границы.</li></ul><h2>Проверь себя</h2><p>Вопросы ниже проверяют выбор механизма, порядок gates и диагностику правдоподобных ошибок, а не названия полей конкретного SDK.</p><div class="quiz-section" data-lesson="2.4"></div><h2>Дополнительное чтение</h2><p>Читать весь список не нужно: сначала пройди вводный материал по JSON Schema, затем выбери документацию того API, с которым работаешь. Последние два источника — необязательная практика и техническое углубление.</p><ul><li><a href="https://json-schema.org/learn/getting-started-step-by-step" target="_blank" rel="noopener">JSON Schema — Creating your first schema</a> — базовое продолжение урока: прочитай <strong>Introduction to JSON Schema</strong>, <strong>Define properties</strong> и <strong>Validate JSON data against the schema</strong>; обрати внимание на различие между схемой и экземпляром и на то, что <code>properties</code> само по себе не делает поля обязательными.</li><li><a href="https://developers.openai.com/api/docs/guides/structured-outputs" target="_blank" rel="noopener">OpenAI — Structured model outputs</a> — если используешь OpenAI, сопоставь со своей карточкой разделы <strong>When to use Structured Outputs via function calling vs via text.format</strong>, <strong>Structured Outputs vs JSON mode</strong> и <strong>Refusals</strong>; отдельно проверь обработку незавершённого ответа.</li><li><a href="https://platform.claude.com/docs/en/build-with-claude/structured-outputs" target="_blank" rel="noopener">Anthropic — Structured outputs</a> — если используешь Claude, прочитай <strong>JSON outputs</strong>, <strong>JSON Schema limitations</strong> и <strong>Invalid outputs</strong>; используй актуальный параметр <code>output_config.format</code>, а <code>output_format</code> считай переходной формой SDK.</li><li><a href="https://ai.google.dev/gemini-api/docs/structured-output" target="_blank" rel="noopener">Google Gemini — Structured outputs</a> — если используешь Gemini, открой <strong>JSON schema support</strong>, <strong>Structured outputs versus function calling</strong> и <strong>Best practices</strong>; перенеси в свой контракт оговорку о поддерживаемом подмножестве схемы и отдельной проверке значений.</li><li><a href="https://docs.pydantic.dev/latest/concepts/json_schema/" target="_blank" rel="noopener">Pydantic — JSON Schema</a> — практическое углубление для Python: в разделе <strong>Generating JSON Schema</strong> посмотри, как получить одну схему из типизированной модели и не дублировать контракт вручную; помни, что успешная валидация модели ещё не доказывает истинность данных.</li><li><a href="https://arxiv.org/abs/2307.09702" target="_blank" rel="noopener">Willard, Louf, 2023 — Efficient Guided Generation for Large Language Models</a> — факультативно о механике constrained decoding: достаточно аннотации и описания метода с регулярными выражениями и контекстно-свободными грамматиками, чтобы понять, почему генератор может гарантировать форму, но не смысл ответа.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Если делегируешь ИИ, реши, что отдаёшь; опиши задачу и критерии; проверь результат; сохрани ответственность за итог.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-02-prompt-engineering-04-system-prompts-structured-output-code-test-structured-output-py" open data-test="1"><summary><span class="fname">code/test_structured_output.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>import json
+)</code></pre><p>Эти фрагменты показывают <strong>размещение трёх частей контракта</strong>, а не универсальный адаптер ответа. Для своего провайдера:</p><ol><li>сначала обработай отказ, incomplete и API error по его документации;</li><li>только затем получи структурированное содержимое;</li><li>нормализуй его в учебный конверт либо передай typed object в предметные проверки;</li><li>проверь evidence и смысл;</li><li>сохрани status, model ID, решение gate и причину.</li></ol><p>Если API использует Pydantic, Zod или другой typed parser, применяй его вместо самописной повторной реализации JSON Schema. Собственный код должен добавлять предметные и смысловые ограничения, а не конкурировать со стандартом.</p><h2>Самостоятельная практика и перенос</h2><p>После готового Build It измени один аспект сценария, чтобы не копировать демонстрацию.</p><h3>Вариант A: продолжить цепочку 2.3</h3><p>Добавь в корректный объект все решения, действия, условия, открытые вопросы и метрики из заметок. Затем подготовь четыре мутации:</p><ol><li>удали обязательное поле;</li><li>добавь неизвестное поле;</li><li>замени evidence фразой, отсутствующей в источнике;</li><li>оставь evidence настоящим, но искази смысл statement.</li></ol><p>До запуска назови первый gate, который должен остановить каждую мутацию. Затем проверь прогноз кодом и вручную.</p><h3>Вариант B: перенести в свою безопасную задачу</h3><p>Выбери повторяемое извлечение или классификацию, где ответ действительно пойдёт в код. Не используй чувствительные данные в неутверждённом сервисе.</p><p>Спроектируй:</p><ul><li>постоянную инструкцию без меняющихся данных;</li><li>небольшой реальный JSON Schema;</li><li>политику отсутствующих значений;</li><li>status, structure, source и meaning gates;</li><li>действие для <code>stop</code>, <code>review</code> и <code>continue</code>;</li><li>один schema-invalid и один schema-valid-but-wrong пример.</li></ul><p>Если результат нужен только человеку как текст, structured output может быть лишним. Сильное решение начинается с вопроса о потребителе, а не с желания везде использовать JSON.</p><h2>Переносимый результат</h2><p>Скопируй <a href="#f-phases-02-prompt-engineering-04-system-prompts-structured-output-outputs-response-contract-md"><code>карточку машинного контракта ответа</code></a>, заполни её и сохрани собственную версию как <code>course-work/2.4/response-contract.md</code>. Она объединяет постоянную инструкцию, динамический вход, JSON Schema, нормализацию статусов, последовательность gates и тестовые случаи.</p><p>Карточка готова, если другой человек может:</p><ul><li>понять, почему здесь нужен structured output;</li><li>собрать один вызов без устных пояснений;</li><li>отличить provider guarantee от проверок приложения;</li><li>воспроизвести отказ и семантически ложный ответ;</li><li>определить, когда процесс останавливается, требует review или продолжается.</li></ul><h2>Где здесь 4D</h2><table><thead><tr><th>4D</th><th>Решение в машинном контракте</th></tr></thead><tbody><tr><td><strong>Delegation</strong></td><td>Передать модели извлечение явных фактов, но не право придумывать отсутствующие значения или автоматически публиковать результат</td></tr><tr><td><strong>Description</strong></td><td>Разделить постоянную инструкцию, вход и схему; описать <code>null</code>, категории, доказательства и статусы без противоречий</td></tr><tr><td><strong>Discernment</strong></td><td>Не спутать валидный JSON, соответствие схеме, наличие цитаты и правильность утверждения; проверить самый дорогой смысловой сбой</td></tr><tr><td><strong>Diligence</strong></td><td>Не отправлять чувствительные данные в неподходящую среду, сохранить model ID и трейс, обработать refusal/incomplete и отвечать за решение <code>continue</code></td></tr></tbody></table><p>4D здесь не декоративная вставка. Каждая компетенция соответствует отдельному решению: что делегировать, как описать контракт, по чему принять результат и кто отвечает за его дальнейшее использование.</p><h2>Типичные ошибки</h2><ul><li><strong>Дублировать схему криком в системной инструкции.</strong> Инструкция объясняет задачу и смысловые границы; форма передаётся в schema-параметре.</li><li><strong>Путать structured output с function calling.</strong> Формат ответа и просьба выполнить действие решают разные задачи.</li><li><strong>Парсить до проверки статуса.</strong> Refusal или обрезанный ответ не становится обычным результатом только потому, что код вызвал <code>json.loads</code>.</li><li><strong>Называть несколько <code>isinstance</code> реализацией JSON Schema.</strong> Предметный валидатор полезен, но не реализует стандарт.</li><li><strong>Считать schema-valid ответ истинным.</strong> Схема не знает, было в источнике 10% или все пользователи.</li><li><strong>Придумывать defaults для отсутствующих фактов.</strong> Используй <code>null</code>, review или остановку, если бизнес явно не утвердил правило по умолчанию.</li><li><strong>Сразу писать в БД/API.</strong> Сначала пройди все применимые gates и сохрани основание решения.</li><li><strong>Тестировать только счастливый путь.</strong> Refusal, incomplete и schema-valid-but-wrong — обязательные случаи этой границы.</li></ul><h2>Проверь себя</h2><p>Вопросы ниже проверяют выбор механизма, порядок gates и диагностику правдоподобных ошибок, а не названия полей конкретного SDK.</p><div class="quiz-section" data-lesson="2.4"></div><h2>Дополнительное чтение</h2><p>Читать весь список не нужно: сначала пройди вводный материал по JSON Schema, затем выбери документацию того API, с которым работаешь. Последние два источника — необязательная практика и техническое углубление.</p><ul><li><a href="https://json-schema.org/learn/getting-started-step-by-step" target="_blank" rel="noopener">JSON Schema — Creating your first schema</a> — базовое продолжение урока: прочитай <strong>Introduction to JSON Schema</strong>, <strong>Define properties</strong> и <strong>Validate JSON data against the schema</strong>; обрати внимание на различие между схемой и экземпляром и на то, что <code>properties</code> само по себе не делает поля обязательными.</li><li><a href="https://developers.openai.com/api/docs/guides/structured-outputs" target="_blank" rel="noopener">OpenAI — Structured model outputs</a> — если используешь OpenAI, сопоставь со своей карточкой разделы <strong>When to use Structured Outputs via function calling vs via text.format</strong>, <strong>Structured Outputs vs JSON mode</strong> и <strong>Refusals</strong>; отдельно проверь обработку незавершённого ответа.</li><li><a href="https://platform.claude.com/docs/en/build-with-claude/structured-outputs" target="_blank" rel="noopener">Anthropic — Structured outputs</a> — если используешь Claude, прочитай <strong>JSON outputs</strong>, <strong>JSON Schema limitations</strong> и <strong>Invalid outputs</strong>; используй актуальный параметр <code>output_config.format</code>, а <code>output_format</code> считай переходной формой SDK.</li><li><a href="https://ai.google.dev/gemini-api/docs/structured-output" target="_blank" rel="noopener">Google Gemini — Structured outputs</a> — если используешь Gemini, открой <strong>JSON schema support</strong>, <strong>Structured outputs versus function calling</strong> и <strong>Best practices</strong>; перенеси в свой контракт оговорку о поддерживаемом подмножестве схемы и отдельной проверке значений.</li><li><a href="https://docs.pydantic.dev/latest/concepts/json_schema/" target="_blank" rel="noopener">Pydantic — JSON Schema</a> — практическое углубление для Python: в разделе <strong>Generating JSON Schema</strong> посмотри, как получить одну схему из типизированной модели и не дублировать контракт вручную; помни, что успешная валидация модели ещё не доказывает истинность данных.</li><li><a href="https://arxiv.org/abs/2307.09702" target="_blank" rel="noopener">Willard, Louf, 2023 — Efficient Guided Generation for Large Language Models</a> — факультативно о механике constrained decoding: достаточно аннотации и описания метода с регулярными выражениями и контекстно-свободными грамматиками, чтобы понять, почему генератор может гарантировать форму, но не смысл ответа.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Если делегируешь ИИ, реши, что отдаёшь; опиши задачу и критерии; проверь результат; сохрани ответственность за итог.</p></div><h3>Стартовый файл</h3><p class="muted files-note">Скопируй этот файл под указанным в задании именем и реализуй отмеченные функции.</p><details class="filebox" id="f-phases-02-prompt-engineering-04-system-prompts-structured-output-code-starter-structured-output-py" open><summary><span class="fname">code/starter_structured_output.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Starter for the response boundary gate from lesson 2.4.
+
+Copy this file as ``structured_output.py`` and implement the four marked
+functions. The source, instruction, schema, domain constants, result helper,
+and demonstration call are already provided.
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+
+SOURCE_NOTES = """\
+Пилот решили запустить 18 сентября для 10% пользователей iOS.
+До запуска служба безопасности должна согласовать схему доступа.
+Рита отправит схему доступа на согласование до 12 сентября.
+Если согласование не получено к 16 сентября, запуск переносится.
+Обсудили перевод всех пользователей на новый поток в сентябре,
+но решения по этому вопросу не приняли.
+Метрики пилота: доля успешных оплат и число обращений в поддержку.
+Ответственный за итоговый отчёт пока не назначен.
+"""
+
+
+SYSTEM_INSTRUCTION = """\
+Извлекай из заметок только явно сказанные решения, действия, условия,
+открытые вопросы и метрики. Не превращай обсуждение в решение.
+Для каждого утверждения сохраняй точный подтверждающий фрагмент источника.
+Неизвестные owner и deadline возвращай как null: не придумывай значения.
+Форма ответа задаётся отдельно переданной JSON Schema.
+"""
+
+
+OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "facts": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "category": {
+                        "type": "string",
+                        "enum": [
+                            "decision",
+                            "action",
+                            "condition",
+                            "open_question",
+                            "metric",
+                        ],
+                    },
+                    "statement": {"type": "string"},
+                    "evidence": {"type": "string"},
+                    "owner": {
+                        "anyOf": [{"type": "string"}, {"type": "null"}]
+                    },
+                    "deadline": {
+                        "anyOf": [{"type": "string"}, {"type": "null"}]
+                    },
+                },
+                "required": [
+                    "category",
+                    "statement",
+                    "evidence",
+                    "owner",
+                    "deadline",
+                ],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["facts"],
+    "additionalProperties": False,
+}
+
+
+ALLOWED_CATEGORIES = {
+    "decision",
+    "action",
+    "condition",
+    "open_question",
+    "metric",
+}
+FACT_FIELDS = {"category", "statement", "evidence", "owner", "deadline"}
+
+
+def _result(
+    decision: str,
+    stage: str,
+    errors: list[str],
+    data: Any = None,
+) -&gt; dict[str, Any]:
+    """Build one normalized gate report."""
+    return {
+        "decision": decision,
+        "stage": stage,
+        "errors": errors,
+        "data": data,
+    }
+
+
+def validate_structure(data: Any) -&gt; list[str]:
+    """Validate the exact object contract described in the lesson."""
+    raise NotImplementedError
+
+
+def validate_evidence(data: dict[str, Any], source: str) -&gt; list[str]:
+    """Report every evidence fragment that is absent from the source."""
+    raise NotImplementedError
+
+
+def inspect_response(
+    response: dict[str, Any],
+    source: str,
+) -&gt; dict[str, Any]:
+    """Run status, syntax, structure, and source gates in this order."""
+    raise NotImplementedError
+
+
+def finish_semantic_review(
+    report: dict[str, Any],
+    approved: bool,
+    reason: str,
+) -&gt; dict[str, Any]:
+    """Record the final human meaning review without bypassing failed gates."""
+    raise NotImplementedError
+
+
+def _json_response(data: dict[str, Any]) -&gt; dict[str, str]:
+    """Build a completed response for the local demonstration."""
+    return {
+        "status": "completed",
+        "output_text": json.dumps(data, ensure_ascii=False),
+    }
+
+
+if __name__ == "__main__":
+    candidate = {
+        "facts": [
+            {
+                "category": "decision",
+                "statement": (
+                    "Пилот запускается 18 сентября для 10% пользователей iOS."
+                ),
+                "evidence": (
+                    "Пилот решили запустить 18 сентября "
+                    "для 10% пользователей iOS."
+                ),
+                "owner": None,
+                "deadline": "18 сентября",
+            }
+        ]
+    }
+    machine_report = inspect_response(_json_response(candidate), SOURCE_NOTES)
+    print("После машинных gates:", machine_report["decision"])
+    final_report = finish_semantic_review(
+        machine_report,
+        approved=True,
+        reason="Утверждение и масштаб пилота подтверждены источником.",
+    )
+    print("После смыслового review:", final_report["decision"])
+</code></pre></details><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-02-prompt-engineering-04-system-prompts-structured-output-code-test-structured-output-py" open data-test="1"><summary><span class="fname">code/test_structured_output.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>import json
 
 import pytest
 
@@ -780,9 +942,9 @@ if __name__ == "__main__":
   <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
 
   <script>window.__BASE__="../../";</script>
-  <script src="../../data.js?v=2e036a695312"></script>
-  <script src="../../progress.js?v=2e036a695312"></script>
-  <script src="../../header.js?v=2e036a695312"></script>
-  <script src="../../app.js?v=2e036a695312"></script>
+  <script src="../../data.js?v=51f05d43973e"></script>
+  <script src="../../progress.js?v=51f05d43973e"></script>
+  <script src="../../header.js?v=51f05d43973e"></script>
+  <script src="../../app.js?v=51f05d43973e"></script>
 </body>
 </html>
