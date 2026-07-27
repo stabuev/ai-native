@@ -167,7 +167,7 @@ git. Дальше он копирует в неё только нужные ша
 | # | Урок | Build It | Use It | Ship It | Папка |
 |---|---|---|---|---|---|
 | 2.1 | Анатомия промпта | — | Сравнение расплывчатого запроса и проверяемого контракта в одном инструменте | Карточка проектирования промпта | `phases/02-prompt-engineering/01-prompt-anatomy` |
-| 2.2 | Few-shot и chain-of-thought | Few-shot и CoT варианты под одну задачу | Сравнение точности с/без примеров | Набор few-shot заготовок | `phases/02-prompt-engineering/02-few-shot-and-cot` |
+| 2.2 | Примеры в промпте: few-shot | — | Контролируемое сравнение промпта без примеров и с ними на новых случаях | Карточка набора примеров | `phases/02-prompt-engineering/02-few-shot-and-cot` |
 | 2.3 | Декомпозиция и итеративное уточнение | Разбиение сложной задачи на цепочку промптов | Прогон цепочки в реальном инструменте | Промпт-цепочка под рабочий процесс | `phases/02-prompt-engineering/03-decomposition-and-iteration` |
 | 2.4 | Системные промпты и структурированный вывод | JSON-схема ответа и валидатор | Structured output / function calling провайдера | Системный промпт + JSON-схема | `phases/02-prompt-engineering/04-system-prompts-structured-output` |
 | 2.5 | Оценка качества промптов | Mini eval-harness: метрики и сравнение версий | Прогон harness на наборе кейсов | prompt-eval skill | `phases/02-prompt-engineering/05-prompt-evaluation` |
