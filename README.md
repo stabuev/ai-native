@@ -169,7 +169,7 @@ git. Дальше он копирует в неё только нужные ша
 | 2.1 | Анатомия промпта | — | Сравнение расплывчатого запроса и проверяемого контракта в одном инструменте | Карточка проектирования промпта | `phases/02-prompt-engineering/01-prompt-anatomy` |
 | 2.2 | Примеры в промпте: few-shot | — | Контролируемое сравнение промпта без примеров и с ними на новых случаях | Карточка набора примеров | `phases/02-prompt-engineering/02-few-shot-and-cot` |
 | 2.3 | Внешняя цепочка промптов: шаги и точки проверки | — | Проектирование и прогон проверяемой цепочки в одном чат-инструменте | Карточка внешней цепочки промптов | `phases/02-prompt-engineering/03-decomposition-and-iteration` |
-| 2.4 | Системные промпты и структурированный вывод | JSON-схема ответа и валидатор | Structured output / function calling провайдера | Системный промпт + JSON-схема | `phases/02-prompt-engineering/04-system-prompts-structured-output` |
+| 2.4 | Машинный контракт ответа: инструкция, схема и проверки | Boundary gate: status, структура, источник и смысл | Structured output одного провайдера с обработкой refusal/incomplete | Карточка машинного контракта ответа | `phases/02-prompt-engineering/04-system-prompts-structured-output` |
 | 2.5 | Оценка качества промптов | Mini eval-harness: метрики и сравнение версий | Прогон harness на наборе кейсов | prompt-eval skill | `phases/02-prompt-engineering/05-prompt-evaluation` |
 
 **Домашнее задание.** Собрать библиотеку из 10 промптов под свою роль и прогнать через eval-harness, выбрать лучшие версии.
