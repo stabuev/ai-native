@@ -4,16 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>2.5 Оценка качества промптов — AI Native</title>
-  <meta name="description" content="«Кажется, лучше» — не метрика. Промпт улучшают, измеряя на наборе кейсов.">
+  <meta name="description" content="Урок 2.5 курса AI Native: Оценка качества промптов. Практический материал с проверяемым результатом.">
   <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/prompt-evaluation/">
   <meta property="og:type" content="article">
   <meta property="og:title" content="2.5 Оценка качества промптов — AI Native">
-  <meta property="og:description" content="«Кажется, лучше» — не метрика. Промпт улучшают, измеряя на наборе кейсов.">
+  <meta property="og:description" content="Урок 2.5 курса AI Native: Оценка качества промптов. Практический материал с проверяемым результатом.">
   <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/prompt-evaluation/">
   <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
   <meta name="twitter:card" content="summary_large_image">
   <script>(function(){try{var t=localStorage.getItem("theme")||"light";document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
-  <link rel="stylesheet" href="../../style.css?v=51eda9b747a0">
+  <link rel="stylesheet" href="../../style.css?v=2e036a695312">
   <!-- Yandex.Metrika counter -->
   <script type="text/javascript">
       (function(m,e,t,r,i,k,a){
@@ -31,220 +31,1083 @@
   <section class="container" style="padding-top:24px">
     <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
     <div class="lessonbar" id="lessonbar"></div>
-    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 2.5 · Оценка качества промптов</h1><p><strong>Фаза 2 — Промпт-инжиниринг</strong> · <strong>Результат фазы:</strong> Писать воспроизводимые промпты и измерять их качество через eval-harness.</p><p><strong>Requires (только для USE IT):</strong> платный API-ключ одного из провайдеров. BUILD IT работает офлайн, без ключей и без сети.</p><p><strong>Это венец Фазы 2: промпт-инжиниринг превращается из гадания в измерение.</strong> В уроке 2.1 мы договорились начинать с критериев успеха — здесь строим инструмент, который их проверяет. <strong>Eval-harness</strong> прогоняет промпт по фиксированному набору кейсов, считает метрику и <strong>честно сравнивает версии</strong> — чтобы «стало лучше» было числом, а не ощущением.</p><blockquote><strong>MOTTO.</strong> «Кажется, лучше» — не метрика. Промпт улучшают, измеряя на наборе кейсов.</blockquote><h2>PROBLEM</h2><p>Промпты правят «на глаз»: поменял формулировку, ответ на одном примере стал красивее — закоммитил. А на десяти других стало хуже, и ты этого <strong>не видишь</strong>. Так же незаметно «улучшение» ломается при смене модели или параметра. Без воспроизводимой оценки нельзя ни честно сравнить две версии промпта, ни доказать, что новая модель реально лучше старой. Нужен eval-harness — тест-сьют для промптов.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Eval — это <strong>юнит-тесты для промптов</strong>. Как в коде один ручной запуск не заменяет тестов, так и «посмотрел один ответ» не заменяет прогон по набору кейсов. Anthropic называет цикл «критерии успеха → оценка» <strong>центральным в промпт-инжиниринге</strong>: сначала формулируешь, что значит «хорошо» (в уроке 2.1), потом измеряешь.</p><h3>Как это работает</h3><pre><code>набор кейсов {input, expected}
-        │
-   prompt_fn (версия промпта / модель)
-        │
-     метрика(pred, expected) → score за кейс
-        │
-   усреднили → score версии → compare(версии) → рейтинг</code></pre><p>Три вещи делают оценку надёжной (по гайду Anthropic «build evaluations»):</p><ul><li><strong>Критерии успеха — SMART.</strong> Не «хорошо», а конкретно и измеримо: вместо «good performance» — «accurate sentiment classification». Метрика должна давать число.</li><li><strong>Автоматизируй грейдинг.</strong> Anthropic про выбор метода: бери самый быстрый и надёжный. Лестница такая:</li><li><strong>Code-based</strong> — быстрее и надёжнее всего, отлично масштабируется: <code>exact_match</code> (<code>pred == expected</code>), <code>contains</code> (<code>key_phrase in pred</code>). Для категориальных задач (классификация, извлечение) — то, что нужно.</li><li><strong>LLM-as-judge</strong> — для субъективного качества текста (связность, тон): другая модель оценивает по рубрике. Гибко и масштабируемо, но сначала проверь её надёжность (вернёмся к этому в агентных фазах).</li><li><strong>Human</strong> — самый гибкий, но медленный и дорогой; избегай, где можно.</li><li><strong>Объём важнее точности грейдинга.</strong> Anthropic: «больше вопросов со слегка более шумной автогрейдинг-оценкой лучше, чем мало вопросов с дорогой ручной». Фиксированный набор кейсов + автооценка = воспроизводимость.</li></ul><h2>РАЗБОР ПО ШАГАМ</h2><p>Прогоним harness руками. Набор кейсов (арифметика):</p><pre><code>{input: "2+2", expected: "4"}   {input: "3+5", expected: "8"}   {input: "10-4", expected: "6"}</code></pre><p>Сравним три «версии промпта» метрикой <code>exact_match</code>:</p><ul><li><strong>good</strong> — считает выражение → <code>"4"</code>, <code>"8"</code>, <code>"6"</code> → все три совпали → <strong>score 3/3 = 1.0</strong>;</li><li><strong>half</strong> — всегда отвечает <code>"4"</code> → совпал только первый кейс → <strong>score 1/3 ≈ 0.33</strong>;</li><li><strong>bad</strong> — всегда <code>"?"</code> → ни одного → <strong>score 0/3 = 0.0</strong>.</li></ul><p><code>evaluate</code> хранит и разбивку по кейсам (<code>per_case</code>) — видно, <strong>где именно</strong> версия ошиблась, как по трейсу цепочки из урока 2.3. А <code>compare</code> строит рейтинг по убыванию:</p><pre><code>compare(versions, cases) → [("good", 1.0), ("half", 0.33), ("bad", 0.0)]</code></pre><p>Лучшая версия — первой, и это <strong>число</strong>, а не «мне кажется». Поменял промпт — прогнал тот же набор — увидел, вырос score или упал.</p><h2>BUILD IT</h2><p><strong>Задание: собери mini eval-harness</strong> — стандартная библиотека, без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/2.5-prompt-eval/</code>), а файлы урока клади в подпапку <code>code/</code> (по соглашению курса). Нужен только <strong>Python 3</strong>, всё офлайн (для теста ещё <code>pytest</code>).</blockquote><p>Реализуй метрики и прогон:</p><ul><li><strong><code>exact_match(pred, expected)</code></strong> → <code>1.0</code>, если <code>pred.strip() == expected.strip()</code>, иначе <code>0.0</code>.</li><li><strong><code>contains(pred, expected)</code></strong> → <code>1.0</code>, если <code>expected.lower()</code> входит в <code>pred.lower()</code>, иначе <code>0.0</code>.</li><li><strong><code>evaluate(prompt_fn, cases, metric=exact_match)</code></strong> — прогони <code>prompt_fn</code> по кейсам <code>{input, expected}</code>: для каждого посчитай <code>pred = prompt_fn(input)</code> и <code>score = metric(pred, expected)</code>. Верни <code>{"score": среднее по кейсам, "per_case": [{input, pred, expected, score}, …]}</code> (на пустом наборе <code>score = 0.0</code>).</li><li><strong><code>compare(versions, cases, metric=exact_match)</code></strong> — <code>versions</code> это <code>{name: prompt_fn}</code>; верни список <code>(name, score)</code>, отсортированный по убыванию score.</li></ul><p><strong>Готово, когда</strong> тест <code>test_eval_harness.py</code> зелёный — он проверяет метрики (включая игнор пробелов и регистра), что <code>evaluate</code> даёт 1.0 на рабочей версии и 0.0 на сломанной, и что <code>compare</code> ставит лучшую версию первой, а худшую — последней.</p><pre><code>pytest code -q              # красное → реализуй функции → зелёное
-python code/eval_harness.py # демо: score рабочей vs сломанной версии + рейтинг</code></pre><p><strong>Подсказка.</strong> <code>evaluate</code> — цикл по <code>cases</code> с накоплением <code>per_case</code>, потом среднее. <code>compare</code> — словарь в список через <code>evaluate(...)["score"]</code> и <code>sorted(..., reverse=True)</code>.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>В проде <code>prompt_fn</code> — вызов модели; harness прогоняет твой набор кейсов и сравнивает версии/модели (мульти-провайдер):</p><pre><code>def v_claude(x): return Anthropic().messages.create(model="claude-haiku-4-5",
-    max_tokens=50, messages=[{"role": "user", "content": PROMPT.format(x=x)}]).content[0].text
-def v_openai(x): return OpenAI().responses.create(model="gpt-5.x", input=PROMPT.format(x=x)).output_text
-def v_gemini(x): return genai.Client().models.generate_content(
-    model="gemini-2.x-flash", contents=PROMPT.format(x=x)).text
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 2.5 · Оценка качества промптов</h1><p><strong>Фаза 2 — Промпт-инжиниринг</strong> · <strong>Результат фазы:</strong> писать воспроизводимые промпты и измерять их качество через eval-harness. <strong>Результат урока:</strong> после урока студент сможет определить цель системной проверки одной AI-задачи, собрать обычные и критические случаи, выбрать проверяемое правило оценки, сравнить исходную и предлагаемую версии при неизменных остальных условиях, найти ухудшение, скрытое средним результатом, и обосновать решение <code>accept</code>, <code>review</code> или <code>reject</code>. <strong>Опора:</strong> критерий успеха и контролируемое сравнение из 2.1, изменение одного фактора из 1.3, разделение формы и смысла из 2.4 · <strong>Дальше:</strong> в 3.1 тот же подход позволит проверять стадии текстового конвейера отдельно, а в Фазе 9 к качеству добавятся цена и задержка.</p><p><strong>Requires (только для переноса в реальный API):</strong> платный API-ключ одного провайдера. Обязательный Build It использует записанные ответы и работает офлайн на Python 3 с <code>pytest</code>.</p><p>В уроке будут повторяться четыре коротких профессиональных названия:</p><ul><li><strong>baseline</strong> — исходная версия, с которой сравниваем;</li><li><strong>candidate</strong> — предлагаемая новая версия;</li><li><strong>score</strong> — числовая оценка одного ответа или набора;</li><li><strong>grader</strong> — правило, которое вычисляет эту оценку.</li></ul><p>Сначала увидим их на простом сценарии, затем соберём из них полную процедуру — <strong>eval</strong>.</p><p>В 2.1 ты сначала задавал критерий успеха, затем сравнивал две версии промпта на одном примере. Такой прогон помогает обнаружить дефект, но ещё не показывает, как новая формулировка ведёт себя на других входах. В 2.4 ответ получил стабильную структуру и последовательность проверок. Теперь соберём следующий слой: повторяемую процедуру, которая применяет один критерий к одним и тем же случаям и сохраняет доказательства для решения.</p><blockquote><strong>Главная мысль.</strong> Проверка не сообщает абсолютное качество промпта. Она показывает, как конкретная версия прошла конкретный набор случаев по конкретному правилу проверки. Решение надёжно лишь настолько, насколько уместны эти три части.</blockquote><h2>Проблема: среднее улучшилось, а важный случай сломался</h2><p>Команда классифицирует обращения в четыре очереди:</p><ul><li><code>billing</code> — списания, счета и возвраты;</li><li><code>access</code> — вход и блокировка аккаунта;</li><li><code>bug</code> — неисправность продукта;</li><li><code>other</code> — всё остальное.</li></ul><p>Baseline просит определить главную проблему и вернуть одну метку:</p><pre><code>Определи главную проблему пользователя.
+Верни одну метку: billing, access, bug или other.</code></pre><p>Candidate сохраняет эти две строки и добавляет ровно одно понятное на вид правило:</p><pre><code>Если в сообщении упомянуты оплата или подписка, выбери billing.</code></pre><p>В учебной симуляции на пяти проверочных обращениях baseline дал три правильных ответа, а candidate — четыре. Общий score вырос с <code>3/5 = 0.6</code> до <code>4/5 = 0.8</code>. Если смотреть только на среднее, candidate победил.</p><p>Но один из случаев звучит так:</p><pre><code>Оплата прошла, но после продления аккаунт всё равно заблокирован.</code></pre><p>Главная проблема пользователя — доступ. Baseline вернул <code>access</code>, а новое правило перехватило слово «оплата» и отправило обращение в <code>billing</code>. Улучшив два обычных случая, candidate сломал критический маршрут восстановления доступа.</p><p>Нам нужен не рейтинг ради рейтинга, а ответ на рабочий вопрос:</p><blockquote>Достаточно ли имеющихся доказательств, чтобы принять новую версию, или её нужно отклонить либо отправить на дополнительную проверку?</blockquote><h2>Что такое eval и почему это не обычный юнит-тест</h2><p><strong>Eval</strong> — заранее описанная процедура проверки поведения AI-системы. Для одного случая она:</p><ol><li>передаёт вход выбранной версии;</li><li>получает результат;</li><li>применяет правило оценки;</li><li>сохраняет score и диагностические данные.</li></ol><p><strong>Eval-harness</strong> — программа, повторяющая эту процедуру для набора случаев и версий. Слово *harness* здесь можно понимать как «испытательный стенд»: оно обозначает не одну метрику, а обвязку вокруг запуска и проверки.</p><p>Аналогия с юнит-тестами полезна, но неполна:</p><table><thead><tr><th>Обычный юнит-тест</th><th>Eval генеративной системы</th></tr></thead><tbody><tr><td>один вход обычно даёт один детерминированный результат</td><td>один вход может дать разные допустимые ответы</td></tr><tr><td>ожидаемое поведение часто выражается точным значением</td><td>качество может состоять из нескольких критериев</td></tr><tr><td>падение обычно локализует дефект кода</td><td>низкий score может означать дефект промпта, данных, grader или самого harness</td></tr><tr><td>зелёный набор подтверждает известные инварианты</td><td>высокий score говорит только о покрытых случаях</td></tr></tbody></table><p>Поэтому score — <strong>измерительный сигнал</strong>, а не истина. OpenAI отдельно предупреждает, что вариативность генерации делает традиционных тестов недостаточно и требует калибровать автоматические оценки человеческой проверкой. Anthropic рекомендует отражать реальное распределение задачи, включать граничные случаи и обычно измерять несколько критериев: <a href="https://developers.openai.com/api/docs/guides/evaluation-best-practices" target="_blank" rel="noopener">OpenAI</a>, <a href="https://platform.claude.com/docs/en/test-and-evaluate/develop-tests" target="_blank" rel="noopener">Anthropic</a>.</p><h2>Шесть частей минимального eval</h2><h3>1. Цель и решение</h3><p>Начинай не с метрики и не с API. Сначала запиши:</p><pre><code>Какое изменение проверяем?
+Какое решение примем по результату?
+Что должно остаться неизменным?</code></pre><p>В нашем сценарии:</p><ul><li>проверяем одно новое правило выбора очереди;</li><li>решаем, заменять ли baseline;</li><li>оставляем теми же модель, параметры, входы, список меток и grader;</li><li>не допускаем регрессии в случаях со срезом <code>critical</code>.</li></ul><p>Это продолжение критерия успеха из 2.1. Формулировка «candidate должен быть лучше» не помогает принять решение. Формулировка «общий score растёт, а critical не падает» уже проверяема.</p><h3>2. Набор случаев</h3><p><strong>Случай</strong>, или eval case, — одна строка проверочного набора:</p><pre><code>{
+    "id": "access-after-payment",
+    "input": "Оплата прошла, но после продления аккаунт всё равно заблокирован.",
+    "expected": "access",
+    "slice": "critical",
+}</code></pre><p>Поля выполняют разные функции:</p><ul><li><code>id</code> позволяет найти один и тот же случай в двух прогонах;</li><li><code>input</code> — то, что получает проверяемая версия;</li><li><code>expected</code> — заранее установленный ожидаемый результат;</li><li><code>slice</code> — осмысленная группа случаев, которую нужно видеть отдельно.</li></ul><p><strong>Срез</strong>, или slice, — не случайная техническая метка. Он отвечает на вопрос «какую важную область поведения представляет этот случай?». Это может быть <code>critical</code>, <code>long_input</code>, <code>missing_data</code>, конкретный язык или тип клиента.</p><p>Хороший начальный набор сочетает:</p><ul><li><strong>обычные случаи</strong> из реальной задачи;</li><li><strong>граничные случаи</strong>, где два правила могут конфликтовать;</li><li><strong>дорогостоящие ошибки</strong>, которые нельзя спрятать средним;</li><li>понятное происхождение ожидаемого ответа.</li></ul><p>Количество не заменяет уместность. Сто похожих лёгких примеров не компенсируют отсутствие одного известного критического сценария.</p><p>Для итераций полезно разделить случаи на две части:</p><ul><li><strong>рабочий набор</strong> — ошибки из него можно изучать во время правки промпта;</li><li><strong>контрольный набор</strong> — несколько заранее отложенных случаев, которые открывают после</li></ul><p>  выбора candidate.</p><p>Контрольный набор часто называют *holdout*: его не используют для подгонки каждой формулировки. В небольшом учебном eval он не превращает результат в научное доказательство, но показывает сам принцип независимой проверки.</p><h3>3. Baseline, candidate и контролируемое сравнение</h3><p><strong>Baseline</strong> — текущая опорная версия. <strong>Candidate</strong> — версия, которую предлагают вместо неё. Эти названия обозначают роли в сравнении, а не качество.</p><p>Чтобы понять причину изменения score:</p><ul><li>меняй один существенный фактор;</li><li>используй одинаковые случаи и grader;</li><li>фиксируй точные версии промптов;</li><li>при живом вызове фиксируй provider, model ID и параметры генерации.</li></ul><p>Если одновременно заменить промпт, модель и grader, результат может быть полезен как сравнение двух систем, но нельзя утверждать, что именно новая формулировка улучшила качество.</p><h3>4. Grader: правило, превращающее ответ в score</h3><p><strong>Grader</strong> получает ответ и ожидаемое значение и возвращает оценку. В Build It score равен <code>0.0</code> или <code>1.0</code>, но в других задачах возможна шкала.</p><p>Для одной нормализованной метки подходит точное совпадение:</p><pre><code>exact_label(" ACCESS ", "access")  # 1.0
+exact_label("billing", "access")   # 0.0</code></pre><p>Строковое «содержит ожидаемый фрагмент» кажется гибче, но легко обманывается:</p><pre><code>naive_contains("billing, not access", "access")  # 1.0 — метка упомянута, но не возвращена</code></pre><p>Для structured output из 2.4 лучше проверять отдельные типизированные поля и предметные ограничения, а не искать куски текста в сериализованном JSON.</p><p>Три семейства grader решают разные задачи:</p><table><thead><tr><th>Grader</th><th>Когда уместен</th><th>Основной риск</th></tr></thead><tbody><tr><td>Кодовый</td><td>точная метка, число с допуском, схема, обязательное поле, исполняемый тест</td><td>хрупкое правило может не совпадать со смыслом</td></tr><tr><td>Человеческий</td><td>субъективная или дорогая предметная оценка</td><td>цена, скорость и расхождение экспертов</td></tr><tr><td>LLM-as-judge</td><td>масштабируемая оценка текста по явной рубрике</td><td>судья наследует ошибки и смещения модели</td></tr></tbody></table><p>В этом уроке мы реализуем только кодовый grader. Для LLM-as-judge достаточно запомнить границу: ему нужна подробная рубрика и проверка согласия с компетентным человеком на размеченной выборке. Фраза «другая модель решила, что ответ хороший» не является валидированным grader.</p><h3>5. Запуск и запись условий</h3><p><strong>Runner</strong>, или <code>run_case</code>, — адаптер, который передаёт один случай выбранной версии и возвращает её ответ. Harness должен различать:</p><ul><li>модель вернула неправильную метку;</li><li>API не ответил;</li><li>получен refusal или incomplete;</li><li>адаптер не смог извлечь структурированный результат;</li><li>grader сам упал.</li></ul><p>Таймаут нельзя молча записывать как <code>score = 0</code>: тогда качество модели смешивается с надёжностью инфраструктуры. В Build It ошибка <code>run_case</code> останавливает прогон с ID случая. В живом адаптере сначала примени status gate из 2.4 и лишь затем верни значение grader.</p><p>Генерация может быть вариативной даже при одинаковом входе. Первый учебный прогон показывает механику на записанных ответах. Для живой задачи сохрани:</p><ul><li>тексты или хеши baseline и candidate;</li><li>точный model ID и провайдера;</li><li>параметры;</li><li>дату и идентификатор прогона;</li><li>исходные ответы;</li><li>ошибки запуска отдельно от ошибок качества.</li></ul><p>Если один и тот же случай при повторе меняет результат, одного запуска недостаточно для уверенного выбора. Зафиксируй нестабильность и расширь eval повторными попытками, но не подменяй её одним удобным score.</p><h3>6. Отчёт и заранее заданный release gate</h3><p>Минимальный отчёт содержит:</p><ul><li>общий score обеих версий и разницу <code>delta</code>;</li><li>score по каждому важному срезу;</li><li>улучшенные и регрессировавшие случаи;</li><li>решение и его причину.</li></ul><p><strong>Регрессия</strong> — случай или срез, где candidate оказался хуже baseline. Среднее может скрыть её, поэтому сначала смотри не на место в рейтинге, а на <code>regressions</code> и <code>slice_deltas</code>.</p><p>Заранее заданное правило, которое превращает отчёт в решение, называют <strong>release gate</strong>. В уроке оно устроено так:</p><pre><code>reject  — общий score упал или защищённый срез ухудшился;
+review  — измеренного улучшения нет, отсутствует защищённый срез
+          или осталась отдельная регрессия;
+accept  — общий score вырос и наблюдаемых регрессий нет.</code></pre><p>Это не универсальный порог готовности к рабочему использованию. Смысл в том, что правило записано <strong>до</strong> выбора приятного результата и возвращает не только статус, но и объяснение.</p><h2>Разбор сценария до кода</h2><p>Используем пять случаев:</p><table><thead><tr><th>ID</th><th>Коротко</th><th>Expected</th><th>Slice</th></tr></thead><tbody><tr><td><code>billing-double-charge</code></td><td>двойное списание</td><td><code>billing</code></td><td><code>regular</code></td></tr><tr><td><code>billing-after-cancellation</code></td><td>списание после отмены подписки</td><td><code>billing</code></td><td><code>regular</code></td></tr><tr><td><code>access-password</code></td><td>вход после смены пароля</td><td><code>access</code></td><td><code>critical</code></td></tr><tr><td><code>bug-empty-export</code></td><td>пустой CSV</td><td><code>bug</code></td><td><code>regular</code></td></tr><tr><td><code>access-after-payment</code></td><td>оплата прошла, аккаунт заблокирован</td><td><code>access</code></td><td><code>critical</code></td></tr></tbody></table><p>Ответы ниже — <strong>синтетические записанные ответы</strong>: мы специально задали их так, чтобы сделать механику harness наблюдаемой. Они не получены в реальном API и ничего не доказывают о поведении конкретной модели. Такой учебный набор позволяет проверить расчёты без сети, денег и случайности генерации:</p><table><thead><tr><th>ID</th><th>Baseline</th><th>Candidate</th><th>Изменение</th></tr></thead><tbody><tr><td><code>billing-double-charge</code></td><td><code>other</code> ❌</td><td><code>billing</code> ✅</td><td>правило исправило платёжный случай</td></tr><tr><td><code>billing-after-cancellation</code></td><td><code>other</code> ❌</td><td><code>billing</code> ✅</td><td>правило исправило платёжный случай</td></tr><tr><td><code>access-password</code></td><td><code>access</code> ✅</td><td><code>access</code> ✅</td><td>без изменения</td></tr><tr><td><code>bug-empty-export</code></td><td><code>bug</code> ✅</td><td><code>bug</code> ✅</td><td>без изменения</td></tr><tr><td><code>access-after-payment</code></td><td><code>access</code> ✅</td><td><code>billing</code> ❌</td><td>правило создало регрессию</td></tr></tbody></table><p>До дальнейшего чтения сформулируй прогноз:</p><ol><li>какая версия получит больший общий score;</li><li>что произойдёт со срезом <code>critical</code>;</li><li>какое решение должен вернуть заранее заданный gate.</li></ol><p>Расчёт:</p><pre><code>baseline:  3 / 5 = 0.6
+candidate: 4 / 5 = 0.8
+delta:              +0.2
 
-print(compare({"claude": v_claude, "openai": v_openai, "gemini": v_gemini}, CASES, metric=contains))</code></pre><p>Так выбор модели и версии промпта становится измеримым — и это прямой мост к Фазе 9, где к качеству добавится <strong>цена</strong> (одна и та же метрика, но score на доллар).</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> <code>prompt-eval</code> (skill) → <a href="#f-phases-02-prompt-engineering-05-prompt-evaluation-outputs-prompt-eval-skill-md"><code>outputs/prompt-eval/</code></a></p><p>Переиспользуемый скилл оценки промптов: подкладываешь кейсы и версии — получаешь рейтинг. Зарегистрирован в <a href="#f-claude-skills-prompt-eval-skill-md"><code>.claude/skills/prompt-eval</code></a>. Это рабочая лошадка для всех последующих фаз, где надо доказать, что «стало лучше».</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Править промпт по одному примеру.</strong> Один красивый ответ ничего не доказывает — на других кейсах могло стать хуже. Меряй на наборе.</li><li><strong>Брать LLM-as-judge там, где хватает code-based.</strong> Для категориальных задач <code>exact_match</code>/<code>contains</code> быстрее, надёжнее и бесплатнее; модель-судья — для субъективного качества.</li><li><strong>Менять промпт и модель одновременно.</strong> Не поймёшь, что подняло score. Фиксируй набор кейсов и меняй по одному.</li><li><strong>Маленький набор кейсов.</strong> На трёх примерах метрика — шум. Объём важнее точности грейдинга: лучше много кейсов с автооценкой.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="2.5"></div><h2>Дополнительное чтение</h2><ul><li><a href="https://platform.claude.com/docs/en/docs/build-with-claude/define-success" target="_blank" rel="noopener">Anthropic — Define success criteria &amp; build evaluations</a> — что измерять (SMART-критерии) и как строить eval-наборы и грейдинг.</li><li><a href="https://github.com/anthropics/anthropic-cookbook/blob/main/misc/building_evals.ipynb" target="_blank" rel="noopener">anthropics/anthropic-cookbook — building_evals</a> — практический ноутбук по evals.</li><li><a href="https://github.com/promptfoo/promptfoo" target="_blank" rel="noopener">promptfoo</a> — тесты промптов с ассершенами, сравнение версий и моделей, CI/CD, red-team.</li><li><a href="https://github.com/confident-ai/deepeval" target="_blank" rel="noopener">DeepEval</a> — «Pytest для LLM»: юнит-тесты и метрики (G-Eval, relevancy, faithfulness).</li><li><a href="https://hamel.dev/blog/posts/evals/" target="_blank" rel="noopener">Hamel Husain — Your AI Product Needs Evals (2024)</a> — влиятельный практический разбор: зачем и как строить evals.</li><li><a href="https://arxiv.org/abs/2306.05685" target="_blank" rel="noopener">Zheng et al., 2023 — Judging LLM-as-a-Judge (MT-Bench)</a> — первоисточник подхода «модель-судья».</li><li><a href="https://developers.openai.com/api/docs/guides/evaluation-best-practices" target="_blank" rel="noopener">OpenAI — Evaluation best practices</a> — официальный гайд второго провайдера: непрерывные evals на каждое изменение, микс прод-данных и экспертных кейсов, «модель лучше различает, чем генерирует».</li><li><a href="https://arxiv.org/abs/2303.16634" target="_blank" rel="noopener">Liu et al., 2023 — G-Eval</a> — классика LLM-судьи по рубрике: модель сперва генерирует шаги оценки, потом оценивает по ним (пара к MT-Bench).</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Если делегируешь ИИ, реши, что отдаёшь; опиши задачу и критерии; проверь результат; сохрани ответственность за итог.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-02-prompt-engineering-05-prompt-evaluation-code-test-eval-harness-py" open data-test="1"><summary><span class="fname">code/test_eval_harness.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from eval_harness import exact_match, contains, evaluate, compare
+critical baseline:  2 / 2 = 1.0
+critical candidate: 1 / 2 = 0.5
+critical delta:             -0.5</code></pre><p>Candidate улучшил среднее и два обычных случая, но ухудшил защищённый срез. Решение — <code>reject</code>, а не первое место в рейтинге.</p><h2>Build It: собери offline eval-harness</h2><p><strong>Задание:</strong> реализуй механизм, который проверяет набор до запуска, оценивает версии, показывает общий и посрезовый результат, локализует парные регрессии и применяет явный release gate.</p><blockquote><strong>Перед запуском.</strong> Создай рабочую папку <code>ai-native/2.5-prompt-eval/code/</code>. Скопируй туда <code>starter_eval_harness.py</code> под именем <code>eval_harness.py</code>, а рядом — <code>test_eval_harness.py</code>. Нужны Python 3 и <code>pytest</code>; сеть и API-ключ не требуются.</blockquote><p>Готовыми даны:</p><ul><li><code>DEMO_CASES</code> — пять случаев с <code>id</code>, <code>input</code>, <code>expected</code> и <code>slice</code>;</li><li><code>DEMO_PROMPTS</code> — тексты baseline и candidate;</li><li><code>DEMO_OUTPUTS</code> — записанные ответы обеих версий;</li><li><code>recorded_runner(version, case)</code> — адаптер записанных ответов.</li></ul><p>Реализуй шесть частей.</p><h3>1. <code>exact_label(pred, expected) -&gt; float</code></h3><p>Сравни две строки после <code>strip()</code> и регистронезависимой нормализации. Верни <code>1.0</code> только при равенстве. Значение другого типа получает <code>0.0</code>.</p><h3>2. <code>naive_contains(pred, expected) -&gt; float</code></h3><p>Реализуй намеренно слабый поиск подстроки без учёта регистра. Он нужен не как рекомендация, а как воспроизводимый контрпример:</p><pre><code>exact_label("billing, not access", "access")      # 0.0
+naive_contains("billing, not access", "access")   # 1.0</code></pre><h3>3. <code>validate_cases(cases) -&gt; None</code></h3><p>Останови eval до вызова версии, если:</p><ul><li>набор не является непустым списком;</li><li>случай не является объектом;</li><li>отсутствует <code>id</code>, <code>input</code>, <code>expected</code> или <code>slice</code>;</li><li>обязательное значение не является непустой строкой;</li><li>два случая имеют одинаковый <code>id</code>.</li></ul><p>Пустой набор не получает <code>score = 0.0</code>: это отсутствие измерения, а не доказанное нулевое качество.</p><h3>4. <code>evaluate(version, cases, run_case, grader=exact_label) -&gt; dict</code></h3><p>Для каждого случая:</p><ol><li>вызови <code>pred = run_case(version, case)</code>;</li><li>вычисли score;</li><li>сохрани ID, slice, expected, pred и score.</li></ol><p>Верни:</p><ul><li>общий <code>score</code>, <code>passed</code> и <code>total</code>;</li><li><code>by_slice</code> со score и количеством случаев;</li><li>полный <code>per_case</code>.</li></ul><p>Score grader должен быть конечным числом от <code>0</code> до <code>1</code>. Ошибку runner не превращай в плохое качество: подними <code>RuntimeError</code> с именем версии и ID случая.</p><h3>5. <code>compare_versions(...) -&gt; dict</code></h3><p>Оцени baseline и candidate на одних случаях с одним runner и grader. Верни:</p><ul><li>оба полных отчёта;</li><li>общую <code>delta</code>;</li><li><code>slice_deltas</code>;</li><li>ID случаев <code>regressions</code> и <code>improvements</code>.</li></ul><p>Сравнение является <strong>парным</strong>: результат candidate для данного ID сопоставляется с результатом baseline для того же ID.</p><h3>6. <code>release_decision(comparison, protected_slices=()) -&gt; dict</code></h3><p>Примени правило урока:</p><ul><li>общий или защищённый срез ухудшился → <code>reject</code>;</li><li>защищённого среза нет, общего улучшения нет либо остались другие регрессии → <code>review</code>;</li><li>общий score вырос без наблюдаемых регрессий → <code>accept</code>.</li></ul><p>Верни решение вместе с причинами.</p><h3>Прогон red → green</h3><pre><code>pytest code -q               # сначала красное
+python code/eval_harness.py  # затем JSON-отчёт и решение reject</code></pre><p><strong>Готово, когда</strong> зелёны 10 тестов. Они проверяют ложноположительный <code>contains</code>, невалидный и дублированный набор, общий и посрезовый отчёт, скрытую средним критическую регрессию, безопасный candidate, отсутствие защищённого среза, приоритет известной регрессии над неполными данными, обычную регрессию вне защищённого среза, недопустимую оценку grader и отдельные ошибки runner и grader.</p><p>После зелёного прогона объясни своими словами:</p><ol><li>почему <code>0.8</code> не делает candidate автоматически лучше baseline;</li><li>почему пустой набор должен остановить eval;</li><li>почему таймаут runner нельзя считать неправильным ответом модели;</li><li>какой новый случай мог бы опровергнуть решение <code>accept</code>.</li></ol><p>Если эти ответы непонятны, одних зелёных тестов недостаточно. Эталонное решение и тесты-ТЗ доступны ниже в <a href="#lesson-files">«Исходниках урока»</a>.</p><h2>Перенос в один доступный API</h2><p>Не сравнивай сразу всех провайдеров. Выбери один доступный и разрешённый API, одну модель и один набор параметров. Сначала меняется только текст промпта.</p><p>Адаптер должен реализовать тот же контракт:</p><pre><code>MODEL_ID = "точный ID из актуального каталога выбранного провайдера"
+PROMPTS = {"baseline": BASELINE_TEXT, "candidate": CANDIDATE_TEXT}
 
-CASES = [
-    {"input": "2+2", "expected": "4"},
-    {"input": "3+5", "expected": "8"},
-    {"input": "10-4", "expected": "6"},
+
+def run_case(version, case):
+    prompt = PROMPTS[version].format(input=case["input"])
+    response = call_selected_provider(
+        model=MODEL_ID,
+        prompt=prompt,
+        # одинаковые параметры для обеих версий
+    )
+    return extract_completed_label(response)</code></pre><p><code>call_selected_provider</code> и <code>extract_completed_label</code> — граница выбранного SDK, а не часть универсального harness. В <code>extract_completed_label</code>:</p><ol><li>обработай API error, refusal и incomplete по 2.4;</li><li>извлеки значение из structured output;</li><li>верни нормализованную метку только для завершённого ответа;</li><li>при сбое останови прогон, не подставляя <code>other</code> и не выставляя <code>0</code>.</li></ol><p>Безопасный порядок переноса:</p><ol><li>убери чувствительные данные либо используй утверждённую среду;</li><li>до запуска зафиксируй цель, защищённые срезы и правило решения;</li><li>отдели несколько контрольных случаев;</li><li>запусти baseline и candidate с одинаковой конфигурацией;</li><li>сохрани сырые ответы и ошибки;</li><li>посмотри <code>regressions</code> и срезы до общего score;</li><li>только после этого зафиксируй решение.</li></ol><p>Один небольшой прогон подтверждает работу процесса и обнаруженные случаи. Он не доказывает готовность к рабочему использованию. Если ответы меняются при повторе, сохрани это как ограничение и добавь несколько повторных запусков до рабочего решения.</p><h2>Самостоятельная практика</h2><p>Выбери одну безопасную повторяемую задачу, где ожидаемый результат можно обосновать:</p><ul><li>классификация сообщений по небольшому списку категорий;</li><li>извлечение одного-двух полей из источника;</li><li>проверка соблюдения явного обязательного ограничения.</li></ul><p>Не начинай с «оценить качество любого текста». Для первого самостоятельного eval граница должна быть достаточно узкой, чтобы ты мог проверить сам grader.</p><h3>Шаг 1. Зафиксируй решение</h3><p>Запиши baseline, одно изменение candidate и вопрос, на который ответит eval. Например:</p><pre><code>Принимаем candidate, если общий score вырос,
+срез missing_data не ухудшился
+и ни один ответ не придумал отсутствующее значение.</code></pre><h3>Шаг 2. Собери рабочие случаи</h3><p>Подготовь не менее шести:</p><ul><li>три обычных;</li><li>один граничный;</li><li>два случая дорогой ошибки в защищённом срезе.</li></ul><p>Для каждого укажи источник ожидаемого ответа и причину включения. Не генерируй весь набор моделью и не принимай её разметку без своей проверки: иначе один и тот же тип ошибки может попасть и в проверяемую систему, и в «эталон».</p><h3>Шаг 3. Проверь grader</h3><p>Придумай:</p><ul><li>один правильный ответ, который grader должен принять;</li><li>один очевидно неверный;</li><li>один правдоподобный ответ, способный обмануть слишком простое правило.</li></ul><p>Если третий ответ проходит, исправь grader либо сузь утверждение, которое позволяет сделать метрика.</p><h3>Шаг 4. Сделай прогноз и прогон</h3><p>До запуска назови:</p><ul><li>где candidate должен улучшиться;</li><li>какой случай вероятнее всего регрессирует;</li><li>что вернёт release gate при таком исходе.</li></ul><p>Затем выполни прогон, сравни прогноз с отчётом и объясни расхождение.</p><h3>Шаг 5. Проверь на контрольных случаях</h3><p>Добавь не менее двух заранее отложенных случаев. Не переписывай candidate после каждого из них по отдельности. Сначала собери паттерн ошибок и реши, действительно ли он требует изменения.</p><h2>Переносимый результат</h2><p>Заполни <a href="#f-phases-02-prompt-engineering-05-prompt-evaluation-outputs-eval-pack-md">карточку eval-пакета</a> и сохрани рядом свои случаи, версии промпта и отчёт. Готовый курсовой <a href="#f-phases-02-prompt-engineering-05-prompt-evaluation-outputs-prompt-eval-skill-md"><code>prompt-eval</code> skill</a> описывает тот же порядок и переиспользует <code>eval_harness.py</code>.</p><p>Если хочешь вызывать его в личном агенте, сохрани <code>SKILL.md</code> и <code>eval_harness.py</code> со страницы урока в папку <code>prompt-eval</code> внутри каталога проектных скиллов, выбранного в 0.3: <code>.claude/skills/</code>, <code>.cursor/skills/</code> или <code>.agents/skills/</code>. Не копируй автоматически в <code>.claude/skills</code>, если работаешь другим агентом.</p><p>Eval-пакет можно передать другому человеку, если он позволяет:</p><ul><li>понять задачу и решение, для которого собран eval;</li><li>воспроизвести baseline и candidate при зафиксированной конфигурации;</li><li>проверить происхождение expected и назначение каждого среза;</li><li>увидеть общий результат, регрессии и ошибки запуска отдельно;</li><li>повторить release gate без устных пояснений;</li><li>назвать, чего этот eval не измеряет.</li></ul><h2>Где здесь 4D</h2><table><thead><tr><th>4D</th><th>Решение в eval-процессе</th></tr></thead><tbody><tr><td><strong>Delegation</strong></td><td>Передать модели ограниченную рабочую операцию и, при необходимости, черновое расширение набора; не передавать ей право единолично назначать эталоны и принимать собственную новую версию</td></tr><tr><td><strong>Description</strong></td><td>До запуска явно описать задачу, категории, случаи, expected, grader, защищённые срезы, неизменяемую конфигурацию и правило <code>accept/review/reject</code></td></tr><tr><td><strong>Discernment</strong></td><td>Отличить общий score от доказательства качества, найти регрессию по ID и срезу, проверить ложноположительный grader и сопоставить автоматическую оценку с предметным смыслом</td></tr><tr><td><strong>Diligence</strong></td><td>Защитить данные, версионировать промпты и модель, не смешивать API-сбой с ошибкой качества, сохранить сырые ответы и причины решения, не обещать больше, чем покрывает набор</td></tr></tbody></table><p>4D здесь описывает один замкнутый цикл ответственности. Хорошее делегирование определяет границы задачи; описание делает их проверяемыми; различение анализирует ограничения измерения; добросовестность не позволяет выпустить версию только из-за красивого среднего.</p><h2>Типичные ошибки</h2><ul><li><strong>Собрать случаи после просмотра ответов candidate.</strong> Набор начинает оправдывать уже выбранную версию. Сначала зафиксируй цель и хотя бы часть контрольных случаев.</li><li><strong>Считать количество синонимом покрытия.</strong> Десятки копий простого случая не проверяют неизвестную границу.</li><li><strong>Использовать <code>contains</code> как универсальную метрику.</strong> Подстрока может находиться в неправильном числе, отрицании или лишнем тексте.</li><li><strong>Смотреть только среднее.</strong> Высокий общий score может скрывать регрессию на редкой, но дорогой группе.</li><li><strong>Менять промпт и модель одновременно.</strong> Такое сравнение не объясняет причину изменения.</li><li><strong>Считать timeout неправильным ответом.</strong> Надёжность запуска и качество результата — разные измерения.</li><li><strong>Доверить LLM-судье неявную рубрику.</strong> Сначала сформулируй критерии и проверь согласие судьи с компетентной человеческой оценкой.</li><li><strong>Подгонять промпт под каждый контрольный случай.</strong> Так контрольный набор превращается в рабочий и перестаёт проверять перенос.</li><li><strong>Объявить <code>accept</code> доказательством готовности к рабочему использованию.</strong> Решение относится только к версии, конфигурации, набору и grader этого eval.</li></ul><h2>Проверь себя</h2><p>Вопросы ниже проверяют решения в правдоподобных ситуациях: скрытую регрессию, неверный grader, смешанное изменение и границу автоматической оценки.</p><div class="quiz-section" data-lesson="2.5"></div><h2>Дополнительное чтение</h2><p>Читать всё подряд не нужно. Сначала выбери официальный гайд своего провайдера, затем один практический разбор или инструмент под следующую задачу.</p><ul><li><a href="https://platform.claude.com/docs/en/test-and-evaluate/develop-tests" target="_blank" rel="noopener">Anthropic — Define success criteria and build evaluations</a> — открой <strong>Define your success criteria</strong>, <strong>Eval design principles</strong> и <strong>Grade your evaluations</strong>: они продолжают центральную цепочку урока от цели до выбора grader.</li><li><a href="https://developers.openai.com/api/docs/guides/evaluation-best-practices" target="_blank" rel="noopener">OpenAI — Evaluation best practices</a> — прочитай <strong>How to read evals</strong>, <strong>Design your eval process</strong> и <strong>LLM-as-a-judge and model graders</strong>: полезно для реальных распределений, калибровки автоматической оценки и непрерывного пополнения набора.</li><li><a href="https://hamel.dev/blog/posts/evals/" target="_blank" rel="noopener">Hamel Husain — Your AI Product Needs Evals</a> — практический взгляд на цикл улучшений; для продолжения урока достаточно <strong>Level 1: Unit Tests</strong>, <strong>Create Test Cases</strong> и <strong>Run &amp; Track Your Tests Regularly</strong>.</li><li><a href="https://github.com/anthropics/claude-cookbooks/blob/main/misc/building_evals.ipynb" target="_blank" rel="noopener">Anthropic Claude Cookbooks — Building Evals</a> — ноутбук с отдельными примерами code-, human- и model-based grading; сравни их границы с таблицей grader из урока.</li><li><a href="https://github.com/promptfoo/promptfoo" target="_blank" rel="noopener">promptfoo</a> — пример зрелого инструмента для декларативных случаев, сравнений и CI; открывай после собственного harness, когда понадобится автоматизировать регулярные прогоны.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Если делегируешь ИИ, реши, что отдаёшь; опиши задачу и критерии; проверь результат; сохрани ответственность за итог.</p></div><h3>Стартовый файл</h3><p class="muted files-note">Скопируй этот файл под указанным в задании именем и реализуй отмеченные функции.</p><details class="filebox" id="f-phases-02-prompt-engineering-05-prompt-evaluation-code-starter-eval-harness-py" open><summary><span class="fname">code/starter_eval_harness.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Starter for the offline eval harness from lesson 2.5.
+
+Copy this file as ``eval_harness.py`` and implement the six marked functions.
+The cases, prompts, recorded outputs, runner, and demo call are already provided.
+"""
+
+from collections import defaultdict
+import json
+import math
+
+
+REQUIRED_CASE_FIELDS = {"id", "input", "expected", "slice"}
+
+DEMO_CASES = [
+    {
+        "id": "billing-double-charge",
+        "input": "Списали оплату дважды за один месяц.",
+        "expected": "billing",
+        "slice": "regular",
+    },
+    {
+        "id": "billing-after-cancellation",
+        "input": "Отменил подписку, но сегодня деньги списали снова.",
+        "expected": "billing",
+        "slice": "regular",
+    },
+    {
+        "id": "access-password",
+        "input": "После смены пароля не могу войти в аккаунт.",
+        "expected": "access",
+        "slice": "critical",
+    },
+    {
+        "id": "bug-empty-export",
+        "input": "Экспорт CSV завершается, но скачанный файл пустой.",
+        "expected": "bug",
+        "slice": "regular",
+    },
+    {
+        "id": "access-after-payment",
+        "input": "Оплата прошла, но после продления аккаунт всё равно заблокирован.",
+        "expected": "access",
+        "slice": "critical",
+    },
 ]
 
+DEMO_PROMPTS = {
+    "baseline": (
+        "Определи главную проблему пользователя. Верни одну метку: "
+        "billing, access, bug или other.\nСообщение:\n{input}"
+    ),
+    "candidate": (
+        "Определи главную проблему пользователя. Верни одну метку: "
+        "billing, access, bug или other.\n"
+        "Если в сообщении упомянуты оплата или подписка, выбери billing.\n"
+        "Сообщение:\n{input}"
+    ),
+}
 
-def test_metrics():
-    assert exact_match("4", "4") == 1.0
-    assert exact_match("4 ", "4") == 1.0          # игнор пробелов
-    assert exact_match("5", "4") == 0.0
-    assert contains("ответ: 4", "4") == 1.0
-    assert contains("нет", "4") == 0.0
+# Synthetic recorded responses: they demonstrate the harness mechanics and are
+# not evidence about the behavior of a real model.
+DEMO_OUTPUTS = {
+    "baseline": {
+        "billing-double-charge": "other",
+        "billing-after-cancellation": "other",
+        "access-password": "access",
+        "bug-empty-export": "bug",
+        "access-after-payment": "access",
+    },
+    "candidate": {
+        "billing-double-charge": "billing",
+        "billing-after-cancellation": "billing",
+        "access-password": "access",
+        "bug-empty-export": "bug",
+        "access-after-payment": "billing",
+    },
+}
 
 
-def test_evaluate_scores_perfect_and_zero():
-    good = evaluate(lambda x: str(eval(x)), CASES)
-    assert good["score"] == 1.0
-    assert len(good["per_case"]) == 3
-    bad = evaluate(lambda x: "?", CASES)
-    assert bad["score"] == 0.0
+def exact_label(pred, expected):
+    """Return 1.0 only for the same normalized label."""
+    raise NotImplementedError
 
 
-def test_compare_ranks_better_prompt_first():
-    versions = {
-        "good": lambda x: str(eval(x)),
-        "half": lambda x: "4",                    # угадывает только первый кейс
-        "bad": lambda x: "?",
+def naive_contains(pred, expected):
+    """A deliberately weak grader used to demonstrate false positives."""
+    raise NotImplementedError
+
+
+def validate_cases(cases):
+    """Fail fast when a test set cannot support a meaningful run."""
+    raise NotImplementedError
+
+
+def evaluate(version, cases, run_case, grader=exact_label):
+    """Run one version and return overall, slice, and per-case evidence."""
+    raise NotImplementedError
+
+
+def compare_versions(baseline, candidate, cases, run_case, grader=exact_label):
+    """Compare the same cases and grader, preserving paired evidence."""
+    raise NotImplementedError
+
+
+def release_decision(comparison, protected_slices=()):
+    """Apply a small, explicit release gate to a completed comparison."""
+    raise NotImplementedError
+
+
+def recorded_runner(version, case):
+    """Return the stored response for the demo version and case."""
+    return DEMO_OUTPUTS[version][case["id"]]
+
+
+if __name__ == "__main__":
+    comparison = compare_versions(
+        "baseline",
+        "candidate",
+        DEMO_CASES,
+        recorded_runner,
+    )
+    decision = release_decision(comparison, protected_slices=("critical",))
+    print(json.dumps({"comparison": comparison, "decision": decision},
+                     ensure_ascii=False, indent=2))
+</code></pre></details><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-02-prompt-engineering-05-prompt-evaluation-code-test-eval-harness-py" open data-test="1"><summary><span class="fname">code/test_eval_harness.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>import pytest
+
+from eval_harness import (
+    DEMO_CASES,
+    DEMO_OUTPUTS,
+    compare_versions,
+    evaluate,
+    exact_label,
+    naive_contains,
+    recorded_runner,
+    release_decision,
+    validate_cases,
+)
+
+
+def test_exact_label_normalizes_but_contains_can_lie():
+    assert exact_label(" ACCESS ", "access") == 1.0
+    assert exact_label("billing, not access", "access") == 0.0
+    assert naive_contains("billing, not access", "access") == 1.0
+
+
+def test_invalid_or_duplicate_cases_fail_before_the_run():
+    with pytest.raises(ValueError, match="non-empty"):
+        validate_cases([])
+
+    duplicate = [DEMO_CASES[0], dict(DEMO_CASES[0])]
+    with pytest.raises(ValueError, match="duplicate"):
+        validate_cases(duplicate)
+
+
+def test_evaluate_preserves_case_and_slice_evidence():
+    report = evaluate("baseline", DEMO_CASES, recorded_runner)
+
+    assert report["score"] == pytest.approx(0.6)
+    assert report["passed"] == 3
+    assert report["total"] == 5
+    assert report["by_slice"]["critical"] == {
+        "score": 1.0,
+        "passed": 2,
+        "total": 2,
     }
-    ranking = compare(versions, CASES)
-    assert ranking[0][0] == "good"
-    assert ranking[-1][0] == "bad"
-    assert ranking[0][1] &gt; ranking[1][1] &gt; ranking[2][1]
-</code></pre></details><h3>Эталонное решение</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-02-prompt-engineering-05-prompt-evaluation-code-eval-harness-py"><summary><span class="fname">code/eval_harness.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Mini eval-harness: метрики и сравнение версий промптов — Build It для урока 2.5.
+    assert report["per_case"][0]["id"] == "billing-double-charge"
 
-Без зависимостей. Прогоняет промпт-функцию по набору кейсов {input, expected},
-считает метрику и сравнивает версии промптов между собой. Промпт-функция здесь —
-обычный callable (в тестах детерминированный stub); в USE IT её роль играет
-вызов модели. Это ядро фазы: «писать воспроизводимые промпты и измерять качество».
+
+def test_overall_improvement_can_hide_a_critical_regression():
+    comparison = compare_versions(
+        "baseline",
+        "candidate",
+        DEMO_CASES,
+        recorded_runner,
+    )
+
+    assert comparison["delta"] == pytest.approx(0.2)
+    assert comparison["slice_deltas"]["critical"] == pytest.approx(-0.5)
+    assert comparison["regressions"] == ["access-after-payment"]
+    assert set(comparison["improvements"]) == {
+        "billing-double-charge",
+        "billing-after-cancellation",
+    }
+
+    decision = release_decision(comparison, protected_slices=("critical",))
+    assert decision["decision"] == "reject"
+    assert "critical" in decision["reasons"][0]
+
+
+def test_candidate_without_regressions_can_be_accepted():
+    safe_outputs = {
+        **DEMO_OUTPUTS,
+        "safe-candidate": {
+            **DEMO_OUTPUTS["candidate"],
+            "access-after-payment": "access",
+        },
+    }
+
+    def run_safe(version, case):
+        return safe_outputs[version][case["id"]]
+
+    comparison = compare_versions(
+        "baseline",
+        "safe-candidate",
+        DEMO_CASES,
+        run_safe,
+    )
+    decision = release_decision(comparison, protected_slices=("critical",))
+
+    assert comparison["delta"] == pytest.approx(0.4)
+    assert comparison["regressions"] == []
+    assert decision["decision"] == "accept"
+
+
+def test_missing_protected_slice_requires_review():
+    comparison = compare_versions(
+        "baseline",
+        "candidate",
+        DEMO_CASES,
+        recorded_runner,
+    )
+    decision = release_decision(comparison, protected_slices=("privacy",))
+
+    assert decision["decision"] == "review"
+    assert "no cases" in decision["reasons"][0]
+
+
+def test_known_regression_outweighs_a_missing_protected_slice():
+    comparison = compare_versions(
+        "baseline",
+        "candidate",
+        DEMO_CASES,
+        recorded_runner,
+    )
+    decision = release_decision(
+        comparison,
+        protected_slices=("critical", "privacy"),
+    )
+
+    assert decision["decision"] == "reject"
+    assert any("critical" in reason for reason in decision["reasons"])
+    assert any("privacy" in reason for reason in decision["reasons"])
+
+
+def test_unprotected_case_regression_requires_review():
+    review_outputs = {
+        **DEMO_OUTPUTS,
+        "review-candidate": {
+            **DEMO_OUTPUTS["candidate"],
+            "bug-empty-export": "other",
+            "access-after-payment": "access",
+        },
+    }
+
+    def run_review(version, case):
+        return review_outputs[version][case["id"]]
+
+    comparison = compare_versions(
+        "baseline",
+        "review-candidate",
+        DEMO_CASES,
+        run_review,
+    )
+    decision = release_decision(comparison, protected_slices=("critical",))
+
+    assert comparison["delta"] == pytest.approx(0.2)
+    assert comparison["regressions"] == ["bug-empty-export"]
+    assert decision["decision"] == "review"
+
+
+def test_invalid_or_broken_grader_fails_with_case_context():
+    with pytest.raises(ValueError, match="billing-double-charge"):
+        evaluate(
+            "candidate",
+            DEMO_CASES,
+            recorded_runner,
+            grader=lambda pred, expected: float("nan"),
+        )
+
+    def broken_grader(pred, expected):
+        raise LookupError("rubric unavailable")
+
+    with pytest.raises(
+        RuntimeError,
+        match="grader failed for candidate/billing-double-charge",
+    ):
+        evaluate("candidate", DEMO_CASES, recorded_runner, grader=broken_grader)
+
+
+def test_runner_failure_is_not_silently_counted_as_bad_quality():
+    def broken_runner(version, case):
+        raise TimeoutError("provider timeout")
+
+    with pytest.raises(RuntimeError, match="runner failed"):
+        evaluate("candidate", DEMO_CASES, broken_runner)
+</code></pre></details><h3>Эталонное решение</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-02-prompt-engineering-05-prompt-evaluation-code-eval-harness-py"><summary><span class="fname">code/eval_harness.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Offline eval core for lesson 2.5.
+
+The harness knows nothing about a specific model provider. ``run_case`` is the
+boundary: in the lesson it returns recorded outputs, while a live adapter may call
+one chosen API. The evaluation logic remains deterministic and testable.
 """
 
-
-# --- метрики: (pred, expected) -&gt; [0..1] ---
-def exact_match(pred, expected):
-    return 1.0 if pred.strip() == expected.strip() else 0.0
-
-
-def contains(pred, expected):
-    return 1.0 if expected.lower() in pred.lower() else 0.0
+from collections import defaultdict
+import json
+import math
 
 
-def evaluate(prompt_fn, cases, metric=exact_match):
-    """Прогнать prompt_fn по кейсам. Возвращает {score, per_case}."""
+REQUIRED_CASE_FIELDS = {"id", "input", "expected", "slice"}
+
+DEMO_CASES = [
+    {
+        "id": "billing-double-charge",
+        "input": "Списали оплату дважды за один месяц.",
+        "expected": "billing",
+        "slice": "regular",
+    },
+    {
+        "id": "billing-after-cancellation",
+        "input": "Отменил подписку, но сегодня деньги списали снова.",
+        "expected": "billing",
+        "slice": "regular",
+    },
+    {
+        "id": "access-password",
+        "input": "После смены пароля не могу войти в аккаунт.",
+        "expected": "access",
+        "slice": "critical",
+    },
+    {
+        "id": "bug-empty-export",
+        "input": "Экспорт CSV завершается, но скачанный файл пустой.",
+        "expected": "bug",
+        "slice": "regular",
+    },
+    {
+        "id": "access-after-payment",
+        "input": "Оплата прошла, но после продления аккаунт всё равно заблокирован.",
+        "expected": "access",
+        "slice": "critical",
+    },
+]
+
+DEMO_PROMPTS = {
+    "baseline": (
+        "Определи главную проблему пользователя. Верни одну метку: "
+        "billing, access, bug или other.\nСообщение:\n{input}"
+    ),
+    "candidate": (
+        "Определи главную проблему пользователя. Верни одну метку: "
+        "billing, access, bug или other.\n"
+        "Если в сообщении упомянуты оплата или подписка, выбери billing.\n"
+        "Сообщение:\n{input}"
+    ),
+}
+
+# These responses are recorded fixtures, not live model calls. They make Build It
+# reproducible and keep the lesson usable without an API key.
+DEMO_OUTPUTS = {
+    "baseline": {
+        "billing-double-charge": "other",
+        "billing-after-cancellation": "other",
+        "access-password": "access",
+        "bug-empty-export": "bug",
+        "access-after-payment": "access",
+    },
+    "candidate": {
+        "billing-double-charge": "billing",
+        "billing-after-cancellation": "billing",
+        "access-password": "access",
+        "bug-empty-export": "bug",
+        "access-after-payment": "billing",
+    },
+}
+
+
+def exact_label(pred, expected):
+    """Return 1.0 only for the same normalized label."""
+    if not isinstance(pred, str) or not isinstance(expected, str):
+        return 0.0
+    return 1.0 if pred.strip().casefold() == expected.strip().casefold() else 0.0
+
+
+def naive_contains(pred, expected):
+    """A deliberately weak grader used to demonstrate false positives."""
+    if not isinstance(pred, str) or not isinstance(expected, str):
+        return 0.0
+    return 1.0 if expected.casefold() in pred.casefold() else 0.0
+
+
+def validate_cases(cases):
+    """Fail fast when a test set cannot support a meaningful run."""
+    if not isinstance(cases, list) or not cases:
+        raise ValueError("cases must be a non-empty list")
+
+    seen_ids = set()
+    for index, case in enumerate(cases):
+        if not isinstance(case, dict):
+            raise ValueError(f"cases[{index}] must be an object")
+
+        missing = REQUIRED_CASE_FIELDS - set(case)
+        if missing:
+            fields = ", ".join(sorted(missing))
+            raise ValueError(f"cases[{index}] missing fields: {fields}")
+
+        for field in REQUIRED_CASE_FIELDS:
+            if not isinstance(case[field], str) or not case[field].strip():
+                raise ValueError(f"cases[{index}].{field} must be a non-empty string")
+
+        case_id = case["id"]
+        if case_id in seen_ids:
+            raise ValueError(f"duplicate case id: {case_id}")
+        seen_ids.add(case_id)
+
+
+def _checked_score(value, case_id):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"grader returned a non-numeric score for {case_id}")
+    score = float(value)
+    if not math.isfinite(score) or not 0.0 &lt;= score &lt;= 1.0:
+        raise ValueError(f"grader score for {case_id} must be between 0 and 1")
+    return score
+
+
+def evaluate(version, cases, run_case, grader=exact_label):
+    """Run one version and return overall, slice, and per-case evidence."""
+    validate_cases(cases)
+    if not callable(run_case) or not callable(grader):
+        raise TypeError("run_case and grader must be callable")
+
     per_case = []
-    for c in cases:
-        pred = prompt_fn(c["input"])
-        per_case.append({"input": c["input"], "pred": pred,
-                         "expected": c["expected"], "score": metric(pred, c["expected"])})
-    score = sum(p["score"] for p in per_case) / len(cases) if cases else 0.0
-    return {"score": score, "per_case": per_case}
+    slice_scores = defaultdict(list)
+
+    for case in cases:
+        case_id = case["id"]
+        try:
+            pred = run_case(version, case)
+        except Exception as exc:
+            raise RuntimeError(f"runner failed for {version}/{case_id}") from exc
+
+        try:
+            raw_score = grader(pred, case["expected"])
+        except Exception as exc:
+            raise RuntimeError(f"grader failed for {version}/{case_id}") from exc
+        score = _checked_score(raw_score, case_id)
+        result = {
+            "id": case_id,
+            "slice": case["slice"],
+            "expected": case["expected"],
+            "pred": pred,
+            "score": score,
+        }
+        per_case.append(result)
+        slice_scores[case["slice"]].append(score)
+
+    by_slice = {}
+    for slice_name, scores in sorted(slice_scores.items()):
+        by_slice[slice_name] = {
+            "score": sum(scores) / len(scores),
+            "passed": sum(score == 1.0 for score in scores),
+            "total": len(scores),
+        }
+
+    return {
+        "version": version,
+        "score": sum(item["score"] for item in per_case) / len(per_case),
+        "passed": sum(item["score"] == 1.0 for item in per_case),
+        "total": len(per_case),
+        "by_slice": by_slice,
+        "per_case": per_case,
+    }
 
 
-def compare(versions, cases, metric=exact_match):
-    """versions: {name: prompt_fn}. Рейтинг (name, score) по убыванию качества."""
-    scored = [(name, evaluate(fn, cases, metric)["score"]) for name, fn in versions.items()]
-    return sorted(scored, key=lambda x: x[1], reverse=True)
+def compare_versions(baseline, candidate, cases, run_case, grader=exact_label):
+    """Compare the same cases and grader, preserving paired evidence."""
+    baseline_report = evaluate(baseline, cases, run_case, grader)
+    candidate_report = evaluate(candidate, cases, run_case, grader)
+
+    baseline_by_id = {item["id"]: item for item in baseline_report["per_case"]}
+    candidate_by_id = {item["id"]: item for item in candidate_report["per_case"]}
+
+    regressions = []
+    improvements = []
+    for case in cases:
+        case_id = case["id"]
+        old_score = baseline_by_id[case_id]["score"]
+        new_score = candidate_by_id[case_id]["score"]
+        if new_score &lt; old_score:
+            regressions.append(case_id)
+        elif new_score &gt; old_score:
+            improvements.append(case_id)
+
+    slice_deltas = {}
+    for slice_name in baseline_report["by_slice"]:
+        old_score = baseline_report["by_slice"][slice_name]["score"]
+        new_score = candidate_report["by_slice"][slice_name]["score"]
+        slice_deltas[slice_name] = round(new_score - old_score, 12)
+
+    return {
+        "baseline": baseline_report,
+        "candidate": candidate_report,
+        "delta": round(candidate_report["score"] - baseline_report["score"], 12),
+        "slice_deltas": slice_deltas,
+        "regressions": regressions,
+        "improvements": improvements,
+    }
+
+
+def release_decision(comparison, protected_slices=()):
+    """Apply a small, explicit release gate to a completed comparison."""
+    reject_reasons = []
+    review_reasons = []
+
+    if comparison["delta"] &lt; 0:
+        reject_reasons.append(
+            f"overall score regressed by {comparison['delta']:.3f}"
+        )
+
+    for slice_name in protected_slices:
+        if slice_name not in comparison["slice_deltas"]:
+            review_reasons.append(f"protected slice {slice_name!r} has no cases")
+            continue
+        slice_delta = comparison["slice_deltas"][slice_name]
+        if slice_delta &lt; 0:
+            reject_reasons.append(
+                f"protected slice {slice_name!r} regressed by {slice_delta:.3f}"
+            )
+
+    if reject_reasons:
+        return {
+            "decision": "reject",
+            "reasons": reject_reasons + review_reasons,
+        }
+    if comparison["delta"] &lt;= 0:
+        review_reasons.append("candidate has no measured overall improvement")
+    if comparison["regressions"]:
+        review_reasons.append(
+            "candidate has case-level regressions: "
+            + ", ".join(comparison["regressions"])
+        )
+    if review_reasons:
+        return {"decision": "review", "reasons": review_reasons}
+    return {
+        "decision": "accept",
+        "reasons": ["overall score improved without observed regressions"],
+    }
+
+
+def recorded_runner(version, case):
+    """Return the stored response for the demo version and case."""
+    return DEMO_OUTPUTS[version][case["id"]]
 
 
 if __name__ == "__main__":
-    cases = [
-        {"input": "2+2", "expected": "4"},
-        {"input": "3+5", "expected": "8"},
-        {"input": "10-4", "expected": "6"},
-    ]
-    # две «версии промпта»: рабочая и сломанная
-    good = lambda x: str(eval(x))               # noqa: S307 — учебный stub
-    bad = lambda x: "не знаю"
-    print("good:", evaluate(good, cases)["score"])
-    print("bad :", evaluate(bad, cases)["score"])
-    print("рейтинг:", compare({"good": good, "bad": bad}, cases))
-</code></pre></details><h3>Артефакт</h3><details class="filebox" id="f-phases-02-prompt-engineering-05-prompt-evaluation-outputs-prompt-eval-skill-md" open><summary><span class="fname">outputs/prompt-eval/SKILL.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>---
+    comparison = compare_versions(
+        "baseline",
+        "candidate",
+        DEMO_CASES,
+        recorded_runner,
+    )
+    decision = release_decision(comparison, protected_slices=("critical",))
+    print(json.dumps({"comparison": comparison, "decision": decision},
+                     ensure_ascii=False, indent=2))
+</code></pre></details><h3>Артефакт</h3><details class="filebox" id="f-phases-02-prompt-engineering-05-prompt-evaluation-outputs-eval-pack-md" open><summary><span class="fname">outputs/eval-pack.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Карточка eval-пакета
+
+Заполняй её до, во время и после сравнения. Цель — сохранить не красивый score, а
+воспроизводимое основание решения.
+
+## 1. Задача и граница
+
+- **Рабочая задача:**
+- **Что получает модель:**
+- **Какой результат ожидается:**
+- **Что eval сознательно не измеряет:**
+- **Где задача будет использоваться:**
+
+## 2. Решение до запуска
+
+- **Baseline:**
+- **Candidate:**
+- **Одно изменяемое условие:**
+- **Что остаётся неизменным:**
+- **Решение, которое примем по результату:**
+- **Правило `accept`:**
+- **Правило `review`:**
+- **Правило `reject`:**
+- **Защищённые срезы и причина:**
+
+Правило пригодно, если два человека применят его к одному отчёту и придут к одному
+статусу.
+
+## 3. Набор случаев
+
+| ID | Input / ссылка | Expected | Slice | Источник expected | Почему случай нужен | Рабочий / контрольный |
+|---|---|---|---|---|---|---|
+|  |  |  |  |  |  |  |
+
+Проверь:
+
+- [ ] ID уникальны.
+- [ ] Есть обычные, граничные и дорогостоящие случаи.
+- [ ] Защищённые срезы действительно представлены.
+- [ ] Expected задан до просмотра ответа candidate.
+- [ ] Разметка не принята от модели без человеческой проверки.
+- [ ] Чувствительные данные удалены либо среда утверждена.
+
+## 4. Контракт grader
+
+- **Что именно получает grader:**
+- **Что означает `1.0`:**
+- **Что означает `0.0`:**
+- **Нужна ли промежуточная шкала:**
+- **Почему выбран кодовый / человеческий / LLM-grader:**
+
+| Проверка grader | Пример | Ожидаемая оценка | Фактическая оценка |
+|---|---|---:|---:|
+| Правильный ответ |  |  |  |
+| Очевидно неверный |  |  |  |
+| Правдоподобный обход |  |  |  |
+
+- **Известные ограничения grader:**
+- **Если оценка не является точным фактом: как она сверена с человеком:**
+
+## 5. Конфигурация запуска
+
+- **Дата и run ID:**
+- **Provider и точный model ID либо `recorded fixture`:**
+- **Версия SDK / инструмента:**
+- **Параметры генерации:**
+- **Хеш или путь baseline-промпта:**
+- **Хеш или путь candidate-промпта:**
+- **Путь к рабочим случаям:**
+- **Путь к контрольным случаям:**
+- **Где сохранены сырые ответы:**
+
+## 6. Результат
+
+| Показатель | Baseline | Candidate | Delta |
+|---|---:|---:|---:|
+| Общий score |  |  |  |
+| Защищённый срез: |  |  |  |
+| Другой важный срез: |  |  |  |
+
+- **Improvements:**
+- **Regressions:**
+- **Ошибки запуска, не включённые в score:**
+- **Нестабильные случаи при повторе:**
+- **Неожиданный паттерн:**
+
+## 7. Решение
+
+- **Статус:** `accept / review / reject`
+- **Причины по заранее заданному правилу:**
+- **Что опровергло бы это решение:**
+- **Следующее действие:**
+- **Ответственный за решение:**
+
+## 8. Рубрика приёмки eval-пакета
+
+Пакет готов к передаче, если:
+
+- другой человек может воспроизвести обе версии и конфигурацию;
+- каждый expected и защищённый срез имеет предметное обоснование;
+- grader проверен на правильном, неверном и обманчивом ответе;
+- API-сбои отделены от ошибок качества;
+- отчёт показывает общий score, срезы и парные регрессии;
+- решение следует из правила, записанного до запуска;
+- ограничения не спрятаны и не выданы за доказанную область качества.
+</code></pre></details><details class="filebox" id="f-phases-02-prompt-engineering-05-prompt-evaluation-outputs-prompt-eval-skill-md" open><summary><span class="fname">outputs/prompt-eval/SKILL.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>---
 name: prompt-eval
-description: "Оценка качества промптов курса AI Native: прогоняет версии промпта по набору кейсов, считает метрику и сравнивает. Триггеры: «/prompt-eval», «сравни версии промпта», «измерь качество промпта», «какой промпт лучше», «прогони eval». Артефакт урока 2.5."
+description: &gt;-
+  Проектирует и выполняет воспроизводимое сравнение baseline и candidate на одном
+  наборе случаев, показывает общий score, срезы и парные регрессии и применяет заранее
+  заданное правило решения. Используй по запросам «сравни версии промпта», «прогони
+  eval», «измерь изменение качества», «можно ли принять новый промпт».
 ---
 
-# prompt-eval — измерение и сравнение промптов
+# Prompt eval
 
-Превращает «кажется, лучше» в число: фиксированный набор кейсов + метрика → честное сравнение версий промпта или моделей.
+Помогай принять ограниченное решение по данным eval. Не объявляй candidate «лучше
+вообще» и не подменяй отсутствие набора или grader уверенным мнением.
 
-## Как пользоваться
+## Вход
 
-1. Собери набор кейсов `cases = [{"input": ..., "expected": ...}, ...]` — реальные примеры с эталонами, включая граничные.
-2. Заведи версии как функции `versions = {"v1": fn1, "v2": fn2}`, где `fn(input) -&gt; ответ` (в проде — вызов модели).
-3. Выбери метрику: `exact_match` (классификация/извлечение) или `contains` (есть ли нужное); сложное — LLM-as-judge.
-4. Прогон и сравнение:
+Нужны:
 
-```python
-import eval_harness as e
-ranking = e.compare(versions, cases, metric=e.exact_match)   # [(name, score), ...] по убыванию
-detail = e.evaluate(versions["v1"], cases, metric=e.exact_match)["per_case"]
+- одна задача и критерий успеха;
+- baseline и candidate;
+- одно названное изменяемое условие;
+- случаи с `id`, `input`, `expected` и `slice`;
+- grader либо достаточная предметная информация для его проектирования;
+- правило `accept / review / reject`;
+- зафиксированная конфигурация запуска или записанные ответы.
+
+Если существенной части нет, сначала подготовь черновик eval-спецификации и явно отметь
+пробел. Не выдумывай expected и не сообщай победителя без измерения.
+
+## Процесс
+
+1. **Зафиксируй решение до запуска.**
+   - Что сравнивается?
+   - Какое действие последует за результатом?
+   - Что остаётся неизменным?
+   - Какие срезы нельзя ухудшить?
+
+2. **Проверь набор.**
+   - ID уникальны, поля заполнены.
+   - Есть обычные, граничные и дорогостоящие случаи.
+   - Expected имеет проверяемое происхождение.
+   - Контрольные случаи не использовались для подгонки каждой версии.
+   - Чувствительные данные не отправляются в неутверждённую среду.
+
+3. **Проверь grader до основного прогона.**
+   - Правильный ответ проходит.
+   - Очевидно неверный не проходит.
+   - Правдоподобный обход простого правила не получает ложный pass.
+   - LLM-grader имеет явную рубрику и сверку с человеческой разметкой.
+
+4. **Запусти одинаковую процедуру.**
+   - Используй один набор и grader.
+   - При проверке правки промпта зафиксируй provider, model ID и параметры.
+   - Refusal, incomplete, timeout и ошибку адаптера сохрани отдельно; не превращай их
+     молча в `score = 0`.
+   - Для офлайн-прогона импортируй `eval_harness.py` и передай свой `run_case`.
+
+5. **Диагностируй до выбора победителя.**
+   - Сначала изучи `regressions` и `slice_deltas`.
+   - Затем сравни общий score.
+   - При расхождении автоматической оценки и предметного смысла проверяй grader, а не
+     объясняй неудобный результат.
+
+6. **Примени заранее заданный gate.**
+   - Верни `accept`, `review` или `reject`.
+   - Назови причины, ограничения и следующий шаг.
+   - Не расширяй вывод за пределы версии, конфигурации, набора и grader.
+
+## Формат результата
+
+```markdown
+## Eval
+
+- Задача:
+- Baseline:
+- Candidate:
+- Изменено:
+- Защищённые срезы:
+- Конфигурация:
+
+| Показатель | Baseline | Candidate | Delta |
+|---|---:|---:|---:|
+| Overall | | | |
+| &lt;slice&gt; | | | |
+
+- Improvements:
+- Regressions:
+- Ошибки запуска:
+- Решение: accept / review / reject
+- Причины:
+- Ограничения:
+- Следующий шаг:
 ```
-
-5. Покажи рейтинг версий по убыванию score и per-case разбор (где именно версия проигрывает).
 
 ## Файлы
 
-- `eval_harness.py` — движок: `exact_match`, `contains`, `evaluate(prompt_fn, cases, metric)`, `compare(versions, cases, metric)`.
+- `eval_harness.py` — офлайн-ядро: валидация случаев, grader для точной метки,
+  посрезовый отчёт, парное сравнение и release gate.
+- Карточка eval-пакета из урока 2.5 — шаблон для фиксации спецификации, конфигурации,
+  результата и решения.
+</code></pre></details><details class="filebox" id="f-phases-02-prompt-engineering-05-prompt-evaluation-outputs-prompt-eval-eval-harness-py" open><summary><span class="fname">outputs/prompt-eval/eval_harness.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Offline eval core for lesson 2.5.
 
-## Когда применять
-
-Перед тем как принять правку промпта, сменить модель или параметры — прогони eval и сравни с базлайном. Связка с выбором модели по цене/качеству — Фаза 9.
-</code></pre></details><details class="filebox" id="f-phases-02-prompt-engineering-05-prompt-evaluation-outputs-prompt-eval-eval-harness-py" open><summary><span class="fname">outputs/prompt-eval/eval_harness.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Mini eval-harness: метрики и сравнение версий промптов — Build It для урока 2.5.
-
-Без зависимостей. Прогоняет промпт-функцию по набору кейсов {input, expected},
-считает метрику и сравнивает версии промптов между собой. Промпт-функция здесь —
-обычный callable (в тестах детерминированный stub); в USE IT её роль играет
-вызов модели. Это ядро фазы: «писать воспроизводимые промпты и измерять качество».
+The harness knows nothing about a specific model provider. ``run_case`` is the
+boundary: in the lesson it returns recorded outputs, while a live adapter may call
+one chosen API. The evaluation logic remains deterministic and testable.
 """
 
-
-# --- метрики: (pred, expected) -&gt; [0..1] ---
-def exact_match(pred, expected):
-    return 1.0 if pred.strip() == expected.strip() else 0.0
-
-
-def contains(pred, expected):
-    return 1.0 if expected.lower() in pred.lower() else 0.0
+from collections import defaultdict
+import json
+import math
 
 
-def evaluate(prompt_fn, cases, metric=exact_match):
-    """Прогнать prompt_fn по кейсам. Возвращает {score, per_case}."""
+REQUIRED_CASE_FIELDS = {"id", "input", "expected", "slice"}
+
+DEMO_CASES = [
+    {
+        "id": "billing-double-charge",
+        "input": "Списали оплату дважды за один месяц.",
+        "expected": "billing",
+        "slice": "regular",
+    },
+    {
+        "id": "billing-after-cancellation",
+        "input": "Отменил подписку, но сегодня деньги списали снова.",
+        "expected": "billing",
+        "slice": "regular",
+    },
+    {
+        "id": "access-password",
+        "input": "После смены пароля не могу войти в аккаунт.",
+        "expected": "access",
+        "slice": "critical",
+    },
+    {
+        "id": "bug-empty-export",
+        "input": "Экспорт CSV завершается, но скачанный файл пустой.",
+        "expected": "bug",
+        "slice": "regular",
+    },
+    {
+        "id": "access-after-payment",
+        "input": "Оплата прошла, но после продления аккаунт всё равно заблокирован.",
+        "expected": "access",
+        "slice": "critical",
+    },
+]
+
+DEMO_PROMPTS = {
+    "baseline": (
+        "Определи главную проблему пользователя. Верни одну метку: "
+        "billing, access, bug или other.\nСообщение:\n{input}"
+    ),
+    "candidate": (
+        "Определи главную проблему пользователя. Верни одну метку: "
+        "billing, access, bug или other.\n"
+        "Если в сообщении упомянуты оплата или подписка, выбери billing.\n"
+        "Сообщение:\n{input}"
+    ),
+}
+
+# These responses are recorded fixtures, not live model calls. They make Build It
+# reproducible and keep the lesson usable without an API key.
+DEMO_OUTPUTS = {
+    "baseline": {
+        "billing-double-charge": "other",
+        "billing-after-cancellation": "other",
+        "access-password": "access",
+        "bug-empty-export": "bug",
+        "access-after-payment": "access",
+    },
+    "candidate": {
+        "billing-double-charge": "billing",
+        "billing-after-cancellation": "billing",
+        "access-password": "access",
+        "bug-empty-export": "bug",
+        "access-after-payment": "billing",
+    },
+}
+
+
+def exact_label(pred, expected):
+    """Return 1.0 only for the same normalized label."""
+    if not isinstance(pred, str) or not isinstance(expected, str):
+        return 0.0
+    return 1.0 if pred.strip().casefold() == expected.strip().casefold() else 0.0
+
+
+def naive_contains(pred, expected):
+    """A deliberately weak grader used to demonstrate false positives."""
+    if not isinstance(pred, str) or not isinstance(expected, str):
+        return 0.0
+    return 1.0 if expected.casefold() in pred.casefold() else 0.0
+
+
+def validate_cases(cases):
+    """Fail fast when a test set cannot support a meaningful run."""
+    if not isinstance(cases, list) or not cases:
+        raise ValueError("cases must be a non-empty list")
+
+    seen_ids = set()
+    for index, case in enumerate(cases):
+        if not isinstance(case, dict):
+            raise ValueError(f"cases[{index}] must be an object")
+
+        missing = REQUIRED_CASE_FIELDS - set(case)
+        if missing:
+            fields = ", ".join(sorted(missing))
+            raise ValueError(f"cases[{index}] missing fields: {fields}")
+
+        for field in REQUIRED_CASE_FIELDS:
+            if not isinstance(case[field], str) or not case[field].strip():
+                raise ValueError(f"cases[{index}].{field} must be a non-empty string")
+
+        case_id = case["id"]
+        if case_id in seen_ids:
+            raise ValueError(f"duplicate case id: {case_id}")
+        seen_ids.add(case_id)
+
+
+def _checked_score(value, case_id):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"grader returned a non-numeric score for {case_id}")
+    score = float(value)
+    if not math.isfinite(score) or not 0.0 &lt;= score &lt;= 1.0:
+        raise ValueError(f"grader score for {case_id} must be between 0 and 1")
+    return score
+
+
+def evaluate(version, cases, run_case, grader=exact_label):
+    """Run one version and return overall, slice, and per-case evidence."""
+    validate_cases(cases)
+    if not callable(run_case) or not callable(grader):
+        raise TypeError("run_case and grader must be callable")
+
     per_case = []
-    for c in cases:
-        pred = prompt_fn(c["input"])
-        per_case.append({"input": c["input"], "pred": pred,
-                         "expected": c["expected"], "score": metric(pred, c["expected"])})
-    score = sum(p["score"] for p in per_case) / len(cases) if cases else 0.0
-    return {"score": score, "per_case": per_case}
+    slice_scores = defaultdict(list)
+
+    for case in cases:
+        case_id = case["id"]
+        try:
+            pred = run_case(version, case)
+        except Exception as exc:
+            raise RuntimeError(f"runner failed for {version}/{case_id}") from exc
+
+        try:
+            raw_score = grader(pred, case["expected"])
+        except Exception as exc:
+            raise RuntimeError(f"grader failed for {version}/{case_id}") from exc
+        score = _checked_score(raw_score, case_id)
+        result = {
+            "id": case_id,
+            "slice": case["slice"],
+            "expected": case["expected"],
+            "pred": pred,
+            "score": score,
+        }
+        per_case.append(result)
+        slice_scores[case["slice"]].append(score)
+
+    by_slice = {}
+    for slice_name, scores in sorted(slice_scores.items()):
+        by_slice[slice_name] = {
+            "score": sum(scores) / len(scores),
+            "passed": sum(score == 1.0 for score in scores),
+            "total": len(scores),
+        }
+
+    return {
+        "version": version,
+        "score": sum(item["score"] for item in per_case) / len(per_case),
+        "passed": sum(item["score"] == 1.0 for item in per_case),
+        "total": len(per_case),
+        "by_slice": by_slice,
+        "per_case": per_case,
+    }
 
 
-def compare(versions, cases, metric=exact_match):
-    """versions: {name: prompt_fn}. Рейтинг (name, score) по убыванию качества."""
-    scored = [(name, evaluate(fn, cases, metric)["score"]) for name, fn in versions.items()]
-    return sorted(scored, key=lambda x: x[1], reverse=True)
+def compare_versions(baseline, candidate, cases, run_case, grader=exact_label):
+    """Compare the same cases and grader, preserving paired evidence."""
+    baseline_report = evaluate(baseline, cases, run_case, grader)
+    candidate_report = evaluate(candidate, cases, run_case, grader)
+
+    baseline_by_id = {item["id"]: item for item in baseline_report["per_case"]}
+    candidate_by_id = {item["id"]: item for item in candidate_report["per_case"]}
+
+    regressions = []
+    improvements = []
+    for case in cases:
+        case_id = case["id"]
+        old_score = baseline_by_id[case_id]["score"]
+        new_score = candidate_by_id[case_id]["score"]
+        if new_score &lt; old_score:
+            regressions.append(case_id)
+        elif new_score &gt; old_score:
+            improvements.append(case_id)
+
+    slice_deltas = {}
+    for slice_name in baseline_report["by_slice"]:
+        old_score = baseline_report["by_slice"][slice_name]["score"]
+        new_score = candidate_report["by_slice"][slice_name]["score"]
+        slice_deltas[slice_name] = round(new_score - old_score, 12)
+
+    return {
+        "baseline": baseline_report,
+        "candidate": candidate_report,
+        "delta": round(candidate_report["score"] - baseline_report["score"], 12),
+        "slice_deltas": slice_deltas,
+        "regressions": regressions,
+        "improvements": improvements,
+    }
+
+
+def release_decision(comparison, protected_slices=()):
+    """Apply a small, explicit release gate to a completed comparison."""
+    reject_reasons = []
+    review_reasons = []
+
+    if comparison["delta"] &lt; 0:
+        reject_reasons.append(
+            f"overall score regressed by {comparison['delta']:.3f}"
+        )
+
+    for slice_name in protected_slices:
+        if slice_name not in comparison["slice_deltas"]:
+            review_reasons.append(f"protected slice {slice_name!r} has no cases")
+            continue
+        slice_delta = comparison["slice_deltas"][slice_name]
+        if slice_delta &lt; 0:
+            reject_reasons.append(
+                f"protected slice {slice_name!r} regressed by {slice_delta:.3f}"
+            )
+
+    if reject_reasons:
+        return {
+            "decision": "reject",
+            "reasons": reject_reasons + review_reasons,
+        }
+    if comparison["delta"] &lt;= 0:
+        review_reasons.append("candidate has no measured overall improvement")
+    if comparison["regressions"]:
+        review_reasons.append(
+            "candidate has case-level regressions: "
+            + ", ".join(comparison["regressions"])
+        )
+    if review_reasons:
+        return {"decision": "review", "reasons": review_reasons}
+    return {
+        "decision": "accept",
+        "reasons": ["overall score improved without observed regressions"],
+    }
+
+
+def recorded_runner(version, case):
+    """Return the stored response for the demo version and case."""
+    return DEMO_OUTPUTS[version][case["id"]]
 
 
 if __name__ == "__main__":
-    cases = [
-        {"input": "2+2", "expected": "4"},
-        {"input": "3+5", "expected": "8"},
-        {"input": "10-4", "expected": "6"},
-    ]
-    # две «версии промпта»: рабочая и сломанная
-    good = lambda x: str(eval(x))               # noqa: S307 — учебный stub
-    bad = lambda x: "не знаю"
-    print("good:", evaluate(good, cases)["score"])
-    print("bad :", evaluate(bad, cases)["score"])
-    print("рейтинг:", compare({"good": good, "bad": bad}, cases))
-</code></pre></details><h3>Связанные файлы</h3><details class="filebox" id="f-claude-skills-prompt-eval-skill-md" open><summary><span class="fname">.claude/skills/prompt-eval/SKILL.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>---
-name: prompt-eval
-description: "Оценка качества промптов курса AI Native: прогоняет версии промпта по набору кейсов, считает метрику и сравнивает. Триггеры: «/prompt-eval», «сравни версии промпта», «измерь качество промпта», «какой промпт лучше», «прогони eval». Артефакт урока 2.5."
----
-
-# prompt-eval — измерение и сравнение промптов
-
-Превращает «кажется, лучше» в число: фиксированный набор кейсов + метрика → честное сравнение версий промпта или моделей.
-
-## Как пользоваться
-
-1. Собери набор кейсов `cases = [{"input": ..., "expected": ...}, ...]` — реальные примеры с эталонами, включая граничные.
-2. Заведи версии как функции `versions = {"v1": fn1, "v2": fn2}`, где `fn(input) -&gt; ответ` (в проде — вызов модели).
-3. Выбери метрику: `exact_match` (классификация/извлечение) или `contains` (есть ли нужное); сложное — LLM-as-judge.
-4. Прогон и сравнение:
-
-```bash
-python -c "import eval_harness as e; \
-print(e.compare({'good': lambda x: str(eval(x)), 'bad': lambda x: '?'}, \
-[{'input':'2+2','expected':'4'}], e.exact_match))"
-```
-
-5. Покажи рейтинг версий по убыванию score и per-case разбор (где именно версия проигрывает).
-
-## Файлы
-
-- `eval_harness.py` — движок: `exact_match`, `contains`, `evaluate(prompt_fn, cases, metric)`, `compare(versions, cases, metric)`.
-
-## Когда применять
-
-Перед тем как принять правку промпта, сменить модель или параметры — прогони eval и сравни с базлайном. Связка с выбором модели по цене/качеству — Фаза 9.
-</code></pre></details></section><hr><p><strong>Часы:</strong> ~3 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+    comparison = compare_versions(
+        "baseline",
+        "candidate",
+        DEMO_CASES,
+        recorded_runner,
+    )
+    decision = release_decision(comparison, protected_slices=("critical",))
+    print(json.dumps({"comparison": comparison, "decision": decision},
+                     ensure_ascii=False, indent=2))
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> 10 тестов harness зелёные; студент спроектировал собственный eval-пакет, нашёл ложноположительный grader и скрытую средним регрессию, сравнил версии при одном изменяемом факторе и обосновал решение с границами вывода. ✅ <strong>Урок готов</strong></p></article>
     <div class="nav-prevnext" id="prevnext"><a href="../../lessons/system-prompts-structured-output/"><small>← 2.4</small>Машинный контракт ответа: инструкция, схема и проверки</a><a href="../../lessons/summarization-editing-tone/" style="text-align:right"><small>3.1 →</small>Резюмирование, редактура, тон</a></div>
   </section>
 
   <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
 
   <script>window.__BASE__="../../";</script>
-  <script src="../../data.js?v=51eda9b747a0"></script>
-  <script src="../../progress.js?v=51eda9b747a0"></script>
-  <script src="../../header.js?v=51eda9b747a0"></script>
-  <script src="../../app.js?v=51eda9b747a0"></script>
+  <script src="../../data.js?v=2e036a695312"></script>
+  <script src="../../progress.js?v=2e036a695312"></script>
+  <script src="../../header.js?v=2e036a695312"></script>
+  <script src="../../app.js?v=2e036a695312"></script>
 </body>
 </html>

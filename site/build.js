@@ -245,11 +245,14 @@ function injectFiles(html, collected, exercise) {
   if (!collected || !collected.size) return html;
   const items = [...collected.values()];
   const isTest = (it) => it.kind === "code" && /(^|\/)test_|_test\.py$/.test(it.label);
+  const isStarter = (it) => it.kind === "code" && /(^|\/)starter[_-]/.test(it.label);
   // В режиме упражнения: тесты — это ТЗ (раскрыты), эталонное решение — под катом.
   const groups = exercise
     ? [
+        { pick: (it) => isStarter(it),                    title: "Стартовый файл", collapsed: false,
+          note: "Скопируй этот файл под указанным в задании именем и реализуй отмеченные функции." },
         { pick: (it) => isTest(it),                       title: "Тесты — это твоё ТЗ", collapsed: false, note: "" },
-        { pick: (it) => it.kind === "code" && !isTest(it), title: "Эталонное решение", collapsed: true,
+        { pick: (it) => it.kind === "code" && !isTest(it) && !isStarter(it), title: "Эталонное решение", collapsed: true,
           note: "Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься." },
         { pick: (it) => it.kind === "output",             title: "Артефакт", collapsed: false, note: "" },
         { pick: (it) => it.kind === "other",              title: "Связанные файлы", collapsed: false, note: "" },
