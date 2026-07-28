@@ -4,16 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>3.4 Векторные хранилища — AI Native</title>
-  <meta name="description" content="Векторное хранилище — это память RAG: добавил документы → ищешь по смыслу.">
+  <meta name="description" content="Урок 3.4 курса AI Native: Векторные хранилища. Практический материал с проверяемым результатом.">
   <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/vector-stores/">
   <meta property="og:type" content="article">
   <meta property="og:title" content="3.4 Векторные хранилища — AI Native">
-  <meta property="og:description" content="Векторное хранилище — это память RAG: добавил документы → ищешь по смыслу.">
+  <meta property="og:description" content="Урок 3.4 курса AI Native: Векторные хранилища. Практический материал с проверяемым результатом.">
   <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/vector-stores/">
   <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
   <meta name="twitter:card" content="summary_large_image">
   <script>(function(){try{var t=localStorage.getItem("theme")||"light";document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
-  <link rel="stylesheet" href="../../style.css?v=6b5578064388">
+  <link rel="stylesheet" href="../../style.css?v=b2c0ea71efb8">
   <!-- Yandex.Metrika counter -->
   <script type="text/javascript">
       (function(m,e,t,r,i,k,a){
@@ -31,283 +31,1494 @@
   <section class="container" style="padding-top:24px">
     <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
     <div class="lessonbar" id="lessonbar"></div>
-    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 3.4 · Векторные хранилища</h1><p><strong>Фаза 3 — Текст и документы</strong> · <strong>Результат фазы:</strong> Строить пайплайны резюмирования и редактуры; собрать базовый RAG над своим корпусом.</p><p><strong>Requires (только для USE IT):</strong> платный API-ключ одного из провайдеров. BUILD IT работает офлайн, без ключей и без сети.</p><p><strong>Этот урок превращает индекс из 3.3 в постоянную память RAG.</strong> Ретривер 3.3 один раз строил TF-IDF-векторы и переиспользовал их для запросов, но индекс жил только в памяти, а изменение корпуса требовало полной перестройки. Векторное <strong>хранилище</strong> добавляет три вещи: документы кладутся <strong>инкрементально</strong>, поиск идёт по сохранённому индексу, а сам индекс <strong>переживает перезапуск</strong> (save/load). Это и есть основа ассистента по своим документам — артефакт <code>doc-assistant</code>.</p><blockquote><strong>MOTTO.</strong> Векторное хранилище — это память RAG: добавил документы → ищешь по смыслу.</blockquote><h2>PROBLEM</h2><p>В уроке 3.3 <code>build_index</code> считал TF-IDF по корпусу, а <code>search</code> переиспользовал готовый результат. Но добавить документ без полной перестройки было нельзя, а после завершения процесса индекс исчезал. Для меняющегося корпуса это неудобно и дорого. Нужен <strong>компонент с состоянием</strong> — хранилище, у которого есть <code>add</code>, <code>query</code> и сохранение на диск.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Векторное хранилище — это <strong>поисковая память</strong>: один раз положил документы (каждый превращается в вектор), и сколько угодно раз ищешь по смыслу. В отличие от ретривера 3.3, оно помнит уже посчитанные векторы и умеет сохраняться на диск — закрыл программу, открыл, а корпус на месте.</p><h3>Как это работает</h3><pre><code>VectorStore:
-  add(id, text)   → text → эмбеддинг → хранить (id, text, vec)
-  query(text, k)  → эмбеддинг запроса → косинус → топ-k
-  save / load     → персистентность на диск (JSON)</code></pre><p>Три детали, которые делают это хранилищем, а не просто функцией поиска:</p><ul><li><strong>Хеширующий эмбеддинг (feature hashing).</strong> Вместо растущего словаря (как у TF-IDF) каждое слово кладётся в один из <code>DIM</code> фиксированных бакетов (ячеек вектора) через хеш — вектор всегда одной длины (<code>DIM=256</code>), сколько бы новых слов ни пришло. Платим коллизиями (разные слова иногда в один бакет), но для учебного хранилища это ок; в проде вместо этого — плотные нейроэмбеддинги.</li><li><strong>Стабильный хеш — обязателен.</strong> Встроенный <code>hash()</code> в Python <strong>рандомизирован</strong> между запусками (PYTHONHASHSEED). Если эмбеддинг зависит от него, после перезапуска/<code>load</code> те же слова дадут другие векторы и поиск сломается. Поэтому хеш пишем свой, детерминированный.</li><li><strong>Персистентность.</strong> <code>save</code> сериализует <code>items</code> (id, text, vec) в JSON, <code>load</code> восстанавливает. После загрузки поиск даёт ровно тот же результат.</li></ul><p>Поиск — тот же косинус и топ-k, что в 3.3. Интерфейс <code>add/query</code> совпадает с Chroma/FAISS/pgvector; отличие проды — масштаб и алгоритм: мы делаем <strong>точный</strong> перебор по всем векторам (O(n) на запрос, ок для маленького корпуса), а реальные хранилища используют <strong>ANN</strong> (HNSW/IVF) — приближённый поиск по миллионам векторов.</p><h2>РАЗБОР ПО ШАГАМ</h2><p><strong>Шаг 1 — эмбеддинг.</strong> <code>embed("кошки и рыба")</code> раскладывает слова по 256 бакетам стабильным хешем и возвращает вектор длиной <code>DIM=256</code>. Повторный вызов даёт <strong>тот же</strong> вектор (детерминизм) — без этого хранилище не пережило бы перезапуск.</p><p><strong>Шаг 2 — добавили и ищем.</strong> Кладём три документа и спрашиваем <code>query("кошки и рыба", k=3)</code> (реальные косинус-скоры):</p><pre><code>0.516  doc0: кошки любят спать и рыбу     ← делит «кошки», «и»
-0.258  doc1: собаки любят прогулки и мяч  ← делит только «и»
-0.000  doc2: python язык программирования ← общих слов нет</code></pre><p>Релевантный документ — первым. (Тонкость: <code>рыба</code> и <code>рыбу</code> — для лексического эмбеддинга <strong>разные</strong> слова и в разные бакеты, поэтому работает «кошки», а не «рыба»; смысловое совпадение дали бы нейроэмбеддинги, как в 3.3.)</p><p><strong>Шаг 3 — персистентность.</strong> <code>store.save("db.json")</code> → создаём <strong>новый</strong> <code>VectorStore().load("db.json")</code> → тот же <code>query("кошки и рыба")</code> возвращает тот же топ. Индекс пережил «перезапуск» — это и отличает хранилище от разового ретривера.</p><h2>BUILD IT</h2><p><strong>Задание: собери мини векторное хранилище с персистентностью</strong> — стандартная библиотека (<code>json</code>, <code>math</code>, <code>re</code>), без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/3.4-vector-store/</code>), а файлы урока клади в подпапку <code>code/</code> (по соглашению курса). Нужен только <strong>Python 3</strong>, всё офлайн (для теста ещё <code>pytest</code>).</blockquote><p>Размерность задана: <code>DIM = 256</code>. Реализуй:</p><ul><li><strong><code>_stable_hash(word)</code></strong> — детерминированный хеш: <code>h = 0</code>, для каждого символа <code>h = (h * 31 + ord(ch)) % 2**32</code>, верни <code>h</code>. <strong>Не</strong> используй встроенный <code>hash()</code> — он рандомизирован между запусками.</li><li><strong><code>embed(text)</code></strong> — хеширующий эмбеддинг: вектор из <code>DIM</code> нулей; для каждого слова (<code>re.findall(r"\w+", text.lower())</code>) прибавь <code>1.0</code> в бакет <code>_stable_hash(w) % DIM</code>.</li><li><strong><code>cosine(a, b)</code></strong> — косинус двух плотных векторов (скалярное произведение / произведение норм; <code>0.0</code> при нулевой норме).</li><li><strong><code>VectorStore</code></strong> с <code>items = [{id, text, vec}]</code> и методами: <code>add(id, text)</code> (эмбеддит и хранит), <code>query(text, k=3)</code> (эмбеддит запрос, косинус ко всем, топ-k как <code>[{id, text, score}]</code>), <code>save(path)</code> (<code>json.dump</code> items), <code>load(path)</code> (<code>json.load</code>, вернуть <code>self</code>).</li></ul><p><strong>Готово, когда</strong> тест <code>test_vector_store.py</code> зелёный — он проверяет, что эмбеддинг фиксированной длины и детерминирован, что <code>query</code> возвращает ближайший, что top-k ограничивает, что после <code>save</code>+<code>load</code> поиск даёт тот же результат, и что косинус одинаковых текстов = 1.0.</p><pre><code>pytest code -q              # красное → реализуй хранилище → зелёное
-python code/vector_store.py # демо: add 3 дока + query</code></pre><p><strong>Подсказка.</strong> <code>query</code> — это <code>sorted(... cosine(qv, it["vec"]) ..., reverse=True)[:k]</code>. Для <code>save</code>/<code>load</code> достаточно <code>json.dump(self.items)</code> / <code>json.load</code> — векторы это обычные списки чисел.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>В проде подключаешь готовое хранилище и нейроэмбеддинги (мульти-провайдер):</p><pre><code># Chroma (локально/сервер) — берёт эмбеддинги и индекс на себя
-import chromadb
-col = chromadb.PersistentClient(path="./db").get_or_create_collection("kb")
-col.add(ids=ids, documents=docs)
-col.query(query_texts=["вопрос"], n_results=5)
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 3.4 · Векторные хранилища</h1><p><strong>Фаза 3 — Текст и документы</strong> · <strong>Результат фазы:</strong> строить пайплайны резюмирования и редактуры; собрать базовый RAG над своим корпусом.</p><p><strong>Результат урока:</strong> после урока студент сможет превратить набор трассируемых чанков и их векторов в локальное хранилище, добавить новую запись без пересчёта старых, сохранить состояние, восстановить его после перезапуска и отклонить несовместимый индекс до начала поиска.</p><p><strong>Опора:</strong> чанки с <code>id</code>, <code>source</code> и позициями из 3.2; retrieval, cosine, top-k, положительный score и no-answer случаи из 3.3. · <strong>Дальше:</strong> в 3.5 сохранится тот же контракт записей и проверочных запросов, но качество retrieval будет улучшаться гибридным поиском и повторным ранжированием.</p><p><strong>Requires:</strong> Python 3 и <code>pytest</code>. Объяснение, Build It и <code>doc-assistant</code> работают офлайн, без API-ключа, сети и клонирования репозитория. Для необязательного переноса на Chroma понадобится пакет <code>chromadb</code>; установка требует доступа к сети, платный ключ не нужен.</p><blockquote><strong>Главная мысль.</strong> Векторное хранилище не создаёт смысл из текста. Оно отвечает за совместимое состояние: какую запись мы сохранили, каким способом получили её вектор и можно ли безопасно искать по этому индексу после перезапуска.</blockquote><h2>Ситуация: поиск работает, пока живёт процесс</h2><p>В 3.3 мы построили TF-IDF retriever над чанками <code>sample_report.md</code>. Один из них выглядел так:</p><pre><code>{
+  "id": "sample_report.md#chunk-0002",
+  "source": "sample_report.md",
+  "word_start": 120,
+  "word_end": 190,
+  "text": "Если согласование не получено к 16 сентября, запуск переносится..."
+}</code></pre><p>Retriever один раз вычислял представления корпуса и затем переиспользовал их для нескольких вопросов. Но состояние находилось в памяти Python:</p><pre><code>процесс запущен → индекс существует → поиск работает
+процесс завершён → индекс исчез</code></pre><p>На следующем запуске пришлось бы снова читать все документы и пересчитывать весь индекс. Пока корпус учебный, это почти незаметно. В рабочем ассистенте возникают конкретные проблемы:</p><ul><li>индекс строится дольше одного запроса;</li><li>новые документы появляются между запусками;</li><li>найденный вектор без исходного <code>source</code> невозможно проверить;</li><li>смена способа векторизации может сделать старые и новые векторы несравнимыми.</li></ul><p>Нам нужен компонент с состоянием: он принимает новые записи, хранит их вместе с векторами, возвращает исходные метаданные и умеет восстановить совместимое состояние с диска. В этом уроке такой компонент называется <strong>векторным хранилищем</strong>.</p><h2>Четыре компонента, которые нельзя смешивать</h2><p>Прежде чем писать класс, разделим обязанности.</p><pre><code>                    ┌─────────────────────────────┐
+текст чанка ───────►│ embedding adapter           │────► vector
+                    │ «как текст стал числами?»   │
+                    └─────────────────────────────┘
+                                      │
+traceable record ─────────────────────┼──────────────┐
+                                      ▼              ▼
+                              ┌─────────────────────────────┐
+                              │ vector store                │
+                              │ record + vector + состояние │
+                              └─────────────────────────────┘
+                                             │
+вектор вопроса ──────────────────────────────┤
+                                             ▼
+                                   найденные records
+                                             │
+                                             ▼
+                                      RAG retriever</code></pre><h3>1. Запись, или record</h3><p><strong>Запись</strong> — единица, которую можно найти и затем проверить. В нашем случае это чанк:</p><ul><li><code>id</code> однозначно отличает его от остальных;</li><li><code>text</code> содержит доказательство;</li><li><code>source</code> связывает доказательство с документом;</li><li><code>word_start</code> и <code>word_end</code> показывают место внутри документа;</li><li>дополнительные поля могут хранить автора, дату, раздел или права доступа.</li></ul><p>Вектор без такой записи отвечает только на вопрос «какие числа оказались близки», но не позволяет показать пользователю источник.</p><h3>2. Embedding adapter</h3><p><strong>Embedding adapter</strong>, или адаптер векторизации, — функция либо модель, которая превращает текст фиксированным способом в вектор фиксированной длины.</p><p>В учебной практике используется готовая функция:</p><pre><code>vector = hash_embed(record["text"])</code></pre><p>Она раскладывает одинаковые слова по одинаковым координатам. Это <strong>лексическое</strong> представление: совпали слова — векторы могут быть близки. Оно не понимает, что «автор» и «ответственный» могут обозначать похожую роль.</p><p>В отличие от TF-IDF, координаты этого адаптера не зависят от всего корпуса: новое слово всегда попадает в бакет, вычисленный стабильным алгоритмом BLAKE2. Поэтому новый чанк можно векторизовать отдельно, не меняя старые vectors. Частые служебные слова удаляются тем же коротким списком, что и в 3.3.</p><p>Цена фиксированного пространства — <strong>коллизия</strong>: два разных слова иногда попадают в одну координату и создают слабое случайное сходство. Значит, даже положительный score нужно проверять на размеченных запросах. Для учебного урока этот компромисс позволяет наблюдать инкрементальное добавление без сети; production-качество он не обещает.</p><p>Название алгоритма и его версия входят в контракт не меньше, чем размерность:</p><pre><code>embedding_id = "hash-bow-v1"
+dimension    = 512</code></pre><p>Если завтра <code>hash-bow-v1</code> заменить моделью <code>dense-model-v2</code>, старые векторы документов нельзя молча сравнивать с новыми векторами вопросов. Корпус нужно переиндексировать или загрузить совместимый адаптер.</p><h3>3. Векторный индекс</h3><p><strong>Векторный индекс</strong> организует поиск ближайших векторов. В Build It используется самый прозрачный вариант: сравнить вопрос со всеми сохранёнными векторами по cosine и отсортировать результат.</p><p>Это точный перебор: мы действительно рассматриваем каждую запись. Он достаточен для маленького учебного корпуса и позволяет видеть весь механизм. На большом корпусе готовая система может использовать приближённый индекс, чтобы проверять не все кандидаты. Эта оптимизация не меняет требования к ID, provenance и совместимости.</p><h3>4. Векторное хранилище и retriever</h3><p><strong>Векторное хранилище</strong> соединяет записи, векторы, индекс и сохранённое состояние. <strong>Retriever</strong> использует его как часть RAG-процесса:</p><pre><code>вопрос
+→ embedding adapter
+→ vector store.query(vector)
+→ traceable records
+→ evidence package</code></pre><p>Поэтому учебный API намеренно разделён:</p><pre><code>store.add(record, vector)
+store.query(query_vector, k=3, min_score=0.1)</code></pre><p><code>VectorStore</code> не получает сырой текст вопроса и не вызывает <code>hash_embed</code> внутри. Это делает скрытую зависимость явной: документы и вопросы обязан векторизовать один и тот же совместимый адаптер.</p><h2>Контракт состояния: что должно оставаться истинным</h2><p>Хранилище считается корректным не потому, что у него есть методы с красивыми названиями. До и после сохранения должны выполняться одни и те же <strong>инварианты</strong> — условия, которые система не разрешает нарушить.</p><h3>Уникальный ID</h3><p>Один ID обозначает одну сохранённую запись. В нашей минимальной реализации, или baseline, действует простая политика:</p><pre><code>новый ID       → добавить
+существующий ID → ValueError</code></pre><p>Это не единственная возможная политика. Production-система может иметь отдельные <code>add</code>, <code>update</code> и <code>upsert</code>. Важна явность: повторная индексация не должна незаметно создать две версии одного чанка.</p><h3>Одинаковая размерность</h3><p>Cosine сравнивает координату с соответствующей координатой. Векторы длиной 512 и 768 не являются двумя вариантами одного объекта — у них разные пространства.</p><p>Поэтому <code>add</code> и <code>query</code> проверяют:</p><pre><code>len(vector) == store.dimension</code></pre><p>Молчаливое сравнение только первых координат выглядело бы как работающий поиск, но давало бы бессмысленный результат.</p><h3>Одна версия векторизации</h3><p>Одинаковая длина ещё не гарантирует совместимость. Две разные модели могут обе возвращать 512 чисел, но координаты будут означать разное. Поэтому в manifest сохраняются и <code>dimension</code>, и <code>embedding_id</code>.</p><h3>Сохранённый provenance</h3><p>Результат <code>query</code> возвращает копию исходной записи с добавленным <code>score</code>:</p><pre><code>{
+  "id": "sample_report.md#chunk-0002",
+  "source": "sample_report.md",
+  "word_start": 120,
+  "word_end": 190,
+  "text": "Если согласование не получено...",
+  "score": 0.2993
+}</code></pre><p>Хранилище не должно превращать запись в пару <code>id + text</code> и терять остальные поля. Именно provenance позволит <code>doc-assistant</code> сослаться на доказательство.</p><h3>Пустая выдача остаётся допустимым результатом</h3><p>Как и в 3.3, top-k означает «не больше <code>k</code>», а не «обязательно <code>k</code>». Нулевой вектор и кандидаты с cosine <code>0</code> не являются доказательствами:</p><pre><code>нет положительного совпадения → []</code></pre><p><code>min_score</code> дополнительно отбрасывает слабые совпадения. Он не является универсальным: порог выбирают по запросам конкретного корпуса, включая размеченные no-answer случаи.</p><h2>Как хранилище переживает перезапуск</h2><p>Сохранённое представление называется <strong>manifest</strong>: это не только данные, но и описание контракта, по которому их можно прочитать.</p><pre><code>{
+  "schema_version": 1,
+  "embedding": {
+    "id": "hash-bow-v1",
+    "dimension": 512
+  },
+  "items": [
+    {
+      "record": {
+        "id": "sample_report.md#chunk-0002",
+        "source": "sample_report.md",
+        "word_start": 120,
+        "word_end": 190,
+        "text": "..."
+      },
+      "vector": [0.0, 1.0, 0.0]
+    }
+  ]
+}</code></pre><p>В сокращённом примере vector показан из трёх чисел; реальный <code>hash-bow-v1</code> содержит 512 координат.</p><p>Жизненный цикл выглядит так:</p><pre><code>1. VectorStore(embedding_id, dimension)
+2. add(record, vector)
+3. query(query_vector)
+4. save("store.json")
 
-# FAISS — быстрый ANN-поиск по своим векторам (OpenAI/Google embeddings)
-# pgvector — векторный поиск прямо в PostgreSQL</code></pre><p>Тот же <code>add/query</code>, но индекс масштабируется на миллионы векторов (HNSW/IVF), а эмбеддинги считает нейросеть.</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> doc-assistant skill → <a href="#f-phases-03-text-and-documents-04-vector-stores-outputs-doc-assistant-skill-md"><code>outputs/doc-assistant/</code></a></p><p>Скилл <code>doc-assistant</code>: складываешь корпус в хранилище и спрашиваешь его на естественном языке (retrieve → augment → ответ). Зарегистрирован в <a href="#f-claude-skills-doc-assistant-skill-md"><code>.claude/skills/doc-assistant</code></a> — это итог Фазы 3 над собственным корпусом.</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Эмбеддинг на встроенном <code>hash()</code>.</strong> Он рандомизирован между запусками — после <code>load</code> векторы «поедут» и поиск сломается. Хеш для эмбеддинга должен быть детерминированным.</li><li><strong>Переиндексировать весь корпус на каждый запрос.</strong> Смысл хранилища — посчитать векторы один раз и переиспользовать; добавляй документы инкрементально и сохраняй на диск.</li><li><strong>Точный перебор на больших объёмах.</strong> O(n) на запрос ок для тысяч векторов, но не для миллионов — там нужен ANN (HNSW/IVF) из готовых хранилищ.</li><li><strong>Хранить документы целиком.</strong> В хранилище кладут <strong>куски</strong> (чанки из 3.2): поиск по кускам точнее, и найденное влезает в промпт.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="3.4"></div><h2>Дополнительное чтение</h2><ul><li><a href="https://docs.trychroma.com/docs/overview/introduction" target="_blank" rel="noopener">Chroma — Introduction</a> — открытое векторное хранилище для RAG.</li><li><a href="https://github.com/facebookresearch/faiss" target="_blank" rel="noopener">facebookresearch/faiss</a> — быстрый ANN-поиск по плотным векторам.</li><li><a href="https://platform.openai.com/docs/guides/embeddings" target="_blank" rel="noopener">OpenAI — Embeddings guide</a> — какие эмбеддинги класть в хранилище.</li><li><a href="https://arxiv.org/abs/1603.09320" target="_blank" rel="noopener">Malkov &amp; Yashunin, 2016 — HNSW</a> — seminal-алгоритм ANN, на котором работает почти каждая vector-БД (Chroma/FAISS/Qdrant/Pinecone).</li><li><a href="https://github.com/pgvector/pgvector" target="_blank" rel="noopener">pgvector</a> — векторный поиск прямо в Postgres (часто «отдельная vector-БД не нужна»); индексы HNSW/IVFFlat.</li><li><a href="https://ann-benchmarks.com/" target="_blank" rel="noopener">ANN-Benchmarks</a> — сравнение ANN-библиотек: recall vs скорость, как выбирать параметры индекса.</li><li><a href="https://towardsdatascience.com/whats-the-story-with-hnsw-d1402c37a44e/" target="_blank" rel="noopener">TDS — «What's The Story With HNSW?» (2025)</a> — визуальный разбор слоёв HNSW (Medium/TDS).</li><li><a href="https://github.com/qdrant/qdrant" target="_blank" rel="noopener">qdrant/qdrant</a> — открытое векторное хранилище на Rust: фильтрованный HNSW, квантизация (сжатие векторов до 32×) — в проде рядом с Chroma/FAISS/pgvector.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Если делегируешь ИИ, реши, что отдаёшь; опиши задачу и критерии; проверь результат; сохрани ответственность за итог.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-03-text-and-documents-04-vector-stores-code-test-vector-store-py" open data-test="1"><summary><span class="fname">code/test_vector_store.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from vector_store import VectorStore, embed, cosine, DIM
+   процесс завершился
 
+5. VectorStore.load("store.json", expected embedding_id, expected dimension)
+6. проверка manifest и каждой записи
+7. query(тот же query_vector)
+8. те же ID, scores и provenance</code></pre><p><code>load</code> не должен просто присвоить содержимое JSON полю <code>items</code>. Он повторно проводит данные через те же проверки, что и <code>add</code>. Иначе повреждённый файл обойдёт контракт обычного API.</p><p>Если <code>schema_version</code>, <code>embedding_id</code> или <code>dimension</code> не совпали с ожидаемыми, правильный результат — понятная ошибка <strong>до поиска</strong>. Переиндексация безопаснее правдоподобной, но неверной выдачи.</p><h2>Предскажи поведение до запуска</h2><p>В исходниках урока лежат четыре записи из того же <code>sample_report.md</code>, что использовался в 3.3. Не запускай код сразу. Сначала предскажи результат каждого сценария.</p><table><thead><tr><th>Сценарий</th><th>Ожидаемое решение</th></tr></thead><tbody><tr><td>Поиск <code>согласование получено 16 сентября запуск переносится</code></td><td>первым будет <code>chunk-0002</code></td></tr><tr><td>Поиск <code>какой рекламный бюджет</code></td><td><code>[]</code>: в корпусе нет лексических доказательств</td></tr><tr><td>После <code>save</code> создан новый объект и выполнен <code>load</code></td><td>ID, score и provenance совпадут</td></tr><tr><td>В хранилище повторно добавили <code>chunk-0002</code></td><td>операция завершится ошибкой, дубликат не появится</td></tr><tr><td>Индекс <code>hash-bow-v1/512</code> загружают как <code>dense-model-v2/512</code></td><td>загрузка завершится ошибкой</td></tr><tr><td>После <code>load</code> добавили новый уникальный чанк</td><td>старые векторы не пересчитываются</td></tr></tbody></table><p>На учебном корпусе при <code>min_score=0.1</code> первый запрос даёт:</p><pre><code>0.2993  sample_report.md#chunk-0002</code></pre><p>После сохранения и загрузки результат совпадает целиком. Запрос про рекламный бюджет возвращает <code>[]</code>.</p><p>При этом запрос <code>кто автор финального документа</code> тоже возвращает <code>[]</code>, хотя нужный фрагмент в корпусе есть: там написано «ответственный за итоговый отчёт». Это не поломка хранилища, а известное ограничение учебного лексического адаптера. Хранилище сохраняет и ищет векторы; оно не улучшает их смысловое качество.</p><h2>BUILD IT: persistent vector store с проверяемым manifest</h2><p><strong>Задание:</strong> реализуй хранилище трассируемых записей, которое отклоняет несовместимое состояние и доказывает одинаковую выдачу после перезапуска.</p><p>Работай в <code>course-work/3.4/</code>. Из <a href="#lesson-files">«Исходников урока»</a>:</p><ol><li>скопируй <code>starter_vector_store.py</code> как <code>course-work/3.4/vector_store.py</code>;</li><li>скопируй рядом <code>sample_records.py</code> и <code>test_vector_store.py</code>;</li><li>эталонный <code>vector_store.py</code> до первой собственной попытки не открывай.</li></ol><p>Используй только стандартную библиотеку Python. <code>hash_embed</code> и <code>cosine</code> уже реализованы в starter: в 3.3 ты строил механизм ранжирования, а здесь работаешь с состоянием.</p><h3>1. <code>VectorStore.__init__(embedding_id, dimension)</code></h3><p>Конструктор должен:</p><ul><li>требовать непустой строковый <code>embedding_id</code>;</li><li>требовать положительную целую <code>dimension</code>, причём <code>True</code> не считается числом;</li><li>создать пустой список <code>items</code>;</li><li>создать множество уже использованных ID.</li></ul><h3>2. <code>add(record, vector)</code></h3><p>Метод должен:</p><ul><li>требовать mapping (например, <code>dict</code>) с непустыми строками <code>id</code>, <code>source</code>, <code>text</code>;</li><li>сохранить все дополнительные JSON-совместимые поля: строки, числа, <code>true/false</code>, <code>null</code>, списки и объекты;</li><li>если указана одна граница чанка, требовать и вторую;</li><li>требовать целые позиции <code>0 &lt;= word_start &lt;= word_end</code>;</li><li>отклонять повторный ID;</li><li>требовать ровно <code>dimension</code> конечных чисел: без <code>NaN</code> («не число») и бесконечности;</li><li>не изменять переданный словарь;</li><li>сохранить нормализованные <code>record</code> и <code>vector</code>.</li></ul><p>Baseline поддерживает только добавление новых ID. Обновление и удаление сознательно остаются за границей урока.</p><h3>3. <code>query(vector, k=3, min_score=0.0)</code></h3><p>Метод должен:</p><ul><li>проверять размерность и числовые значения query vector;</li><li>требовать положительный целый <code>k</code>;</li><li>требовать <code>min_score</code> в диапазоне <code>[0, 1]</code>;</li><li>вернуть <code>[]</code> для нулевого вектора;</li><li>точно сравнить запрос со всеми сохранёнными векторами;</li><li>при равных scores сохранить порядок добавления записей;</li><li>отбросить score <code>0</code> и всё ниже <code>min_score</code>;</li><li>вернуть не больше <code>k</code> копий исходных records с округлённым <code>score</code>.</li></ul><p>С порогом сравнивай полный score, округляй только значение в выдаче.</p><h3>4. <code>to_manifest()</code> и <code>save(path)</code></h3><p>Manifest должен содержать:</p><ul><li><code>schema_version = 1</code>;</li><li><code>embedding.id</code>;</li><li><code>embedding.dimension</code>;</li><li>список <code>items</code> с records и vectors.</li></ul><p><code>save</code> записывает этот объект как читаемый UTF-8 JSON. Атомарная замена файла, конкурентная запись и резервные копии относятся к production-эксплуатации и в Build It не входят.</p><h3>5. <code>VectorStore.load(path, embedding_id, dimension)</code></h3><p>Метод класса должен:</p><ul><li>прочитать JSON;</li><li>проверить, что корень manifest — объект;</li><li>принять только поддерживаемый <code>schema_version</code>;</li><li>сравнить сохранённые и ожидаемые <code>embedding_id</code> и <code>dimension</code>;</li><li>потребовать список <code>items</code>;</li><li>восстановить каждую запись через обычный <code>add</code>, а не в обход проверок;</li><li>отклонить дубликат, повреждённую запись и вектор неверной длины.</li></ul><p><strong>Готово, когда</strong> 25 тестов зелёные, демонстрация печатает один и тот же результат до и после восстановления, а ты можешь объяснить, почему несовпадение <code>embedding_id</code> обнаруживается даже при одинаковой размерности.</p><pre><code>cd course-work/3.4
+pytest -q
+python vector_store.py</code></pre><p>Тесты проверяют основной сценарий и реалистичные поломки: provenance, мутацию входа, дубликаты, позиции чанков, размерность, <code>NaN</code>, нулевой запрос, слабый score, некорректные параметры, стабильную ничью, manifest, неизвестную схему, несовместимый embedding и инкрементальное добавление после <code>load</code>.</p><p><strong>Подсказка.</strong> Храни ID в отдельном <code>set</code>, а при загрузке создавай пустой store и вызывай <code>add</code> для каждого элемента manifest. Так один контракт защищает и обычную запись, и восстановление с диска.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, сайт покажет starter, учебные records, тесты-ТЗ, свёрнутое эталонное решение и готовый <code>doc-assistant</code>. На любом из трёх путей — самостоятельном, с подсказкой или с делегированием ИИ — критерии приёмки остаются одинаковыми.</p><h2>USE IT: перенеси контракт в Chroma</h2><p>Учебный <code>VectorStore</code> полезен для понимания состояния, но не должен изображать все готовые системы одинаковыми. Для переноса возьмём одну конкретную — Chroma.</p><p>Соответствие полей:</p><table><thead><tr><th>Учебный store</th><th>Chroma</th></tr></thead><tbody><tr><td><code>record["id"]</code></td><td><code>ids</code></td></tr><tr><td><code>record["text"]</code></td><td><code>documents</code></td></tr><tr><td><code>source</code>, позиции и другие поля</td><td><code>metadatas</code></td></tr><tr><td>document vector</td><td><code>embeddings</code></td></tr><tr><td>query vector</td><td><code>query_embeddings</code></td></tr><tr><td><code>k</code></td><td><code>n_results</code></td></tr><tr><td>локальный JSON</td><td>каталог <code>PersistentClient</code></td></tr></tbody></table><p>Чтобы видеть границу компонентов, передадим уже вычисленные vectors и не позволим Chroma выбирать скрытую embedding function:</p><pre><code>import chromadb
 
-def _store():
-    s = VectorStore()
-    s.add("cats", "кошки любят спать и рыбу")
-    s.add("dogs", "собаки любят прогулки и мяч")
-    s.add("py", "python язык программирования")
-    return s
+from vector_store import hash_embed
 
+client = chromadb.PersistentClient(path="./chroma-db")
+collection = client.get_or_create_collection(
+    name="pilot-report",
+    embedding_function=None,
+)
 
-def test_embed_is_fixed_dim_and_deterministic():
-    v1, v2 = embed("кошки и рыба"), embed("кошки и рыба")
-    assert len(v1) == DIM
-    assert v1 == v2                      # детерминированно (стабильный хеш)
+collection.add(
+    ids=[record["id"] for record in records],
+    documents=[record["text"] for record in records],
+    metadatas=[
+        {
+            "source": record["source"],
+            "word_start": record["word_start"],
+            "word_end": record["word_end"],
+        }
+        for record in records
+    ],
+    embeddings=[hash_embed(record["text"]) for record in records],
+)
 
+query = "что произойдёт без согласования безопасности?"
+result = collection.query(
+    query_embeddings=[hash_embed(query)],
+    n_results=3,
+    include=["documents", "metadatas", "distances"],
+)</code></pre><p>Синтаксис похож, но контракты не идентичны:</p><ul><li>Chroma требует уникальные строковые IDs, но повторный <code>add</code> существующего ID игнорирует; наш baseline намеренно выдаёт ошибку;</li><li>Chroma проверяет размерность векторов коллекции;</li><li>Chroma возвращает <strong>distance</strong>, а учебный store — cosine similarity: направление и шкалу нельзя считать одинаковыми без проверки конфигурации;</li><li><code>PersistentClient</code> сам сохраняет состояние в указанном каталоге;</li><li>если не передать vectors и embedding function, Chroma может использовать локальную модель по умолчанию и скачать её файлы.</li></ul><p>В реальном проекте замени <code>hash_embed</code> на выбранную dense embedding model, дай версии стабильный <code>embedding_id</code> и переиндексируй весь корпус. Затем повтори eval из 3.3: проверь ожидаемые ID, no-answer запросы и сохранённый provenance. Сам факт переезда в готовую базу не доказывает улучшение retrieval.</p><p>FAISS и pgvector решают соседние, но не идентичные задачи. FAISS — библиотека индексов над матрицами векторов; связь с текстом и metadata нужно организовать отдельно. pgvector — расширение PostgreSQL, где векторы хранятся в таблицах и ищутся SQL-запросом. Они остаются в дополнительном чтении, а не превращаются в три параллельных API внутри основной практики.</p><h2>SHIP IT: работающий baseline doc-assistant</h2><p><strong>Артефакт:</strong> <a href="#f-phases-03-text-and-documents-04-vector-stores-outputs-doc-assistant-skill-md"><code>outputs/doc-assistant/</code></a></p><p>Это не обещание «магического ответа по папке», а воспроизводимый baseline:</p><pre><code>JSON records
+→ index / add
+→ store.json
+→ ask
+→ evidence package
+→ grounded prompt или insufficient_context</code></pre><p>Скопируй три файла артефакта в <code>course-work/3.4/doc-assistant/</code> и выполни:</p><pre><code>cd course-work/3.4/doc-assistant
+python assistant.py index sample_records.json store.json
+python assistant.py ask store.json \
+  "что произойдёт без согласования безопасности?" \
+  --k 3 --min-score 0.1
+python assistant.py ask store.json \
+  "какой рекламный бюджет?" \
+  --k 3 --min-score 0.1</code></pre><p>Первый запрос должен вернуть <code>evidence_found</code>, ID <code>pilot.md#chunk-0001</code>, источник, позиции и prompt с требованием цитат. Второй — <code>insufficient_context</code> и <code>prompt=null</code>. Команда <code>ask</code> запускается отдельным процессом, поэтому успешный результат одновременно проверяет сохранение и загрузку.</p><p>Свой корпус подготовь тем же способом, что в 3.2: один JSON-объект на чанк, стабильный ID, источник и позиции. Для новых ID используй:</p><pre><code>python assistant.py add new_records.json store.json</code></pre><p>Если текст существующего чанка изменился, baseline не делает скрытый upsert. Создай новую версию корпуса либо пересобери индекс — политика обновления должна быть явной.</p><h2>Типичные ошибки и способ их распознать</h2><ul><li><strong>Векторизовать документы одной моделью, а вопрос другой.</strong> Одинаковая размерность не спасает; проверяй <code>embedding_id</code>, а при смене модели переиндексируй корпус.</li><li><strong>Сохранять только vectors.</strong> Поиск вернёт близкие числа без текста и источника; проверяй наличие provenance в результате после <code>load</code>.</li><li><strong>Молча добавлять повторный ID.</strong> Повторный прогон создаёт дубликаты или неявно заменяет данные; зафиксируй отдельную политику add/update/upsert.</li><li><strong>Доверять JSON только потому, что он читается.</strong> Валидный JSON может содержать неизвестную схему, дубликаты и векторы неправильной длины; восстанавливай через обычные проверки.</li><li><strong>Всегда возвращать ровно <code>k</code> записей.</strong> Нулевые кандидаты не становятся доказательствами от попадания в top-k.</li><li><strong>Считать score вероятностью ответа.</strong> Он измеряет близость в выбранном представлении; найденный фрагмент всё равно может не содержать нужного факта.</li><li><strong>Ожидать от vector store улучшения смысла.</strong> Хранилище сохраняет и ищет переданные vectors. Качество зависит от vectorizer, корпуса, chunking и eval.</li><li><strong>Считать FAISS, Chroma и pgvector одним API.</strong> При переносе явно сопоставляй записи, vectors, metadata, persistence и политику обновления.</li></ul><h2>Что сознательно осталось за границей</h2><ul><li>Обучение и выбор конкретной dense embedding model.</li><li>Обновление и удаление records, фоновые миграции и версионирование корпуса.</li><li>Атомарные snapshots, блокировки, конкурентные writers, backups и recovery.</li><li>Настройка HNSW/IVF, quantization, распределённое хранение и сравнение vendors.</li><li>Универсальные значения <code>k</code> и <code>min_score</code>.</li><li>Hybrid retrieval, reranking и расширенная оценка — следующий урок 3.5.</li></ul><h2>Проверь себя</h2><p>Вопросы ниже проверяют не названия библиотек, а решения при перезапуске, несовместимом индексе, повторном ID, пустой выдаче и переносе provenance.</p><div class="quiz-section" data-lesson="3.4"></div><h2>Дополнительное чтение</h2><p>Сначала заверши Build It, затем выбирай источник под конкретный следующий вопрос:</p><ul><li><a href="https://docs.trychroma.com/docs/run-chroma/clients#persistent-client" target="_blank" rel="noopener">Chroma — Clients, раздел Persistent Client</a> — сверь, как локальная база сохраняется в каталог и автоматически загружается при новом запуске.</li><li><a href="https://docs.trychroma.com/docs/collections/add-data" target="_blank" rel="noopener">Chroma — Adding Data</a> — проверь контракт <code>ids/documents/embeddings/metadatas</code>, поведение повторного ID и ошибку несовместимой размерности.</li><li><a href="https://docs.trychroma.com/docs/querying-collections/query-and-get" target="_blank" rel="noopener">Chroma — Query and Get</a> — посмотри разницу между similarity query и получением записи по ID, форму batch-результата и возвращаемые distances.</li><li><a href="https://github.com/facebookresearch/faiss/wiki/Getting-started" target="_blank" rel="noopener">Faiss — Getting started</a> — сравни vector index над <code>float32</code>-матрицами фиксированной размерности с хранилищем records и metadata.</li><li><a href="https://github.com/pgvector/pgvector#storing" target="_blank" rel="noopener">pgvector — Getting Started и Indexing</a> — посмотри, как vector становится колонкой PostgreSQL и почему точный поиск используется по умолчанию, а HNSW/IVFFlat добавляются отдельно.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Если делегируешь ИИ, реши, что отдаёшь; опиши задачу и критерии; проверь результат; сохрани ответственность за итог.</p></div><h3>Стартовый файл</h3><p class="muted files-note">Скопируй этот файл под указанным в задании именем и реализуй отмеченные функции.</p><details class="filebox" id="f-phases-03-text-and-documents-04-vector-stores-code-starter-vector-store-py" open><summary><span class="fname">code/starter_vector_store.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Starter for the offline Build It exercise from lesson 3.4.
 
-def test_query_returns_nearest():
-    hits = _store().query("кошки и рыба", k=1)
-    assert hits[0]["id"] == "cats"
-
-
-def test_topk_limits():
-    assert len(_store().query("любят", k=2)) == 2
-
-
-def test_save_load_roundtrip(tmp_path):
-    s = _store()
-    path = tmp_path / "store.json"
-    s.save(path)
-    loaded = VectorStore().load(path)
-    assert loaded.query("python", k=1)[0]["id"] == "py"
-    assert loaded.items == s.items       # данные сохранились без потерь
-
-
-def test_cosine_bounds():
-    assert cosine(embed("кошки"), embed("кошки")) == 1.0
-    assert cosine(embed("кошки"), embed("python")) &lt; 1.0
-</code></pre></details><h3>Эталонное решение</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-03-text-and-documents-04-vector-stores-code-vector-store-py"><summary><span class="fname">code/vector_store.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Векторное хранилище с нуля — Build It для урока 3.4.
-
-Без зависимостей. Мини-хранилище как у Chroma/FAISS, только маленькое:
-добавляем документы (эмбеддинг = хеширующий bag-of-words в фикс. размер),
-ищем по косинусу, сохраняем/грузим на диск. Хеш детерминированный — результат
-воспроизводим между запусками и после load.
+Copy this file as ``vector_store.py`` and implement the marked methods.  The
+lexical vectorizer and cosine helper are provided: the exercise is about the
+state and compatibility contract of a persistent vector store.
 """
+
+from __future__ import annotations
+
+import hashlib
 import json
 import math
 import re
-
-DIM = 256
-
-
-def _stable_hash(word):
-    """Детерминированный хеш слова (встроенный hash() рандомизирован — нельзя)."""
-    h = 0
-    for ch in word:
-        h = (h * 31 + ord(ch)) % (2 ** 32)
-    return h
+from collections.abc import Mapping, Sequence
+from pathlib import Path
+from typing import Any
 
 
-def embed(text):
-    """Хеширующий эмбеддинг: слова раскладываются по DIM бакетам."""
-    vec = [0.0] * DIM
-    for w in re.findall(r"\w+", text.lower()):
-        vec[_stable_hash(w) % DIM] += 1.0
-    return vec
+SCHEMA_VERSION = 1
+HASH_EMBEDDING_ID = "hash-bow-v1"
+HASH_DIMENSION = 512
+STOP_WORDS = frozenset(
+    {
+        "а",
+        "без",
+        "в",
+        "во",
+        "для",
+        "до",
+        "за",
+        "и",
+        "из",
+        "или",
+        "к",
+        "как",
+        "на",
+        "не",
+        "но",
+        "о",
+        "об",
+        "от",
+        "по",
+        "с",
+        "со",
+        "у",
+        "что",
+        "это",
+    }
+)
 
 
-def cosine(a, b):
+def hash_embed(text: str) -&gt; list[float]:
+    """Return a deterministic lexical hashing vector."""
+    if not isinstance(text, str):
+        raise TypeError("text must be a string")
+
+    vector = [0.0] * HASH_DIMENSION
+    tokens = re.findall(r"\w+", text.lower())
+    for token in tokens:
+        if token in STOP_WORDS:
+            continue
+        digest = hashlib.blake2s(token.encode("utf-8"), digest_size=4).digest()
+        bucket = int.from_bytes(digest, byteorder="big") % HASH_DIMENSION
+        vector[bucket] += 1.0
+    return vector
+
+
+def cosine(a: Sequence[float], b: Sequence[float]) -&gt; float:
+    """Return cosine similarity for two dense vectors of equal length."""
+    if len(a) != len(b):
+        raise ValueError("vectors must have equal dimensions")
     dot = sum(x * y for x, y in zip(a, b))
-    na = math.sqrt(sum(x * x for x in a))
-    nb = math.sqrt(sum(y * y for y in b))
-    return dot / (na * nb) if na and nb else 0.0
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(y * y for y in b))
+    return dot / (norm_a * norm_b) if norm_a and norm_b else 0.0
 
 
 class VectorStore:
-    """Минимальное векторное хранилище: add / query / save / load."""
+    """Store traceable records and compatible vectors with exact search."""
 
-    def __init__(self):
-        self.items = []      # [{id, text, vec}]
+    def __init__(self, *, embedding_id: str, dimension: int):
+        # Validate both arguments, then initialize items and a set of seen IDs.
+        raise NotImplementedError
 
-    def add(self, id, text):
-        self.items.append({"id": id, "text": text, "vec": embed(text)})
+    def __len__(self) -&gt; int:
+        return len(self.items)
 
-    def query(self, text, k=3):
-        qv = embed(text)
-        scored = sorted(
-            ((cosine(qv, it["vec"]), it) for it in self.items),
-            key=lambda x: x[0], reverse=True,
+    def add(self, record: Mapping[str, Any], vector: Sequence[float]) -&gt; None:
+        """Validate and append one new record; reject duplicate IDs."""
+        raise NotImplementedError
+
+    def query(
+        self,
+        vector: Sequence[float],
+        *,
+        k: int = 3,
+        min_score: float = 0.0,
+    ) -&gt; list[dict[str, Any]]:
+        """Return at most k positive matches with all record metadata."""
+        raise NotImplementedError
+
+    def to_manifest(self) -&gt; dict[str, Any]:
+        """Return schema, embedding metadata and stored items."""
+        raise NotImplementedError
+
+    def save(self, path: str | Path) -&gt; None:
+        """Write ``to_manifest()`` as UTF-8 JSON."""
+        raise NotImplementedError
+
+    @classmethod
+    def load(
+        cls,
+        path: str | Path,
+        *,
+        embedding_id: str,
+        dimension: int,
+    ) -&gt; "VectorStore":
+        """Validate a manifest and restore it through ``add``."""
+        raise NotImplementedError
+</code></pre></details><h3>Учебные данные</h3><p class="muted files-note">Этот безопасный пример можно использовать вместо рабочего файла.</p><details class="filebox" id="f-phases-03-text-and-documents-04-vector-stores-code-sample-records-py" open><summary><span class="fname">code/sample_records.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Traceable records reused from the sample_report.md corpus in lessons 3.2–3.3.
+
+The subset keeps the same IDs, sources and word positions.  It lets lesson 3.4
+focus on index lifecycle without requiring a learner to clone the course.
+"""
+
+
+SAMPLE_RECORDS = [
+    {
+        "id": "sample_report.md#chunk-0000",
+        "source": "sample_report.md",
+        "index": 0,
+        "word_start": 0,
+        "word_end": 70,
+        "text": (
+            "# Учебный отчёт о пилоте нового платёжного потока ## 1. Контекст и "
+            "границы пилота Команда готовит ограниченный пилот нового платёжного "
+            "потока. Принято решение запустить его 18 сентября для 10% "
+            "пользователей iOS. Пользователи Android и веб-версии в этот этап не "
+            "входят. Цель пилота — проверить техническую стабильность потока и "
+            "влияние на обращения в поддержку до решения о дальнейшем расширении. "
+            "Объём 10% выбран как контролируемая стартовая группа. В обсуждении "
+            "звучали варианты 5%"
+        ),
+    },
+    {
+        "id": "sample_report.md#chunk-0002",
+        "source": "sample_report.md",
+        "index": 2,
+        "word_start": 120,
+        "word_end": 190,
+        "text": (
+            "не принимает решение за службу безопасности. Если согласование не "
+            "получено к 16 сентября, запуск переносится. Это условие является "
+            "обязательным gate запуска, а не рекомендацией. Новая дата в таком "
+            "случае должна быть согласована отдельно; в текущем протоколе она не "
+            "определена. ## 3. План запуска В день пилота команда планирует "
+            "включать поток постепенно и следить за техническими ошибками. При "
+            "критическом росте неуспешных оплат включение останавливается, после "
+            "чего трафик возвращается на прежний поток."
+        ),
+    },
+    {
+        "id": "sample_report.md#chunk-0004",
+        "source": "sample_report.md",
+        "index": 4,
+        "word_start": 240,
+        "word_end": 310,
+        "text": (
+            "пилота утверждены две основные метрики: доля успешных оплат и число "
+            "обращений в поддержку. Дополнительно команда хочет наблюдать время "
+            "ответа платёжного сервиса, но порог для этой метрики ещё не "
+            "согласован. Метрики следует смотреть отдельно для пилотной группы и "
+            "контрольного потока. Складывать обращения двух групп в одно число "
+            "нельзя: это скроет различие, ради которого проводится пилот. ## 5. "
+            "Коммуникация и ответственность Статус пилота будет публиковаться во "
+            "внутреннем канале проекта. Рита сообщает только"
+        ),
+    },
+    {
+        "id": "sample_report.md#chunk-0005",
+        "source": "sample_report.md",
+        "index": 5,
+        "word_start": 300,
+        "word_end": 370,
+        "text": (
+            "пилота будет публиковаться во внутреннем канале проекта. Рита "
+            "сообщает только статус передачи схемы и полученного ответа "
+            "безопасности. Команда поддержки сообщает динамику обращений, а "
+            "техническая команда — ошибки и время ответа. Ответственный за "
+            "итоговый отчёт пока не назначен. Владелец продукта должен назначить "
+            "его до запуска. Нельзя автоматически считать Риту владельцем "
+            "итогового отчёта только потому, что она указана в разделе о "
+            "согласовании. ## 6. Открытые вопросы До запуска остаются три открытых "
+            "вопроса:"
+        ),
+    },
+]
+
+
+EVAL_CASES = [
+    {
+        "query": "когда запускается пилот iOS",
+        "expected_ids": ["sample_report.md#chunk-0000"],
+    },
+    {
+        "query": "согласование получено 16 сентября запуск переносится",
+        "expected_ids": ["sample_report.md#chunk-0002"],
+    },
+    {
+        "query": "какие метрики пилота утверждены",
+        "expected_ids": ["sample_report.md#chunk-0004"],
+    },
+    {
+        "query": "какой рекламный бюджет",
+        "expected_ids": [],
+    },
+    {
+        # Intentional lexical miss: the corpus says "ответственный за итоговый
+        # отчёт", while the query uses different surface forms.
+        "query": "кто автор финального документа",
+        "expected_ids": ["sample_report.md#chunk-0005"],
+    },
+]
+</code></pre></details><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-03-text-and-documents-04-vector-stores-code-test-vector-store-py" open data-test="1"><summary><span class="fname">code/test_vector_store.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>import json
+
+import pytest
+
+from sample_records import SAMPLE_RECORDS
+from vector_store import (
+    HASH_DIMENSION,
+    HASH_EMBEDDING_ID,
+    SCHEMA_VERSION,
+    VectorStore,
+    cosine,
+    hash_embed,
+)
+
+
+def make_store(records=SAMPLE_RECORDS):
+    store = VectorStore(
+        embedding_id=HASH_EMBEDDING_ID,
+        dimension=HASH_DIMENSION,
+    )
+    for record in records:
+        store.add(record, hash_embed(record["text"]))
+    return store
+
+
+def test_hash_adapter_is_deterministic_fixed_size_and_lexical():
+    first = hash_embed("согласование запуска")
+    second = hash_embed("согласование запуска")
+
+    assert len(first) == HASH_DIMENSION
+    assert first == second
+    assert hash_embed("и в на") == [0.0] * HASH_DIMENSION
+
+
+def test_store_preserves_provenance_in_hits():
+    hits = make_store().query(
+        hash_embed("согласование получено 16 сентября запуск переносится"),
+        k=1,
+    )
+
+    assert hits[0]["id"] == "sample_report.md#chunk-0002"
+    assert hits[0]["source"] == "sample_report.md"
+    assert hits[0]["word_start"] == 120
+    assert hits[0]["word_end"] == 190
+    assert 0 &lt; hits[0]["score"] &lt;= 1
+
+
+def test_add_does_not_mutate_input_record():
+    record = dict(SAMPLE_RECORDS[0])
+    original = dict(record)
+
+    make_store([]).add(record, hash_embed(record["text"]))
+
+    assert record == original
+    assert "score" not in record
+
+
+def test_duplicate_id_is_rejected():
+    store = make_store([SAMPLE_RECORDS[0]])
+
+    with pytest.raises(ValueError, match="duplicate record id"):
+        store.add(SAMPLE_RECORDS[0], hash_embed(SAMPLE_RECORDS[0]["text"]))
+    assert len(store) == 1
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        {"source": "report.md", "text": "text"},
+        {"id": "x", "text": "text"},
+        {"id": "x", "source": "report.md", "text": ""},
+        {
+            "id": "x",
+            "source": "report.md",
+            "text": "text",
+            "word_start": 5,
+            "word_end": 4,
+        },
+    ],
+)
+def test_invalid_traceable_record_is_rejected(record):
+    with pytest.raises(ValueError):
+        make_store([]).add(record, [0.0] * HASH_DIMENSION)
+
+
+def test_vector_dimension_and_values_are_validated():
+    store = make_store([])
+    record = SAMPLE_RECORDS[0]
+
+    with pytest.raises(ValueError, match="dimension"):
+        store.add(record, [1.0])
+    with pytest.raises(ValueError, match="finite"):
+        store.add(record, [float("nan")] * HASH_DIMENSION)
+
+
+def test_cosine_rejects_different_dimensions():
+    with pytest.raises(ValueError, match="equal dimensions"):
+        cosine([1.0], [1.0, 0.0])
+
+
+def test_zero_vector_and_no_positive_match_return_empty_result():
+    store = make_store()
+
+    assert store.query([0.0] * HASH_DIMENSION) == []
+    assert store.query(hash_embed("термоядерныйсинхрофазотрон"), k=3) == []
+    assert store.query(hash_embed("какой рекламный бюджет"), k=3) == []
+    # The record exists, but the lexical adapter misses this paraphrase.
+    assert store.query(hash_embed("кто автор финального документа"), k=3) == []
+
+
+@pytest.mark.parametrize("k", [0, -1, True, 1.5])
+def test_invalid_k_is_rejected(k):
+    with pytest.raises(ValueError, match="k must"):
+        make_store().query(hash_embed("пилот"), k=k)
+
+
+@pytest.mark.parametrize("min_score", [-0.1, 1.1, True, "0.2"])
+def test_invalid_min_score_is_rejected(min_score):
+    with pytest.raises(ValueError, match="min_score"):
+        make_store().query(hash_embed("пилот"), min_score=min_score)
+
+
+def test_min_score_filters_weak_matches():
+    store = make_store()
+
+    assert store.query(hash_embed("пилот"), k=4, min_score=1.0) == []
+
+
+def test_save_load_preserves_manifest_and_ranked_results(tmp_path):
+    store = make_store()
+    query_vector = hash_embed(
+        "согласование получено 16 сентября запуск переносится"
+    )
+    expected_hits = store.query(query_vector, k=2)
+    path = tmp_path / "store.json"
+
+    store.save(path)
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    restored = VectorStore.load(
+        path,
+        embedding_id=HASH_EMBEDDING_ID,
+        dimension=HASH_DIMENSION,
+    )
+
+    assert manifest["schema_version"] == SCHEMA_VERSION
+    assert manifest["embedding"] == {
+        "id": HASH_EMBEDDING_ID,
+        "dimension": HASH_DIMENSION,
+    }
+    assert restored.query(query_vector, k=2) == expected_hits
+    assert restored.to_manifest() == store.to_manifest()
+
+
+def test_loaded_store_accepts_new_unique_record_without_rebuilding_old_ones(tmp_path):
+    store = make_store(SAMPLE_RECORDS[:2])
+    original_vectors = [
+        list(item["vector"])
+        for item in store.items
+    ]
+    path = tmp_path / "store.json"
+    store.save(path)
+
+    restored = VectorStore.load(
+        path,
+        embedding_id=HASH_EMBEDDING_ID,
+        dimension=HASH_DIMENSION,
+    )
+    restored.add(
+        SAMPLE_RECORDS[2],
+        hash_embed(SAMPLE_RECORDS[2]["text"]),
+    )
+
+    assert len(restored) == 3
+    assert [item["vector"] for item in restored.items[:2]] == original_vectors
+    assert (
+        restored.query(hash_embed("метрики успешных оплат"), k=1)[0]["id"]
+        == "sample_report.md#chunk-0004"
+    )
+
+
+def test_load_rejects_incompatible_embedding_contract(tmp_path):
+    path = tmp_path / "store.json"
+    make_store().save(path)
+
+    with pytest.raises(ValueError, match="embedding id mismatch"):
+        VectorStore.load(
+            path,
+            embedding_id="another-model-v2",
+            dimension=HASH_DIMENSION,
         )
-        return [{"id": it["id"], "text": it["text"], "score": round(s, 4)}
-                for s, it in scored[:k]]
+    with pytest.raises(ValueError, match="embedding dimension mismatch"):
+        VectorStore.load(
+            path,
+            embedding_id=HASH_EMBEDDING_ID,
+            dimension=HASH_DIMENSION + 1,
+        )
 
-    def save(self, path):
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(self.items, f, ensure_ascii=False)
 
-    def load(self, path):
-        with open(path, encoding="utf-8") as f:
-            self.items = json.load(f)
-        return self
+def test_load_rejects_unknown_schema_and_malformed_items(tmp_path):
+    path = tmp_path / "store.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 999,
+                "embedding": {
+                    "id": HASH_EMBEDDING_ID,
+                    "dimension": HASH_DIMENSION,
+                },
+                "items": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="unsupported schema_version"):
+        VectorStore.load(
+            path,
+            embedding_id=HASH_EMBEDDING_ID,
+            dimension=HASH_DIMENSION,
+        )
+
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": SCHEMA_VERSION,
+                "embedding": {
+                    "id": HASH_EMBEDDING_ID,
+                    "dimension": HASH_DIMENSION,
+                },
+                "items": [{"record": SAMPLE_RECORDS[0], "vector": [1.0]}],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="dimension"):
+        VectorStore.load(
+            path,
+            embedding_id=HASH_EMBEDDING_ID,
+            dimension=HASH_DIMENSION,
+        )
+
+
+def test_equal_scores_keep_insertion_order():
+    records = [
+        {"id": "first", "source": "a.md", "text": "общий первый"},
+        {"id": "second", "source": "b.md", "text": "общий второй"},
+    ]
+    store = make_store(records)
+
+    hits = store.query(hash_embed("общий"), k=2)
+
+    assert [hit["id"] for hit in hits] == ["first", "second"]
+</code></pre></details><h3>Эталонное решение</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-03-text-and-documents-04-vector-stores-code-vector-store-py"><summary><span class="fname">code/vector_store.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Persistent vector store for lesson 3.4.
+
+The store deliberately does not know how text becomes a vector.  A caller
+provides both a traceable record and its vector.  This keeps the two contracts
+separate:
+
+    text -&gt; embedding adapter -&gt; vector
+    (record, vector) -&gt; VectorStore
+
+The bundled ``hash_embed`` function is a deterministic lexical adapter for the
+offline exercise.  It is not a semantic embedding model.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import math
+import re
+from collections.abc import Mapping, Sequence
+from numbers import Real
+from pathlib import Path
+from typing import Any
+
+
+SCHEMA_VERSION = 1
+HASH_EMBEDDING_ID = "hash-bow-v1"
+HASH_DIMENSION = 512
+STOP_WORDS = frozenset(
+    {
+        "а",
+        "без",
+        "в",
+        "во",
+        "для",
+        "до",
+        "за",
+        "и",
+        "из",
+        "или",
+        "к",
+        "как",
+        "на",
+        "не",
+        "но",
+        "о",
+        "об",
+        "от",
+        "по",
+        "с",
+        "со",
+        "у",
+        "что",
+        "это",
+    }
+)
+
+
+def hash_embed(text: str) -&gt; list[float]:
+    """Return a deterministic lexical hashing vector.
+
+    Equal tokens land in equal buckets across Python processes.  Different
+    tokens may collide, so this helper is suitable for observing the storage
+    lifecycle, not for claiming semantic retrieval quality.
+    """
+    if not isinstance(text, str):
+        raise TypeError("text must be a string")
+
+    vector = [0.0] * HASH_DIMENSION
+    tokens = re.findall(r"\w+", text.lower())
+    for token in tokens:
+        if token in STOP_WORDS:
+            continue
+        digest = hashlib.blake2s(token.encode("utf-8"), digest_size=4).digest()
+        bucket = int.from_bytes(digest, byteorder="big") % HASH_DIMENSION
+        vector[bucket] += 1.0
+    return vector
+
+
+def cosine(a: Sequence[float], b: Sequence[float]) -&gt; float:
+    """Return cosine similarity for two dense vectors of equal length."""
+    if len(a) != len(b):
+        raise ValueError("vectors must have equal dimensions")
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(y * y for y in b))
+    return dot / (norm_a * norm_b) if norm_a and norm_b else 0.0
+
+
+def _validate_dimension(dimension: int) -&gt; None:
+    if isinstance(dimension, bool) or not isinstance(dimension, int) or dimension &lt;= 0:
+        raise ValueError("dimension must be a positive integer")
+
+
+def _normalize_vector(vector: Sequence[float], dimension: int) -&gt; list[float]:
+    if isinstance(vector, (str, bytes)) or not isinstance(vector, Sequence):
+        raise TypeError("vector must be a sequence of numbers")
+    if len(vector) != dimension:
+        raise ValueError(
+            f"vector dimension {len(vector)} does not match expected {dimension}"
+        )
+
+    normalized = []
+    for value in vector:
+        if isinstance(value, bool) or not isinstance(value, Real):
+            raise TypeError("vector values must be numbers")
+        number = float(value)
+        if not math.isfinite(number):
+            raise ValueError("vector values must be finite")
+        normalized.append(number)
+    return normalized
+
+
+def _normalize_record(record: Mapping[str, Any]) -&gt; dict[str, Any]:
+    if not isinstance(record, Mapping):
+        raise TypeError("record must be a mapping")
+
+    try:
+        # Normalize tuples and other JSON-compatible containers now so that
+        # save/load cannot silently change the record later.
+        normalized = json.loads(
+            json.dumps(dict(record), ensure_ascii=False, allow_nan=False)
+        )
+    except (TypeError, ValueError) as error:
+        raise ValueError("record must contain JSON-compatible values") from error
+
+    for field in ("id", "source", "text"):
+        value = normalized.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"record needs a non-empty string field: {field}")
+
+    has_start = "word_start" in normalized
+    has_end = "word_end" in normalized
+    if has_start != has_end:
+        raise ValueError("word_start and word_end must be provided together")
+    if has_start:
+        start = normalized["word_start"]
+        end = normalized["word_end"]
+        if (
+            isinstance(start, bool)
+            or isinstance(end, bool)
+            or not isinstance(start, int)
+            or not isinstance(end, int)
+            or start &lt; 0
+            or end &lt; start
+        ):
+            raise ValueError("word positions must be integers with 0 &lt;= start &lt;= end")
+
+    return normalized
+
+
+def _validate_query_params(k: int, min_score: float) -&gt; None:
+    if isinstance(k, bool) or not isinstance(k, int) or k &lt;= 0:
+        raise ValueError("k must be a positive integer")
+    if (
+        isinstance(min_score, bool)
+        or not isinstance(min_score, Real)
+        or not 0 &lt;= min_score &lt;= 1
+    ):
+        raise ValueError("min_score must be a number between 0 and 1")
+
+
+class VectorStore:
+    """Store traceable records and compatible vectors with exact search."""
+
+    def __init__(self, *, embedding_id: str, dimension: int):
+        if not isinstance(embedding_id, str) or not embedding_id.strip():
+            raise ValueError("embedding_id must be a non-empty string")
+        _validate_dimension(dimension)
+
+        self.embedding_id = embedding_id
+        self.dimension = dimension
+        self.items: list[dict[str, Any]] = []
+        self._ids: set[str] = set()
+
+    def __len__(self) -&gt; int:
+        return len(self.items)
+
+    def add(self, record: Mapping[str, Any], vector: Sequence[float]) -&gt; None:
+        """Add one new record; reject duplicate IDs and incompatible vectors."""
+        normalized_record = _normalize_record(record)
+        record_id = normalized_record["id"]
+        if record_id in self._ids:
+            raise ValueError(f"duplicate record id: {record_id}")
+
+        normalized_vector = _normalize_vector(vector, self.dimension)
+        self.items.append(
+            {"record": normalized_record, "vector": normalized_vector}
+        )
+        self._ids.add(record_id)
+
+    def query(
+        self,
+        vector: Sequence[float],
+        *,
+        k: int = 3,
+        min_score: float = 0.0,
+    ) -&gt; list[dict[str, Any]]:
+        """Return at most ``k`` positive matches with their provenance."""
+        _validate_query_params(k, min_score)
+        query_vector = _normalize_vector(vector, self.dimension)
+        if not any(query_vector):
+            return []
+
+        scored = [
+            (cosine(query_vector, item["vector"]), position)
+            for position, item in enumerate(self.items)
+        ]
+        scored.sort(key=lambda pair: (-pair[0], pair[1]))
+
+        hits = []
+        for score, position in scored:
+            if score &lt;= 0 or score &lt; min_score:
+                continue
+            hit = dict(self.items[position]["record"])
+            hit["score"] = round(score, 4)
+            hits.append(hit)
+            if len(hits) == k:
+                break
+        return hits
+
+    def to_manifest(self) -&gt; dict[str, Any]:
+        """Return the JSON-compatible state persisted by ``save``."""
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "embedding": {
+                "id": self.embedding_id,
+                "dimension": self.dimension,
+            },
+            "items": [
+                {
+                    "record": dict(item["record"]),
+                    "vector": list(item["vector"]),
+                }
+                for item in self.items
+            ],
+        }
+
+    def save(self, path: str | Path) -&gt; None:
+        """Persist records, vectors and their compatibility contract as JSON."""
+        target = Path(path)
+        with target.open("w", encoding="utf-8") as file:
+            json.dump(
+                self.to_manifest(),
+                file,
+                ensure_ascii=False,
+                indent=2,
+                allow_nan=False,
+            )
+
+    @classmethod
+    def load(
+        cls,
+        path: str | Path,
+        *,
+        embedding_id: str,
+        dimension: int,
+    ) -&gt; "VectorStore":
+        """Load state only when schema and embedding contracts are compatible."""
+        target = Path(path)
+        with target.open(encoding="utf-8") as file:
+            manifest = json.load(file)
+
+        if not isinstance(manifest, Mapping):
+            raise ValueError("store manifest must be an object")
+        if manifest.get("schema_version") != SCHEMA_VERSION:
+            raise ValueError(
+                f"unsupported schema_version: {manifest.get('schema_version')!r}"
+            )
+
+        embedding = manifest.get("embedding")
+        if not isinstance(embedding, Mapping):
+            raise ValueError("store manifest needs embedding metadata")
+        if embedding.get("id") != embedding_id:
+            raise ValueError(
+                "embedding id mismatch: "
+                f"stored={embedding.get('id')!r}, expected={embedding_id!r}"
+            )
+        if embedding.get("dimension") != dimension:
+            raise ValueError(
+                "embedding dimension mismatch: "
+                f"stored={embedding.get('dimension')!r}, expected={dimension!r}"
+            )
+
+        items = manifest.get("items")
+        if not isinstance(items, list):
+            raise ValueError("store manifest needs an items list")
+
+        store = cls(embedding_id=embedding_id, dimension=dimension)
+        for position, item in enumerate(items):
+            if not isinstance(item, Mapping):
+                raise ValueError(f"item at position {position} must be an object")
+            if "record" not in item or "vector" not in item:
+                raise ValueError(
+                    f"item at position {position} needs record and vector"
+                )
+            store.add(item["record"], item["vector"])
+        return store
 
 
 if __name__ == "__main__":
-    store = VectorStore()
-    for i, doc in enumerate([
-        "кошки любят спать и рыбу",
-        "собаки любят прогулки и мяч",
-        "python язык программирования",
-    ]):
-        store.add(f"doc{i}", doc)
-    for hit in store.query("кошки и рыба", k=2):
-        print(f"{hit['score']:.3f}  {hit['id']}: {hit['text']}")
+    from tempfile import TemporaryDirectory
+
+    from sample_records import SAMPLE_RECORDS
+
+    store = VectorStore(
+        embedding_id=HASH_EMBEDDING_ID,
+        dimension=HASH_DIMENSION,
+    )
+    for record in SAMPLE_RECORDS:
+        store.add(record, hash_embed(record["text"]))
+
+    query = "согласование получено 16 сентября запуск переносится"
+    before = store.query(hash_embed(query), k=2)
+    with TemporaryDirectory() as directory:
+        path = Path(directory) / "store.json"
+        store.save(path)
+        restored = VectorStore.load(
+            path,
+            embedding_id=HASH_EMBEDDING_ID,
+            dimension=HASH_DIMENSION,
+        )
+        after = restored.query(hash_embed(query), k=2)
+
+    print("До перезапуска:")
+    for hit in before:
+        print(f"  {hit['score']:.3f}  {hit['id']}  {hit['source']}")
+    print("После перезапуска:", after == before)
 </code></pre></details><h3>Артефакт</h3><details class="filebox" id="f-phases-03-text-and-documents-04-vector-stores-outputs-doc-assistant-skill-md" open><summary><span class="fname">outputs/doc-assistant/SKILL.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>---
 name: doc-assistant
-description: "Ассистент по документам курса AI Native (RAG): складывает корпус в векторное хранилище и отвечает по нему. Триггеры: «/doc-assistant», «спроси мои документы», «найди в корпусе», «ответь по базе знаний», RAG над своими файлами. Артефакт урока 3.4."
+description: "Индексирует трассируемые чанки, ищет доказательства в локальном persistent vector store и готовит ответ строго по найденному контексту. Используй для вопросов «по моим документам», «найди в корпусе», «ответь по базе знаний» и локального baseline RAG."
 ---
 
-# doc-assistant — вопросы к своему корпусу (RAG)
+# doc-assistant
 
-Складываешь документы в векторное хранилище и спрашиваешь их на естественном языке: retrieve → augment → ответ.
+Используй этот скилл, когда ответ должен опираться на предоставленный пользователем
+корпус, а не на общие знания модели.
 
-## Как пользоваться
+## Что делает скилл
 
-1. **Индексация:** добавь документы в хранилище (`add(id, text)`); при необходимости сохрани на диск (`save`).
-2. **Retrieval:** на вопрос достань топ-k релевантных кусков (`query(text, k)`).
-3. **Augment + ответ:** подложи найденные куски в промпт модели и попроси ответить **только по ним** (снижает галлюцинации, урок 1.4).
-
-Офлайн-прототип хранилища:
-
-```bash
-python -c "import vector_store as v; s=v.VectorStore(); \
-s.add('a','кошки любят рыбу'); s.add('b','python язык'); print(s.query('рыба и кошки', k=1))"
+```text
+traceable records
+→ одинаковая векторизация документов и запроса
+→ persistent vector store
+→ evidence с id/source/позициями
+→ grounded prompt или честный отказ
 ```
 
-В проде замени `embed` на нейроэмбеддинги, а `VectorStore` — на Chroma/FAISS/pgvector (интерфейс `add/query` тот же).
+Учебный адаптер `hash_embed` работает офлайн и видит совпадения слов, а не смысл.
+Перефразировка может не найти существующее доказательство; положительный score тоже не
+гарантирует, что фрагмент отвечает на вопрос.
 
-## Файлы
+## Подготовка корпуса
 
-- `vector_store.py` — `VectorStore` (`add/query/save/load`), `embed`, `cosine`.
+На входе нужен JSON-массив чанков. Каждая запись обязана содержать:
 
-## Правила
+```json
+{
+  "id": "report.md#chunk-0001",
+  "source": "report.md",
+  "word_start": 70,
+  "word_end": 140,
+  "text": "Текст чанка..."
+}
+```
 
-- Документы дроби на куски (chunking, урок 3.2) перед индексацией.
-- В промпте требуй ответ строго по найденному контексту и проси цитаты (урок 1.4).
-- Качество ретрива измеряй (eval-harness, урок 2.5): попадает ли нужный кусок в топ-k.
-</code></pre></details><details class="filebox" id="f-phases-03-text-and-documents-04-vector-stores-outputs-doc-assistant-vector-store-py" open><summary><span class="fname">outputs/doc-assistant/vector_store.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Векторное хранилище с нуля — Build It для урока 3.4.
+`id` должен быть уникальным и стабильным. Дополнительные JSON-поля сохраняются.
 
-Без зависимостей. Мини-хранилище как у Chroma/FAISS, только маленькое:
-добавляем документы (эмбеддинг = хеширующий bag-of-words в фикс. размер),
-ищем по косинусу, сохраняем/грузим на диск. Хеш детерминированный — результат
-воспроизводим между запусками и после load.
+Создай новый индекс:
+
+```bash
+python assistant.py index sample_records.json store.json
+```
+
+Добавь новые записи без повторной векторизации уже сохранённых:
+
+```bash
+python assistant.py add new_records.json store.json
+```
+
+Повторный ID отклоняется. Обновление и удаление в baseline не реализованы: если
+содержание существующего чанка изменилось, собери новый индекс или дай ему новый
+версионный ID.
+
+## Вопрос к корпусу
+
+```bash
+python assistant.py ask store.json \
+  "что произойдёт без согласования безопасности?" \
+  --k 3 --min-score 0.1
+```
+
+Команда возвращает JSON:
+
+- `status=evidence_found` — есть найденные записи и готовый `prompt`;
+- `status=insufficient_context` — доказательств нет, `prompt=null`;
+- `evidence` всегда сохраняет ID, источник, позиции и score.
+
+`min-score` нельзя переносить между корпусами как универсальную константу. Подбери его
+на размеченных запросах, включая случаи, где правильный результат — пустая выдача.
+
+## Как формировать ответ
+
+1. Если `status=insufficient_context`, не вызывай генерацию и ответь:
+   «Недостаточно контекста для ответа».
+2. Если evidence есть, отвечай только по его тексту.
+3. После каждого проверяемого утверждения указывай ID соответствующего чанка.
+4. Не считай высокий score доказательством самого факта.
+5. Если найденные фрагменты тематически близки, но не содержат ответа, всё равно
+   воздержись.
+
+## Проверка
+
+После индексации проверь минимум три сценария:
+
+1. ответимый запрос возвращает ожидаемый ID;
+2. запрос вне корпуса возвращает `insufficient_context`;
+3. после нового запуска `ask` возвращает те же ID и provenance.
+
+Файлы артефакта:
+
+- `assistant.py` — команды `index`, `add`, `ask` и сборка evidence package;
+- `vector_store.py` — локальное persistent-хранилище с manifest-проверками;
+- `sample_records.json` — минимальный корпус для первого запуска.
+</code></pre></details><details class="filebox" id="f-phases-03-text-and-documents-04-vector-stores-outputs-doc-assistant-assistant-py" open><summary><span class="fname">outputs/doc-assistant/assistant.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Runnable baseline document assistant for lesson 3.4.
+
+The script indexes traceable JSON records, persists them, and prepares a
+grounded request.  It intentionally does not call a model: an empty retrieval
+must stop the chain before generation.
 """
+
+from __future__ import annotations
+
+import argparse
 import json
-import math
-import re
+from collections.abc import Mapping, Sequence
+from pathlib import Path
+from typing import Any
 
-DIM = 256
-
-
-def _stable_hash(word):
-    """Детерминированный хеш слова (встроенный hash() рандомизирован — нельзя)."""
-    h = 0
-    for ch in word:
-        h = (h * 31 + ord(ch)) % (2 ** 32)
-    return h
+from vector_store import (
+    HASH_DIMENSION,
+    HASH_EMBEDDING_ID,
+    VectorStore,
+    hash_embed,
+)
 
 
-def embed(text):
-    """Хеширующий эмбеддинг: слова раскладываются по DIM бакетам."""
-    vec = [0.0] * DIM
-    for w in re.findall(r"\w+", text.lower()):
-        vec[_stable_hash(w) % DIM] += 1.0
-    return vec
+def _read_records(path: str | Path) -&gt; list[dict[str, Any]]:
+    with Path(path).open(encoding="utf-8") as file:
+        records = json.load(file)
+    if (
+        isinstance(records, (str, bytes))
+        or not isinstance(records, Sequence)
+        or any(not isinstance(record, Mapping) for record in records)
+    ):
+        raise ValueError("records file must contain a JSON array of objects")
+    return [dict(record) for record in records]
 
 
-def cosine(a, b):
-    dot = sum(x * y for x, y in zip(a, b))
-    na = math.sqrt(sum(x * x for x in a))
-    nb = math.sqrt(sum(y * y for y in b))
-    return dot / (na * nb) if na and nb else 0.0
+def new_store() -&gt; VectorStore:
+    return VectorStore(
+        embedding_id=HASH_EMBEDDING_ID,
+        dimension=HASH_DIMENSION,
+    )
 
 
-class VectorStore:
-    """Минимальное векторное хранилище: add / query / save / load."""
+def load_store(path: str | Path) -&gt; VectorStore:
+    return VectorStore.load(
+        path,
+        embedding_id=HASH_EMBEDDING_ID,
+        dimension=HASH_DIMENSION,
+    )
 
-    def __init__(self):
-        self.items = []      # [{id, text, vec}]
 
-    def add(self, id, text):
-        self.items.append({"id": id, "text": text, "vec": embed(text)})
+def add_records(
+    store: VectorStore,
+    records: Sequence[Mapping[str, Any]],
+) -&gt; VectorStore:
+    for record in records:
+        text = record.get("text")
+        if not isinstance(text, str):
+            raise ValueError("every record needs a string text field")
+        store.add(record, hash_embed(text))
+    return store
 
-    def query(self, text, k=3):
-        qv = embed(text)
-        scored = sorted(
-            ((cosine(qv, it["vec"]), it) for it in self.items),
-            key=lambda x: x[0], reverse=True,
+
+def index_records(
+    records: Sequence[Mapping[str, Any]],
+    path: str | Path,
+) -&gt; VectorStore:
+    store = add_records(new_store(), records)
+    store.save(path)
+    return store
+
+
+def append_records(
+    records: Sequence[Mapping[str, Any]],
+    path: str | Path,
+) -&gt; VectorStore:
+    store = add_records(load_store(path), records)
+    store.save(path)
+    return store
+
+
+def _location(hit: Mapping[str, Any]) -&gt; str:
+    start = hit.get("word_start")
+    end = hit.get("word_end")
+    if isinstance(start, int) and isinstance(end, int):
+        return f"слова {start}:{end}"
+    return "позиция не указана"
+
+
+def build_prompt(query: str, evidence: list[dict[str, Any]]) -&gt; str:
+    if not evidence:
+        raise ValueError("evidence must be non-empty")
+
+    blocks = []
+    for hit in evidence:
+        blocks.append(
+            f"[{hit['id']}]\n"
+            f"Источник: {hit['source']}, {_location(hit)}, score={hit['score']}\n"
+            f"Текст: {hit['text']}"
         )
-        return [{"id": it["id"], "text": it["text"], "score": round(s, 4)}
-                for s, it in scored[:k]]
+    context = "\n\n".join(blocks)
+    return (
+        "Ответь на вопрос только по фрагментам ниже. После каждого проверяемого "
+        "утверждения укажи ID фрагмента в квадратных скобках. Если фрагменты "
+        "тематически близки, но не содержат ответа, скажи: "
+        "«Недостаточно контекста для ответа».\n\n"
+        f"Фрагменты:\n{context}\n\n"
+        f"Вопрос: {query}\n"
+        "Ответ:"
+    )
 
-    def save(self, path):
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(self.items, f, ensure_ascii=False)
 
-    def load(self, path):
-        with open(path, encoding="utf-8") as f:
-            self.items = json.load(f)
-        return self
+def prepare_request(
+    query: str,
+    store: VectorStore,
+    *,
+    k: int = 3,
+    min_score: float = 0.0,
+) -&gt; dict[str, Any]:
+    if not isinstance(query, str) or not query.strip():
+        raise ValueError("query must be a non-empty string")
+
+    evidence = store.query(hash_embed(query), k=k, min_score=min_score)
+    if not evidence:
+        return {
+            "status": "insufficient_context",
+            "query": query,
+            "evidence": [],
+            "prompt": None,
+        }
+    return {
+        "status": "evidence_found",
+        "query": query,
+        "evidence": evidence,
+        "prompt": build_prompt(query, evidence),
+    }
+
+
+def _parser() -&gt; argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    index = commands.add_parser("index", help="create a new store")
+    index.add_argument("records")
+    index.add_argument("store")
+
+    add = commands.add_parser("add", help="append unique records")
+    add.add_argument("records")
+    add.add_argument("store")
+
+    ask = commands.add_parser("ask", help="retrieve evidence for a question")
+    ask.add_argument("store")
+    ask.add_argument("query")
+    ask.add_argument("--k", type=int, default=3)
+    ask.add_argument("--min-score", type=float, default=0.0)
+    return parser
+
+
+def main() -&gt; None:
+    args = _parser().parse_args()
+    if args.command == "index":
+        store = index_records(_read_records(args.records), args.store)
+        result = {"status": "indexed", "records": len(store), "store": args.store}
+    elif args.command == "add":
+        store = append_records(_read_records(args.records), args.store)
+        result = {"status": "updated", "records": len(store), "store": args.store}
+    else:
+        result = prepare_request(
+            args.query,
+            load_store(args.store),
+            k=args.k,
+            min_score=args.min_score,
+        )
+    print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
-    store = VectorStore()
-    for i, doc in enumerate([
-        "кошки любят спать и рыбу",
-        "собаки любят прогулки и мяч",
-        "python язык программирования",
-    ]):
-        store.add(f"doc{i}", doc)
-    for hit in store.query("кошки и рыба", k=2):
-        print(f"{hit['score']:.3f}  {hit['id']}: {hit['text']}")
-</code></pre></details><h3>Связанные файлы</h3><details class="filebox" id="f-claude-skills-doc-assistant-skill-md" open><summary><span class="fname">.claude/skills/doc-assistant/SKILL.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>---
-name: doc-assistant
-description: "Ассистент по документам курса AI Native (RAG): складывает корпус в векторное хранилище и отвечает по нему. Триггеры: «/doc-assistant», «спроси мои документы», «найди в корпусе», «ответь по базе знаний», RAG над своими файлами. Артефакт урока 3.4."
----
+    main()
+</code></pre></details><details class="filebox" id="f-phases-03-text-and-documents-04-vector-stores-outputs-doc-assistant-sample-records-json" open><summary><span class="fname">outputs/doc-assistant/sample_records.json</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>[
+  {
+    "id": "pilot.md#chunk-0000",
+    "source": "pilot.md",
+    "word_start": 0,
+    "word_end": 24,
+    "text": "Пилот нового платёжного потока запускается 18 сентября для 10% пользователей iOS."
+  },
+  {
+    "id": "pilot.md#chunk-0001",
+    "source": "pilot.md",
+    "word_start": 20,
+    "word_end": 47,
+    "text": "Если согласование безопасности не получено к 16 сентября, запуск пилота переносится."
+  },
+  {
+    "id": "pilot.md#chunk-0002",
+    "source": "pilot.md",
+    "word_start": 43,
+    "word_end": 70,
+    "text": "Утверждённые метрики пилота: доля успешных оплат и число обращений в поддержку."
+  }
+]
+</code></pre></details><details class="filebox" id="f-phases-03-text-and-documents-04-vector-stores-outputs-doc-assistant-vector-store-py" open><summary><span class="fname">outputs/doc-assistant/vector_store.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Persistent vector store used by the lesson 3.4 doc-assistant artifact."""
 
-# doc-assistant — вопросы к своему корпусу (RAG)
+from __future__ import annotations
 
-Складываешь документы в векторное хранилище и спрашиваешь их на естественном языке: retrieve → augment → ответ.
+import hashlib
+import json
+import math
+import re
+from collections.abc import Mapping, Sequence
+from numbers import Real
+from pathlib import Path
+from typing import Any
 
-## Как пользоваться
 
-1. **Индексация:** добавь документы в хранилище (`add(id, text)`); при необходимости сохрани на диск (`save`).
-2. **Retrieval:** на вопрос достань топ-k релевантных кусков (`query(text, k)`).
-3. **Augment + ответ:** подложи найденные куски в промпт модели и попроси ответить **только по ним** (снижает галлюцинации, урок 1.4).
+SCHEMA_VERSION = 1
+HASH_EMBEDDING_ID = "hash-bow-v1"
+HASH_DIMENSION = 512
+STOP_WORDS = frozenset(
+    {
+        "а",
+        "без",
+        "в",
+        "во",
+        "для",
+        "до",
+        "за",
+        "и",
+        "из",
+        "или",
+        "к",
+        "как",
+        "на",
+        "не",
+        "но",
+        "о",
+        "об",
+        "от",
+        "по",
+        "с",
+        "со",
+        "у",
+        "что",
+        "это",
+    }
+)
 
-Офлайн-прототип хранилища:
 
-```bash
-python -c "import vector_store as v; s=v.VectorStore(); \
-s.add('a','кошки любят рыбу'); s.add('b','python язык'); print(s.query('рыба и кошки', k=1))"
-```
+def hash_embed(text: str) -&gt; list[float]:
+    """Return a deterministic lexical hashing vector."""
+    if not isinstance(text, str):
+        raise TypeError("text must be a string")
 
-В проде замени `embed` на нейроэмбеддинги, а `VectorStore` — на Chroma/FAISS/pgvector (интерфейс `add/query` тот же).
+    vector = [0.0] * HASH_DIMENSION
+    tokens = re.findall(r"\w+", text.lower())
+    for token in tokens:
+        if token in STOP_WORDS:
+            continue
+        digest = hashlib.blake2s(token.encode("utf-8"), digest_size=4).digest()
+        bucket = int.from_bytes(digest, byteorder="big") % HASH_DIMENSION
+        vector[bucket] += 1.0
+    return vector
 
-## Файлы
 
-- `vector_store.py` — `VectorStore` (`add/query/save/load`), `embed`, `cosine`.
+def cosine(a: Sequence[float], b: Sequence[float]) -&gt; float:
+    """Return cosine similarity for two dense vectors of equal length."""
+    if len(a) != len(b):
+        raise ValueError("vectors must have equal dimensions")
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(y * y for y in b))
+    return dot / (norm_a * norm_b) if norm_a and norm_b else 0.0
 
-## Правила
 
-- Документы дроби на куски (chunking, урок 3.2) перед индексацией.
-- В промпте требуй ответ строго по найденному контексту и проси цитаты (урок 1.4).
-- Качество ретрива измеряй (eval-harness, урок 2.5): попадает ли нужный кусок в топ-k.
-</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+def _validate_dimension(dimension: int) -&gt; None:
+    if isinstance(dimension, bool) or not isinstance(dimension, int) or dimension &lt;= 0:
+        raise ValueError("dimension must be a positive integer")
+
+
+def _normalize_vector(vector: Sequence[float], dimension: int) -&gt; list[float]:
+    if isinstance(vector, (str, bytes)) or not isinstance(vector, Sequence):
+        raise TypeError("vector must be a sequence of numbers")
+    if len(vector) != dimension:
+        raise ValueError(
+            f"vector dimension {len(vector)} does not match expected {dimension}"
+        )
+
+    normalized = []
+    for value in vector:
+        if isinstance(value, bool) or not isinstance(value, Real):
+            raise TypeError("vector values must be numbers")
+        number = float(value)
+        if not math.isfinite(number):
+            raise ValueError("vector values must be finite")
+        normalized.append(number)
+    return normalized
+
+
+def _normalize_record(record: Mapping[str, Any]) -&gt; dict[str, Any]:
+    if not isinstance(record, Mapping):
+        raise TypeError("record must be a mapping")
+
+    try:
+        normalized = json.loads(
+            json.dumps(dict(record), ensure_ascii=False, allow_nan=False)
+        )
+    except (TypeError, ValueError) as error:
+        raise ValueError("record must contain JSON-compatible values") from error
+
+    for field in ("id", "source", "text"):
+        value = normalized.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"record needs a non-empty string field: {field}")
+
+    has_start = "word_start" in normalized
+    has_end = "word_end" in normalized
+    if has_start != has_end:
+        raise ValueError("word_start and word_end must be provided together")
+    if has_start:
+        start = normalized["word_start"]
+        end = normalized["word_end"]
+        if (
+            isinstance(start, bool)
+            or isinstance(end, bool)
+            or not isinstance(start, int)
+            or not isinstance(end, int)
+            or start &lt; 0
+            or end &lt; start
+        ):
+            raise ValueError("word positions must be integers with 0 &lt;= start &lt;= end")
+    return normalized
+
+
+def _validate_query_params(k: int, min_score: float) -&gt; None:
+    if isinstance(k, bool) or not isinstance(k, int) or k &lt;= 0:
+        raise ValueError("k must be a positive integer")
+    if (
+        isinstance(min_score, bool)
+        or not isinstance(min_score, Real)
+        or not 0 &lt;= min_score &lt;= 1
+    ):
+        raise ValueError("min_score must be a number between 0 and 1")
+
+
+class VectorStore:
+    """Store traceable records and compatible vectors with exact search."""
+
+    def __init__(self, *, embedding_id: str, dimension: int):
+        if not isinstance(embedding_id, str) or not embedding_id.strip():
+            raise ValueError("embedding_id must be a non-empty string")
+        _validate_dimension(dimension)
+        self.embedding_id = embedding_id
+        self.dimension = dimension
+        self.items: list[dict[str, Any]] = []
+        self._ids: set[str] = set()
+
+    def __len__(self) -&gt; int:
+        return len(self.items)
+
+    def add(self, record: Mapping[str, Any], vector: Sequence[float]) -&gt; None:
+        normalized_record = _normalize_record(record)
+        record_id = normalized_record["id"]
+        if record_id in self._ids:
+            raise ValueError(f"duplicate record id: {record_id}")
+        normalized_vector = _normalize_vector(vector, self.dimension)
+        self.items.append(
+            {"record": normalized_record, "vector": normalized_vector}
+        )
+        self._ids.add(record_id)
+
+    def query(
+        self,
+        vector: Sequence[float],
+        *,
+        k: int = 3,
+        min_score: float = 0.0,
+    ) -&gt; list[dict[str, Any]]:
+        _validate_query_params(k, min_score)
+        query_vector = _normalize_vector(vector, self.dimension)
+        if not any(query_vector):
+            return []
+
+        scored = [
+            (cosine(query_vector, item["vector"]), position)
+            for position, item in enumerate(self.items)
+        ]
+        scored.sort(key=lambda pair: (-pair[0], pair[1]))
+
+        hits = []
+        for score, position in scored:
+            if score &lt;= 0 or score &lt; min_score:
+                continue
+            hit = dict(self.items[position]["record"])
+            hit["score"] = round(score, 4)
+            hits.append(hit)
+            if len(hits) == k:
+                break
+        return hits
+
+    def to_manifest(self) -&gt; dict[str, Any]:
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "embedding": {
+                "id": self.embedding_id,
+                "dimension": self.dimension,
+            },
+            "items": [
+                {
+                    "record": dict(item["record"]),
+                    "vector": list(item["vector"]),
+                }
+                for item in self.items
+            ],
+        }
+
+    def save(self, path: str | Path) -&gt; None:
+        with Path(path).open("w", encoding="utf-8") as file:
+            json.dump(
+                self.to_manifest(),
+                file,
+                ensure_ascii=False,
+                indent=2,
+                allow_nan=False,
+            )
+
+    @classmethod
+    def load(
+        cls,
+        path: str | Path,
+        *,
+        embedding_id: str,
+        dimension: int,
+    ) -&gt; "VectorStore":
+        with Path(path).open(encoding="utf-8") as file:
+            manifest = json.load(file)
+
+        if not isinstance(manifest, Mapping):
+            raise ValueError("store manifest must be an object")
+        if manifest.get("schema_version") != SCHEMA_VERSION:
+            raise ValueError(
+                f"unsupported schema_version: {manifest.get('schema_version')!r}"
+            )
+
+        embedding = manifest.get("embedding")
+        if not isinstance(embedding, Mapping):
+            raise ValueError("store manifest needs embedding metadata")
+        if embedding.get("id") != embedding_id:
+            raise ValueError(
+                "embedding id mismatch: "
+                f"stored={embedding.get('id')!r}, expected={embedding_id!r}"
+            )
+        if embedding.get("dimension") != dimension:
+            raise ValueError(
+                "embedding dimension mismatch: "
+                f"stored={embedding.get('dimension')!r}, expected={dimension!r}"
+            )
+
+        items = manifest.get("items")
+        if not isinstance(items, list):
+            raise ValueError("store manifest needs an items list")
+
+        store = cls(embedding_id=embedding_id, dimension=dimension)
+        for position, item in enumerate(items):
+            if not isinstance(item, Mapping):
+                raise ValueError(f"item at position {position} must be an object")
+            if "record" not in item or "vector" not in item:
+                raise ValueError(
+                    f"item at position {position} needs record and vector"
+                )
+            store.add(item["record"], item["vector"])
+        return store
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> 25 behavioral-тестов зелёные; до и после <code>save/load</code> совпадают ID, scores и provenance; несовместимый manifest отклоняется; <code>doc-assistant</code> возвращает evidence или честный отказ; сайт пересобран. ✅ <strong>Урок готов</strong></p></article>
     <div class="nav-prevnext" id="prevnext"><a href="../../lessons/rag-basics-retrieval/"><small>← 3.3</small>Основы RAG: retrieval</a><a href="../../lessons/production-rag/" style="text-align:right"><small>3.5 →</small>Production RAG</a></div>
   </section>
 
   <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
 
   <script>window.__BASE__="../../";</script>
-  <script src="../../data.js?v=6b5578064388"></script>
-  <script src="../../progress.js?v=6b5578064388"></script>
-  <script src="../../header.js?v=6b5578064388"></script>
-  <script src="../../app.js?v=6b5578064388"></script>
+  <script src="../../data.js?v=b2c0ea71efb8"></script>
+  <script src="../../progress.js?v=b2c0ea71efb8"></script>
+  <script src="../../header.js?v=b2c0ea71efb8"></script>
+  <script src="../../app.js?v=b2c0ea71efb8"></script>
 </body>
 </html>
