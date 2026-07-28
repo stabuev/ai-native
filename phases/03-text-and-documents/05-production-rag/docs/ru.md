@@ -103,16 +103,16 @@ python code/hybrid_retriever.py # демо: гибридный поиск по �
 
 ## Дополнительное чтение
 
-- [Microsoft GraphRAG](https://microsoft.github.io/graphrag/) — графовый RAG для сложных запросов.
-- [Ragas — метрики](https://docs.ragas.io/en/stable/concepts/metrics/available_metrics/) — faithfulness, context precision/recall.
-- [Ragas (arXiv 2309.15217)](https://arxiv.org/abs/2309.15217) — first-source автоматической оценки RAG.
-- [Cormack et al., 2009 — Reciprocal Rank Fusion (RRF)](https://doi.org/10.1145/1571941.1572114) — первоисточник фьюжна ранжирований, который урок собирает своими руками.
-- [Robertson & Zaragoza, 2009 — BM25 and Beyond](https://doi.org/10.1561/1500000019) — keyword-ретрив (вторая половина гибрида vector+keyword).
-- [Anthropic — Contextual Retrieval (2024)](https://www.anthropic.com/news/contextual-retrieval) — production-гибрид: контекстные эмбеддинги + BM25 + reranking.
-- [Sentence-Transformers — Retrieve & Re-Rank](https://www.sbert.net/examples/applications/retrieve_rerank/README.html) — bi-encoder ретрив + cross-encoder reranking.
-- [Cohere — Rerank](https://docs.cohere.com/docs/rerank-overview) — managed-reranker для RAG.
-- [Gao et al., 2023 — RAG: A Survey](https://arxiv.org/abs/2312.10997) — карта Naive / Advanced / Modular RAG.
-- [Deval Shah — RRF explained (Medium)](https://medium.com/@devalshah1619/mathematical-intuition-behind-reciprocal-rank-fusion-rrf-explained-in-2-mins-002df0cc5e2a) — доступная интуиция и формула RRF.
+- [Anthropic — Contextual Retrieval (2024)](https://www.anthropic.com/engineering/contextual-retrieval) — практический разбор гибрида из эмбеддингов и BM25, rank fusion, reranking и сравнения конфигураций на eval-наборе.
+- [Cormack et al., 2009 — Reciprocal Rank Fusion (RRF)](https://cormack.uwaterloo.ca/cormacksigir09-rrf.pdf) — открытый первоисточник RRF: формула, роль константы `k` и результаты экспериментов.
+- [Ragas — метрики](https://docs.ragas.io/en/stable/concepts/metrics/available_metrics/) — актуальные определения, входные данные и ограничения context precision/recall, faithfulness и response relevancy.
+- [Es et al. — Ragas: Automated Evaluation of RAG](https://arxiv.org/abs/2309.15217) — первоисточник фреймворка и разделения качества ретрива и генерации; реализацию сверяй с текущей документацией выше.
+- [Sentence-Transformers — Retrieve & Re-Rank](https://www.sbert.net/examples/sentence_transformer/applications/retrieve_rerank/README.html) — чем быстрый bi-encoder-ретрив отличается от повторной оценки кандидатов cross-encoder-реранкером.
+- [Cohere — Rerank](https://docs.cohere.com/docs/rerank-overview) — актуальный пример managed-реранкера: запрос, список кандидатов, relevance score и `top_n`.
+- [Robertson & Zaragoza, 2009 — BM25 and Beyond](https://www.nowpublishers.com/article/DownloadEBook/INR-019) — разделы 3.4–3.5 объясняют, как устроен BM25 и чем он усиливает простой TF-IDF.
+- [Gao et al., 2023 — RAG: A Survey](https://arxiv.org/abs/2312.10997) — карта Naive / Advanced / Modular RAG; к этому уроку особенно относятся разделы II, III-D1, IV-A1, VI и VII-E.
+- [Microsoft GraphRAG — Query overview](https://microsoft.github.io/graphrag/query/overview/) — отдельная архитектурная ветка: когда выбирать global, local или DRIFT search вместо обычного top-k-поиска.
+- [RRF visualizer](https://deval-shah.github.io/visualizations/rrf/) — интерактивная интуиция: как позиции документов и константа `k` меняют итоговый RRF-рейтинг.
 
 ---
 **Часы:** ~4 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**
