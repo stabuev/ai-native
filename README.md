@@ -270,7 +270,7 @@ decision record 3.5. Если отдельная карточка неприме
 | # | Урок | Build It | Use It | Ship It | Папка |
 |---|---|---|---|---|---|
 | 4.1 | Skills и SKILL.md | Спроектировать и написать SKILL.md с нуля | Установка и поведенческая проверка в выбранном агенте | Переносимый skill + протокол проверок | `phases/04-skills-memory-projects/01-skills-and-skill-md` |
-| 4.2 | Память: короткая и длинная | Файловое хранилище памяти с поиском и темпоральностью | Память платформы (ChatGPT Memory, session memory) | Модуль памяти для агента | `phases/04-skills-memory-projects/02-memory-short-and-long` |
+| 4.2 | Память: короткая и длинная | Файловая память: запись, поиск, замена, срок жизни и удаление | Сравнение контекста, истории чата и памяти платформ | Изолированный модуль памяти + поведенческие проверки | `phases/04-skills-memory-projects/02-memory-short-and-long` |
 | 4.3 | Проекты и рабочие пространства | Сборка проекта: knowledge + system prompt | Custom GPTs / Claude Projects / Gemini Gems | Настроенный ассистент с базой знаний | `phases/04-skills-memory-projects/03-projects-and-workspaces` |
 | 4.4 | Контекст-инжиниринг | Схема сборки и компакции контекста | Связка с RAG и со стоимостью | Политика управления контекстом и outputs/ | `phases/04-skills-memory-projects/04-context-engineering` |
 | 4.5 | Агентные платформы: OpenClaw / Hermes | Загрузка скилла (SKILL.md / agentskills.io) в локальный рантайм | OpenClaw / Hermes: скиллы + память + мульти-модель + MCP | Свой агент на self-hosted платформе | `phases/04-skills-memory-projects/05-agent-platforms-openclaw-hermes` |
@@ -336,7 +336,7 @@ decision record 3.5. Если отдельная карточка неприме
 | # | Урок | Build It | Use It | Ship It | Папка |
 |---|---|---|---|---|---|
 | 7.1 | Цикл reason → act → observe | Agent loop ~120 строк чистого Python | Тот же агент через Claude / фреймворк | agent-loop skill | `phases/07-agent-engineering/01-reason-act-observe-loop` |
-| 7.2 | Память и планирование агента | Подключение модуля памяти из Фазы 4 + планировщик | Многошаговая задача в реальном инструменте | Агент с памятью и планом | `phases/07-agent-engineering/02-agent-memory-and-planning` |
+| 7.2 | Память и планирование агента | Явная рабочая память между шагами + планировщик | Многошаговая задача в реальном инструменте | Агент с памятью и планом | `phases/07-agent-engineering/02-agent-memory-and-planning` |
 | 7.3 | Human-in-the-loop и guardrails | Точки подтверждения и валидация действий | Контроль агента на критичных шагах | Шаблон guardrails | `phases/07-agent-engineering/03-human-in-the-loop-guardrails` |
 | 7.4 | Где агенты ломаются | Воспроизведение петель и дрейфа цели | Инженерные приёмы контроля и ограничения шагов | prompt-debug-agent | `phases/07-agent-engineering/04-where-agents-break` |
 | 7.5 | Evals агентов | Offline eval-harness агента на тест-сете + метрики | Online-evals в проде, регрессии | agent-eval skill | `phases/07-agent-engineering/05-agent-evals` |
