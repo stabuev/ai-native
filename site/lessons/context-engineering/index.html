@@ -4,16 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>4.4 Контекст-инжиниринг — AI Native</title>
-  <meta name="description" content="Контекст — конечный бюджет; инженерия в том, ЧТО и в каком порядке в него класть.">
+  <meta name="description" content="Хороший контекст — не самый большой, а достаточный и проверяемый.">
   <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/context-engineering/">
   <meta property="og:type" content="article">
   <meta property="og:title" content="4.4 Контекст-инжиниринг — AI Native">
-  <meta property="og:description" content="Контекст — конечный бюджет; инженерия в том, ЧТО и в каком порядке в него класть.">
+  <meta property="og:description" content="Хороший контекст — не самый большой, а достаточный и проверяемый.">
   <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/context-engineering/">
   <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
   <meta name="twitter:card" content="summary_large_image">
   <script>(function(){try{var t=localStorage.getItem("theme")||"light";document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
-  <link rel="stylesheet" href="../../style.css?v=2e0c8105f78c">
+  <link rel="stylesheet" href="../../style.css?v=9acb069ff87d">
   <!-- Yandex.Metrika counter -->
   <script type="text/javascript">
       (function(m,e,t,r,i,k,a){
@@ -31,155 +31,390 @@
   <section class="container" style="padding-top:24px">
     <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
     <div class="lessonbar" id="lessonbar"></div>
-    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 4.4 · Контекст-инжиниринг</h1><p><strong>Фаза 4 — Скиллы, память и проекты</strong> · <strong>Результат фазы:</strong> Упаковывать способности в SKILL.md, хранить контекст в памяти и собирать рабочие проекты.</p><p><strong>Это завершение фазы.</strong> У нас уже есть скиллы (4.1), память (4.2) и проекты (4.3) — и все они хотят места в контекстном окне. Контекст-инжиниринг отвечает на вопрос: <strong>что именно и в каком порядке</strong> туда класть, когда влезает не всё.</p><blockquote><strong>MOTTO.</strong> Контекст — конечный бюджет; инженерия в том, ЧТО и в каком порядке в него класть.</blockquote><h2>PROBLEM</h2><p>Скиллы, память, найденные RAG-куски, история диалога, описания инструментов — всё претендует на место в окне. А окно конечно (урок 1.2) и платное (урок 1.1). Запихнуть всё нельзя физически, и — что менее очевидно — <strong>вредно</strong>: чем больше токенов, тем хуже модель вспоминает важное. Anthropic называет это так: у модели ограниченный «бюджет внимания», каждый новый токен его расходует, а с ростом окна точность припоминания падает (context rot).</p><p>Значит, нужна не «напихать побольше», а <strong>политика</strong>: собрать контекст по приоритету, а когда не влезает — осознанно отбросить наименее важное. Цель — по формулировке Anthropic — найти наименьший набор высокосигнальных токенов, дающий нужный результат. Соберём такую политику сами.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Контекстное окно — это <strong>чемодан фиксированного объёма</strong> перед поездкой. Вещей больше, чем влезает. Разумный сбор: сначала кладёшь то, без чего никак (документы, лекарства = system prompt, релевантные факты), потом — что полезно (память), и в последнюю очередь — «приятно бы взять» (вся история диалога). Когда чемодан полон — низкоприоритетное остаётся дома.</p><p>Контекст-инжиниринг — это и есть упаковка чемодана: не «какие слова подобрать» (это prompt engineering), а <strong>какая конфигурация контекста</strong> даёт нужное поведение при ограниченном объёме.</p><h3>Как это работает</h3><pre><code>слои контекста (по приоритету, больше = важнее):
-  system (4)  &gt;  RAG (3)  &gt;  память (2)  &gt;  история (1)
-        │ assemble(layers, budget)
-        ▼
-  сортируем по убыванию приоритета и берём слой за слоем,
-  пока влезает в бюджет; не влезло → в dropped (компакция)</code></pre><ul><li><code>estimate_tokens(text)</code> — оценка размера слоя (учебно ≈ число слов; точнее — токенайзером из 1.1).</li><li><code>assemble(layers, budget)</code> — жадная сборка: идём от самого приоритетного слоя, кладём, пока хватает бюджета; что не поместилось — в <code>dropped</code>.</li><li><code>compact_history(history, max_items)</code> — компакция истории: оставляем последние <code>max_items</code> сообщений, старое «забываем».</li></ul><p>Ключевая идея — <strong>приоритет, а не порядок прихода</strong>. System prompt и свежий RAG важнее старой истории, поэтому при нехватке места жертвуем именно историей, а не ролью.</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Соберём контекст с бюджетом <code>budget = 60</code> токенов. Четыре слоя (размер в «словах»):</p><pre><code>system   20 токенов  приоритет 4
-rag      30 токенов  приоритет 3
-memory   20 токенов  приоритет 2
-history  40 токенов  приоритет 1</code></pre><p><code>assemble</code> сортирует по убыванию приоритета и идёт жадно, накапливая <code>used</code>:</p><pre><code>system : used 0 + 20 = 20 ≤ 60  → берём  (used = 20)
-rag    : used 20 + 30 = 50 ≤ 60  → берём  (used = 50)
-memory : used 50 + 20 = 70 &gt; 60  → DROPPED
-history: used 50 + 40 = 90 &gt; 60  → DROPPED</code></pre><p>Итог: <code>kept = [system, rag]</code>, <code>tokens = 50</code>, <code>dropped = [memory, history]</code>. Важное (роль + релевантные знания) уцелело, низкоприоритетное отброшено — окно не переполнено. Будь бюджет всего 20 — остался бы только <code>system</code>. А <code>compact_history(["m1","m2","m3","m4"], 2)</code> отдаст <code>["m3","m4"]</code>: история ужата до двух свежих сообщений, чтобы влезть. Заметь: сборка <strong>жадная по приоритету</strong>, а не оптимальная упаковка — это намеренно просто и предсказуемо.</p><h2>BUILD IT</h2><p><strong>Задание: собери движок контекста</strong> — оценка размера, сборка под бюджет, компакция истории. Только стандартная библиотека, без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/4.4-context/</code>), а файлы урока клади в подпапку <code>code/</code> (по соглашению курса). Нужен только <strong>Python 3</strong> (для теста ещё <code>pytest</code>).</blockquote><p>Создай файл <code>context_engine.py</code> с тремя функциями:</p><ul><li><strong><code>estimate_tokens(text)</code></strong> — грубая оценка размера: число слов (<code>len(text.split())</code>). В реальном коде здесь был бы токенайзер из 1.1.</li><li><strong><code>assemble(layers, budget)</code></strong> — собрать контекст. Вход: <code>layers</code> — список <code>{name, content, priority}</code> (больше priority = важнее) и <code>budget</code> в токенах. Отсортируй по убыванию <code>priority</code>, иди по списку: если <code>used + estimate_tokens(content) &lt;= budget</code> — клади слой в <code>kept</code> и увеличивай <code>used</code>, иначе — в <code>dropped</code>. Верни <code>{"kept", "dropped", "tokens": used}</code>.</li><li><strong><code>compact_history(history, max_items)</code></strong> — верни последние <code>max_items</code> элементов списка (если <code>max_items &lt; 0</code> — верни всё без изменений).</li></ul><p><strong>Готово, когда</strong> все тесты в <code>test_context_engine.py</code> зелёные — они проверяют: подсчёт слов; при большом бюджете влезает всё (<code>dropped</code> пуст); при тесном — остаются <code>system</code> и <code>rag</code>, а <code>history</code> отброшена и <code>tokens &lt;= budget</code>; при бюджете на один слой остаётся только <code>system</code>; <code>compact_history</code> оставляет свежие сообщения.</p><pre><code>pytest code -q                 # красное → реализуй три функции → зелёное
-python code/context_engine.py  # демо: что влезло в бюджет 60, что отброшено</code></pre><p><strong>Подсказка.</strong> Сортировка по приоритету: <code>sorted(layers, key=lambda l: l["priority"], reverse=True)</code>. Жадно копи <code>used</code> и сравнивай с <code>budget</code> перед добавлением. Для <code>compact_history</code> хватит среза <code>history[-max_items:]</code> (но отдельно обработай отрицательный <code>max_items</code>).</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>Контекст-инжиниринг связывает в одно RAG, память и стоимость (мульти-провайдер):</p><ul><li><strong>RAG вместо «всего корпуса»</strong> — кладём топ-<code>k</code> релевантных кусков (Фаза 3), а не весь документ.</li><li><strong>Память — выборочно</strong> — подмешиваем релевантные записи (4.2), а не всю переписку.</li><li><strong>История — компакция</strong> — старые сообщения режем или резюмируем (3.1), оставляя свежие и итоги.</li><li><strong>Инструменты тоже едят контекст</strong> — держи 3–5 ключевых всегда, остальное подгружай по запросу (как скиллы в 4.1).</li><li><strong>Стоимость</strong> — каждый слой считаем <code>prompt-token-budgeter</code> (1.1): меньше токенов → дешевле и быстрее (FinOps, Фаза 9).</li></ul><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Политика управления контекстом → <a href="#f-phases-04-skills-memory-projects-04-context-engineering-outputs-context-policy-md"><code>outputs/context-policy.md</code></a></p><p>Готовая политика: приоритеты слоёв, правила компакции, бюджеты под задачу. Это итог Фазы 4 — <strong>слой персистентности</strong> (skills + memory + projects + context), на котором в Фазе 7 встанут агенты.</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>«Больше контекста = лучше».</strong> Наоборот: лишние токены тратят бюджет внимания и роняют точность припоминания (context rot). Цель — наименьший набор высокосигнальных токенов.</li><li><strong>Собирать по порядку прихода, а не по приоритету.</strong> Тогда старая история может вытеснить system prompt или свежий RAG. Сортируй по важности, режь снизу.</li><li><strong>Путать prompt engineering и context engineering.</strong> Первый — какие слова в одном запросе; второй — какая конфигурация контекста (слои, бюджет, компакция) держится через всю сессию.</li><li><strong>Не сжимать историю.</strong> Диалог растёт бесконечно; без <code>compact_history</code> (или резюме) окно переполнится и подорожает. Оставляй свежее и итоги.</li><li><strong>Считать <code>estimate_tokens</code> = словам в проде.</strong> Это учебная оценка; для денег и лимитов считай реальным токенайзером модели (1.1).</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="4.4"></div><p>Хочешь квиз по всей фазе — спроси агента: <code>/check-understanding 4</code>.</p><h2>Дополнительное чтение</h2><ul><li><a href="https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents" target="_blank" rel="noopener">Anthropic — Effective context engineering for AI agents</a> — context rot, бюджет внимания, стратегии.</li><li><a href="https://platform.claude.com/docs/en/docs/build-with-claude/prompt-engineering/long-context-tips" target="_blank" rel="noopener">Anthropic — Long context prompting tips</a> — порядок данных в окне.</li><li><a href="https://platform.claude.com/docs/en/about-claude/models/overview" target="_blank" rel="noopener">Anthropic — Claude models overview</a> — размеры контекстных окон по моделям.</li><li><a href="https://platform.claude.com/docs/en/build-with-claude/compaction" target="_blank" rel="noopener">Anthropic — Compaction</a> — серверная суммаризация старого контекста (ровно компакция, которую урок собирает).</li><li><a href="https://www.langchain.com/blog/context-engineering-for-agents" target="_blank" rel="noopener">LangChain — Context Engineering for Agents</a> — рамка write / select / compress / isolate контекста.</li><li><a href="https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus" target="_blank" rel="noopener">Manus — Context Engineering: Lessons from Building Manus (2025)</a> — глубокий разбор из прода: KV-cache, файловая система как контекст.</li><li><a href="https://www.philschmid.de/context-engineering" target="_blank" rel="noopener">Philipp Schmid — The New Skill in AI is Context Engineering</a> — почему контекст важнее «промпта», с примерами.</li><li><a href="https://www.dbreunig.com/2025/06/22/how-contexts-fail-and-how-to-fix-them.html" target="_blank" rel="noopener">Drew Breunig — How Long Contexts Fail (2025)</a> — таксономия отказов: poisoning / distraction / confusion / clash.</li><li><a href="https://arxiv.org/abs/2507.13334" target="_blank" rel="noopener">Mei et al., 2025 — A Survey of Context Engineering for LLMs</a> — систематический обзор дисциплины context engineering.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Если делегируешь ИИ, реши, что отдаёшь; опиши задачу и критерии; проверь результат; сохрани ответственность за итог.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-04-skills-memory-projects-04-context-engineering-code-test-context-engine-py" open data-test="1"><summary><span class="fname">code/test_context_engine.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from context_engine import estimate_tokens, assemble, compact_history
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 4.4 · Контекст-инжиниринг</h1><p><strong>Фаза 4 — Скиллы, память и проекты</strong> · <strong>Результат фазы:</strong> Упаковывать способности в SKILL.md, хранить контекст в памяти и собирать рабочие проекты.</p><p><strong>Результат урока:</strong> ты сможешь для одного запроса собрать проверяемый план контекста: отделить обязательные элементы от необязательных, выбрать релевантные знания, память, историю и инструменты, уложиться в бюджет, объяснить каждое исключение и проверить, что важные ограничения не потерялись.</p><p><strong>Опоры:</strong> токены и их стоимость (1.1), контекстное окно (1.2), RAG (Фаза 3), скиллы, память и контракт проекта (4.1–4.3). Платный API и сеть для обязательной практики не нужны.</p><p>В 4.3 мы собрали blueprint проекта и приёмочные сценарии. Но наличие правильных инструкций и документов ещё не означает, что модель увидит правильный набор данных в конкретном вызове. В этом уроке превратим содержимое проекта в явную политику сборки контекста. В 4.5 эту политику сможет применять агентный рантайм — именно следующий урок завершит фазу.</p><blockquote><strong>MOTTO.</strong> Хороший контекст — не самый большой, а достаточный и проверяемый.</blockquote><h2>PROBLEM</h2><p>Представь проект помощника по возвратам. В нём лежат:</p><ul><li>действующая политика <code>v2</code>: возврат возможен в течение 30 дней;</li><li>архивная политика <code>v1</code>: возврат возможен в течение 14 дней;</li><li>память о том, что пользователь предпочитает краткие таблицы;</li><li>длинная история обсуждения;</li><li>описания доступных инструментов;</li><li>текущий вопрос: «Какой сейчас срок возврата товара?»</li></ul><p>Все эти материалы могут физически поместиться в окно, но это ещё не делает их одинаково полезными. Если без разбора передать обе политики, модель увидит конфликтующие сроки. Если сохранить только последние сообщения, можно потерять раннее решение «использовать только действующую версию». Если положить описания всех инструментов, они займут место, хотя для ответа инструмент вообще не нужен.</p><p>Проблема поэтому не сводится к длине. Нужно решить:</p><ol><li>что модель <strong>обязана</strong> увидеть;</li><li>что полезно именно для <strong>текущей задачи</strong>;</li><li>что можно сжать или исключить;</li><li>как заметить, что важное исчезло.</li></ol><p>Это и есть контекст-инжиниринг: проектирование информации, которую модель получает для выполнения конкретной задачи, и проверка того, что эта информация достаточна.</p><h2>CONCEPT</h2><h3>От проекта к одному вызову модели</h3><p>Сначала разведём три похожих понятия.</p><ul><li><strong>Источник</strong> — место, где хранится информация: инструкции проекта, RAG-индекс, память, история разговора, описание инструмента.</li><li><strong>Кандидат контекста</strong> — отдельный фрагмент, который можно передать модели: конкретная инструкция, один найденный документ, одно решение из памяти или одно сообщение.</li><li><strong>Контекст вызова</strong> — только те кандидаты, которые действительно отправлены модели вместе с текущим запросом.</li></ul><p>Проект может содержать сотни источников, но контекст одного вызова собирается из отдельных кандидатов. Поэтому неверно назначать вечный порядок целым слоям вроде <code>RAG &gt; memory &gt; history</code>: полезность определяется содержанием фрагмента и текущей задачей, а не названием хранилища.</p><h3>Обязательность и релевантность — разные решения</h3><p>Для учебной модели каждому кандидату зададим пять полей:</p><table><thead><tr><th>Поле</th><th>Вопрос</th></tr></thead><tbody><tr><td><code>id</code></td><td>Как однозначно назвать элемент в отчёте?</td></tr><tr><td><code>source</code></td><td>Откуда он пришёл: <code>project</code>, <code>user</code>, <code>rag</code>, <code>memory</code>, <code>history</code>, <code>tool</code>?</td></tr><tr><td><code>content</code></td><td>Что именно увидит модель?</td></tr><tr><td><code>required</code></td><td>Можно ли выполнить задачу корректно, если этот элемент исчезнет?</td></tr><tr><td><code>relevance</code></td><td>Насколько необязательный элемент полезен для текущего запроса?</td></tr></tbody></table><p><code>required=True</code> — это не «кажется важным», а обещание: планировщик не имеет права молча выбросить элемент. В нашем примере обязательны действующие инструкции проекта и текущий запрос пользователя. Если они сами не помещаются, правильное поведение — остановиться и показать ошибку, а не продолжить с повреждённым контекстом.</p><p><code>relevance</code> используется только для выбора среди необязательных кандидатов. Действующая политика <code>v2</code> получает высокую релевантность, предпочтение формата — среднюю, архивная <code>v1</code> — нулевую. В другой задаче оценки будут другими: если пользователь просит сравнить версии, архивный документ снова станет релевантным.</p><blockquote><strong>Важная граница.</strong> <code>source</code> нужен для происхождения и проверки, но сам по себе не задаёт ценность. Найденный RAG-фрагмент не становится важнее памяти только потому, что пришёл из RAG. И текст внутри документа остаётся данными, а не получает право отменять инструкции проекта.</blockquote><h3>Бюджет включает место под ответ</h3><p>В учебном планировщике используем простую модель:</p><pre><code>общий бюджет = бюджет входного контекста + резерв под ответ
+
+входной контекст =
+    обязательные элементы
+  + выбранные релевантные элементы</code></pre><p>Сначала резервируем место под будущий ответ. Затем проверяем, помещаются ли обязательные элементы. Только после этого добавляем необязательные по убыванию релевантности.</p><p>Код считает не токены модели, а <strong>учебные единицы</strong> — слова. Это намеренное упрощение для офлайн-практики. В рабочем приложении тот же порядок решений сохраняется, но размер измеряется токенайзером выбранной модели из 1.1.</p><h3>Keep, compact, drop</h3><p>У кандидата есть три возможные судьбы:</p><ul><li><strong>Keep</strong> — передать без изменений, если формулировка уже короткая и существенная.</li><li><strong>Compact</strong> — сохранить смысл в более короткой форме: например, заменить старую историю резюме решений и добавить несколько последних сообщений.</li><li><strong>Drop</strong> — не передавать, если элемент не относится к задаче, устарел, дублируется или не помещается после более важных кандидатов.</li></ul><p>Компакция и обрезка — не одно и то же. Обрезка «оставить последние два сообщения» может уничтожить раннее решение. Компакция сначала сохраняет это решение в резюме, а затем добавляет свежий хвост:</p><pre><code>полная история:
+  1. решили использовать только действующую политику
+  2. выбрали табличный формат
+  3. проверили черновик
+  4. пользователь уточнил вопрос
+
+компактный вид:
+  summary: «Используем только действующую политику; ответ даём таблицей»
+  recent:  «проверили черновик», «пользователь уточнил вопрос»</code></pre><p>Резюме тоже может ошибаться. Поэтому его качество нельзя доказывать одним уменьшением размера: после компакции нужно повторить приёмочные сценарии и убедиться, что ограничения, решения и открытые вопросы сохранились.</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Для проекта возвратов зададим общий учебный бюджет <code>30</code> единиц и зарезервируем <code>6</code> под ответ. На вход остаётся <code>24</code>.</p><table><thead><tr><th>Кандидат</th><th>Источник</th><th>Required</th><th>Relevance</th><th>Решение</th></tr></thead><tbody><tr><td>Отвечать только по действующей политике</td><td>project</td><td>да</td><td>—</td><td>keep</td></tr><tr><td>«Какой сейчас срок возврата?»</td><td>user</td><td>да</td><td>—</td><td>keep</td></tr><tr><td>Политика <code>v2</code>: 30 дней</td><td>rag</td><td>нет</td><td>3</td><td>keep</td></tr><tr><td>Пользователь предпочитает краткий ответ</td><td>memory</td><td>нет</td><td>2</td><td>keep, если помещается</td></tr><tr><td>Резюме старого обсуждения</td><td>history</td><td>нет</td><td>1</td><td>drop при нехватке бюджета</td></tr><tr><td>Архивная политика <code>v1</code>: 14 дней</td><td>rag</td><td>нет</td><td>0</td><td>drop: не относится к текущему состоянию</td></tr><tr><td>Описания всех инструментов</td><td>tool</td><td>нет</td><td>0</td><td>drop: инструменты для ответа не нужны</td></tr></tbody></table><p>Перед тем как читать дальше, спрогнозируй результат: должна ли <code>v1</code> попасть в контекст только потому, что это RAG-фрагмент?</p><p>Нет. Планировщик сначала сохраняет инструкции и текущий запрос. Затем добавляет <code>v2</code> и релевантное предпочтение формата. Архивная <code>v1</code> получает причину <code>not_relevant</code>, а резюме истории может получить <code>budget</code>. Для каждого исключения остаётся запись в manifest — отчёте о том, что вошло, что не вошло и почему.</p><p>Если задача изменится на «сравни старую и новую политики», мы не переписываем универсальную иерархию слоёв. Мы меняем оценку конкретного кандидата <code>v1</code>, потому что теперь он нужен для результата.</p><h2>BUILD IT</h2><p><strong>Задание: собери проверяемый планировщик контекста</strong> — учебный движок, который резервирует место под ответ, не теряет обязательное молча, выбирает релевантные элементы и возвращает manifest решений. Только стандартная библиотека, без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/4.4-context/</code>), а файлы урока клади в подпапку <code>code/</code>. Нужен Python 3, для тестов — <code>pytest</code>.</blockquote><p>Создай файл <code>context_engine.py</code> с тремя функциями:</p><ul><li><strong><code>estimate_units(text)</code></strong> — вернуть число слов. Называй результат учебными единицами, а не токенами модели.</li><li><strong><code>compact_history(history, summary, keep_recent=2)</code></strong> — вернуть <code>{"summary", "recent", "omitted"}</code>. <code>recent</code> содержит последние <code>keep_recent</code> сообщений, <code>omitted</code> — число исключённых старых сообщений. Если старые сообщения исключаются, а <code>summary</code> пуст, выбросить <code>ValueError</code>: это защита от молчаливой обрезки.</li><li><strong><code>plan_context(items, budget, reserve=0)</code></strong> — принять кандидатов с полями <code>id</code>, <code>source</code>, <code>content</code>, <code>required</code>, <code>relevance</code>; зарезервировать <code>reserve</code>; сначала сохранить все обязательные элементы, затем необязательные по убыванию <code>relevance</code>. Элементы с <code>relevance &lt;= 0</code> исключать с причиной <code>not_relevant</code>, не поместившиеся — с причиной <code>budget</code>. Если обязательная часть превышает входной бюджет, выбросить <code>ValueError</code>. Вернуть <code>kept</code>, <code>dropped</code>, <code>used_units</code>, <code>input_budget_units</code>, <code>reserve_units</code>.</li></ul><p><strong>Готово, когда</strong> тесты подтверждают предметное поведение, а не только запуск:</p><ul><li>инструкции и текущий запрос нельзя молча выбросить;</li><li>релевантная память может попасть в контекст, а нерелевантный RAG-фрагмент — нет;</li><li>переполнение обязательной части останавливает сборку;</li><li>manifest показывает бюджет и причины исключений;</li><li>компакция сохраняет резюме и свежие сообщения;</li><li>попытка просто обрезать старую историю без резюме завершается ошибкой.</li></ul><pre><code>pytest code -q                 # красное → реализуй три функции → зелёное
+python code/context_engine.py  # manifest для проекта возвратов</code></pre><p><strong>Подсказка.</strong> Сначала отдели <code>required</code> от остальных кандидатов. Проверь их суммарный размер до выбора необязательной части. Сортируй необязательные элементы по <code>relevance</code>, но не используй <code>source</code> как скрытый приоритет.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение и тесты-ТЗ.</p><h3>Как применить 4D</h3><ul><li><strong>Delegation:</strong> можно поручить ИИ написать реализацию по тестам или подготовить черновик резюме истории.</li><li><strong>Description:</strong> передай точный контракт полей, бюджет, причины исключения и поведение при переполнении.</li><li><strong>Discernment:</strong> проверь, не превратил ли ИИ тип источника в универсальную важность и не назвал ли обрезку компакцией.</li><li><strong>Diligence:</strong> запусти тесты, прочитай manifest и повтори приёмочные сценарии после изменения политики.</li></ul><h2>USE IT</h2><p>Примени планировщик к blueprint из 4.3. Выпиши кандидатов не «вообще для проекта», а для одного конкретного запроса. Повтори пять уже знакомых приёмочных сценариев и добавь шестой для новой проблемы этого урока — длинной истории:</p><table><thead><tr><th>Сценарий</th><th>Что должна доказать политика контекста</th></tr></thead><tbody><tr><td>Действующий факт</td><td><code>v2</code> сохранена, архивная <code>v1</code> не создаёт конфликт</td></tr><tr><td>Пробел в знаниях</td><td>контекст не подменяет отсутствие источника похожими фактами или памятью</td></tr><tr><td>Старая версия</td><td><code>v2</code> сохранена; статус <code>v1</code> виден и не превращается в действующее правило</td></tr><tr><td>Попытка сменить правило</td><td>проектные инструкции и текущий запрос остаются обязательными; вход пользователя не меняет политику</td></tr><tr><td>Запрос вне границ проекта</td><td>scope и текущий запрос сохранены, нерелевантные знания не маскируют выход за границы</td></tr><tr><td>Длинная история</td><td>после компакции сохранились решения, ограничения и открытый вопрос</td></tr></tbody></table><p>В реальном инструменте кандидаты могут подгружаться динамически: retrieval возвращает несколько документов, память ищет записи по задаче, а описания инструментов появляются только при необходимости. Названия API различаются, но проверяемый контракт остаётся тем же: <strong>почему элемент включён, сколько места занял, что исключено и выдержал ли результат сценарии</strong>.</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> проверенная политика управления контекстом → <a href="#f-phases-04-skills-memory-projects-04-context-engineering-outputs-context-policy-md"><code>outputs/context-policy.md</code></a></p><p>Политика готова к передаче, если другой человек может по ней:</p><ol><li>определить обязательные элементы для конкретного запроса;</li><li>объяснить выбор каждого необязательного кандидата;</li><li>увидеть резерв под ответ и поведение при переполнении;</li><li>отличить компакцию от молчаливой обрезки;</li><li>повторить пять сценариев из 4.3 и новый сценарий длинной истории.</li></ol><p>Сохрани рядом хотя бы один manifest реального прогона. В 4.5 он станет наблюдаемым входом агентного рантайма: перед вызовом модели будет видно, какой контекст рантайм собрал и что оставил за пределами окна.</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Назначить вечный приоритет целому источнику.</strong> «RAG всегда важнее памяти» не работает: сравнивай отдельные кандидаты относительно текущей задачи.</li><li><strong>Забыть текущий запрос.</strong> Без него остаётся много знаний, но исчезает действие, которое должна выполнить модель.</li><li><strong>Назвать обрезку компакцией.</strong> Последние сообщения не заменяют резюме решений, ограничений и незакрытых вопросов.</li><li><strong>Заполнить всё доступное окно.</strong> Резерв под ответ и место для результатов инструментов должны планироваться до сборки.</li><li><strong>Молча выбросить обязательное.</strong> Если обязательная часть не помещается, остановись и измени политику, сократи инструкции осознанно или выбери подходящее окно.</li><li><strong>Считать слова токенами.</strong> <code>estimate_units</code> — учебная мера; реальные лимиты и стоимость проверяются токенайзером выбранной модели.</li><li><strong>Проверить только размер.</strong> Контекст может помещаться и всё равно давать неверный ответ из-за устаревшего, конфликтующего или потерянного элемента.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="4.4"></div><p>Хочешь квиз по всей фазе — спроси агента: <code>/check-understanding 4</code>.</p><h2>Дополнительное чтение</h2><p>Это факультативные маршруты, а не продолжение обязательной части. Читать всё не нужно: для быстрого старта выбери одну статью из первой ветки; остальные открывай под конкретный интерес.</p><h3>Базовая модель</h3><ul><li><a href="https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents" target="_blank" rel="noopener">Anthropic — Effective context engineering for AI agents</a> — начни с разделов <strong>The anatomy of effective context</strong>, <strong>Context retrieval</strong> и <strong>Compaction</strong>: они связывают выбор кандидатов, загрузку по требованию и сохранение существенного состояния.</li><li><a href="https://www.langchain.com/blog/context-engineering-for-agents" target="_blank" rel="noopener">LangChain — Context Engineering for Agents</a> — открой рамку <strong>write / select / compress / isolate</strong>, а затем <strong>Context Summarization</strong> и <strong>Context Trimming</strong>: удобный словарь для сравнения с <code>keep / compact / drop</code> из урока.</li></ul><h3>Compaction и управление историей</h3><ul><li><a href="https://platform.claude.com/docs/en/build-with-claude/compaction" target="_blank" rel="noopener">Anthropic — Compaction</a> — официальный механизм серверной суммаризации при приближении к порогу окна; сравни его с учебной функцией, которая не создаёт summary, а проверяет уже подготовленное резюме и свежий хвост.</li><li><a href="https://openai.github.io/openai-agents-python/sessions/" target="_blank" rel="noopener">OpenAI Agents SDK — Sessions</a> — смотри <strong>Control how history and new input merge</strong>, <strong>Limiting retrieved history</strong> и <strong>OpenAI Responses compaction sessions</strong>: на одном API видно различие между выборкой последних сообщений, фильтрацией и настоящей compaction.</li><li><a href="https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices#long-context-prompting" target="_blank" rel="noopener">Anthropic — Long context prompting</a> — конкретные рекомендации по размещению длинных документов, запроса и цитат внутри уже выбранного контекста; это провайдерская ветка после общей политики урока.</li></ul><h3>Ошибки и проверка качества</h3><ul><li><a href="https://arxiv.org/abs/2307.03172" target="_blank" rel="noopener">Liu et al. — Lost in the Middle: How Language Models Use Long Contexts</a> — первичное исследование: качество зависит не только от длины, но и от положения нужной информации; полезно для проектирования сценариев, а не для правила «короче всегда лучше».</li><li><a href="https://www.dbreunig.com/2025/06/22/how-contexts-fail-and-how-to-fix-them.html" target="_blank" rel="noopener">Drew Breunig — How Long Contexts Fail</a> — таксономия <strong>poisoning / distraction / confusion / clash</strong> и способы диагностики; используй её, когда manifest выглядит разумно, а поведенческий сценарий всё равно падает.</li></ul><h3>Продакшен и исследовательское углубление</h3><ul><li><a href="https://manus.im/blog/Context-Engineering-for-AI-Agents-Lessons-from-Building-Manus" target="_blank" rel="noopener">Manus — Context Engineering for AI Agents: Lessons from Building Manus</a> — разделы <strong>Design Around the KV-Cache</strong> и <strong>Use the File System as Context</strong> показывают влияние стабильного префикса, кэша и загрузки по требованию; это опыт одной системы, а не универсальный порядок слоёв.</li><li><a href="https://arxiv.org/abs/2507.13334" target="_blank" rel="noopener">Mei et al. — A Survey of Context Engineering for Large Language Models</a> — исследовательский горизонт на 166 страниц: используй оглавление и разделы про retrieval, processing и management как карту дисциплины, а не как обязательное чтение целиком.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Если делегируешь ИИ, реши, что отдаёшь; опиши задачу и критерии; проверь результат; сохрани ответственность за итог.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-04-skills-memory-projects-04-context-engineering-code-test-context-engine-py" open data-test="1"><summary><span class="fname">code/test_context_engine.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>import pytest
+
+from context_engine import compact_history, estimate_units, plan_context
 
 
-def _layers():
-    w = lambda n: " ".join(["w"] * n)
-    return [
-        {"name": "system", "content": w(20), "priority": 4},
-        {"name": "rag", "content": w(30), "priority": 3},
-        {"name": "memory", "content": w(20), "priority": 2},
-        {"name": "history", "content": w(40), "priority": 1},
+def item(item_id, source, content, *, required=False, relevance=0):
+    return {
+        "id": item_id,
+        "source": source,
+        "content": content,
+        "required": required,
+        "relevance": relevance,
+    }
+
+
+def test_estimate_units_counts_words_without_calling_them_tokens():
+    assert estimate_units("раз два три") == 3
+
+
+def test_required_instructions_and_current_request_are_never_silently_dropped():
+    items = [
+        item("instructions", "project", "следуй действующей политике", required=True),
+        item("request", "user", "какой срок возврата", required=True),
+        item("large-rag", "rag", "слово " * 20, relevance=3),
     ]
 
+    result = plan_context(items, budget=10, reserve=3)
 
-def test_estimate_tokens_counts_words():
-    assert estimate_tokens("раз два три") == 3
-
-
-def test_assemble_keeps_all_when_fits():
-    res = assemble(_layers(), budget=1000)
-    assert {l["name"] for l in res["kept"]} == {"system", "rag", "memory", "history"}
-    assert res["dropped"] == []
+    assert [entry["id"] for entry in result["kept"]] == ["instructions", "request"]
+    assert result["dropped"][0]["id"] == "large-rag"
+    assert result["dropped"][0]["reason"] == "budget"
 
 
-def test_assemble_drops_low_priority_to_fit():
-    res = assemble(_layers(), budget=60)        # system(20)+rag(30)+memory? 50+20=70&gt;60
-    kept = {l["name"] for l in res["kept"]}
-    assert "system" in kept and "rag" in kept   # высокий приоритет сохранён
-    assert "history" not in kept                # самый низкий отброшен
-    assert res["tokens"] &lt;= 60
+def test_relevance_belongs_to_an_item_not_to_its_source_layer():
+    items = [
+        item("request", "user", "подготовь краткую таблицу", required=True),
+        item("useful-memory", "memory", "покажи ответ таблицей", relevance=3),
+        item("archived-rag", "rag", "архивная версия правил", relevance=0),
+    ]
+
+    result = plan_context(items, budget=8)
+
+    assert [entry["id"] for entry in result["kept"]] == ["request", "useful-memory"]
+    assert result["dropped"][0]["id"] == "archived-rag"
+    assert result["dropped"][0]["reason"] == "not_relevant"
 
 
-def test_assemble_respects_priority_order():
-    # бюджета хватает только на самый важный слой
-    res = assemble(_layers(), budget=20)
-    assert [l["name"] for l in res["kept"]] == ["system"]
+def test_required_context_overflow_stops_instead_of_hiding_the_failure():
+    items = [
+        item("instructions", "project", "один два три четыре", required=True),
+        item("request", "user", "пять шесть семь", required=True),
+    ]
+
+    with pytest.raises(ValueError, match="required context"):
+        plan_context(items, budget=8, reserve=2)
 
 
-def test_compact_history_keeps_recent():
-    assert compact_history(["m1", "m2", "m3", "m4"], 2) == ["m3", "m4"]
-    assert compact_history(["m1"], 5) == ["m1"]
-</code></pre></details><h3>Эталонное решение</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-04-skills-memory-projects-04-context-engineering-code-context-engine-py"><summary><span class="fname">code/context_engine.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Контекст-инжиниринг: сборка и компакция контекста — Build It для урока 4.4.
+def test_manifest_explains_budget_and_reserves_space_for_the_answer():
+    items = [
+        item("request", "user", "раз два", required=True),
+        item("fact-a", "rag", "три четыре пять", relevance=3),
+        item("fact-b", "memory", "шесть семь восемь", relevance=2),
+    ]
 
-Без зависимостей. Контекстное окно конечно (урок 1.2): собираем слои (system,
-память, RAG, история) по приоритету и при нехватке бюджета отбрасываем наименее
-важное (компакция). Это политика «что и в каком порядке кладём в окно».
+    result = plan_context(items, budget=8, reserve=2)
+
+    assert result["input_budget_units"] == 6
+    assert result["reserve_units"] == 2
+    assert result["used_units"] == 5
+    assert [entry["id"] for entry in result["kept"]] == ["request", "fact-a"]
+    assert result["dropped"][0]["reason"] == "budget"
+
+
+def test_compaction_keeps_a_summary_and_recent_messages():
+    result = compact_history(
+        ["решили формат", "выбрали источник", "проверили ответ", "спасибо"],
+        summary="Решили использовать действующий источник.",
+        keep_recent=2,
+    )
+
+    assert result == {
+        "summary": "Решили использовать действующий источник.",
+        "recent": ["проверили ответ", "спасибо"],
+        "omitted": 2,
+    }
+
+
+def test_compaction_refuses_silent_truncation():
+    with pytest.raises(ValueError, match="summary"):
+        compact_history(["важное решение", "новое сообщение"], summary="", keep_recent=1)
+</code></pre></details><h3>Эталонное решение</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-04-skills-memory-projects-04-context-engineering-code-context-engine-py"><summary><span class="fname">code/context_engine.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Проверяемый план контекста — Build It для урока 4.4.
+
+Без зависимостей и вызовов модели. Код не изображает «идеальный» context
+engineering: человек или приложение заранее решает, что обязательно и насколько
+каждый необязательный элемент релевантен текущей задаче. Планировщик делает это
+решение наблюдаемым: считает учебные единицы, соблюдает бюджет и объясняет потери.
 """
 
 
-def estimate_tokens(text):
-    """Грубая оценка токенов ≈ число слов (учебно; реально — токенайзером, урок 1.1)."""
+def estimate_units(text):
+    """Вернуть число слов как учебную единицу бюджета, но не как число токенов."""
     return len(text.split())
 
 
-def assemble(layers, budget):
-    """Собрать контекст под бюджет токенов.
+def compact_history(history, summary, keep_recent=2):
+    """Соединить резюме старой истории с несколькими последними сообщениями.
 
-    layers: [{name, content, priority}] — priority больше = важнее.
-    Возвращает {kept, dropped, tokens}: берём по убыванию приоритета, пока влезает.
+    Функция не создаёт резюме: его готовит человек или модель. Если старые
+    сообщения будут исключены, пустое резюме запрещено — так важное не исчезает
+    молча.
     """
-    ordered = sorted(layers, key=lambda layer: layer["priority"], reverse=True)
-    kept, dropped, used = [], [], 0
-    for layer in ordered:
-        cost = estimate_tokens(layer["content"])
-        if used + cost &lt;= budget:
-            kept.append(layer)
-            used += cost
+    if keep_recent &lt; 0:
+        raise ValueError("keep_recent must be non-negative")
+
+    recent = list(history[-keep_recent:]) if keep_recent else []
+    omitted = len(history) - len(recent)
+    clean_summary = summary.strip()
+    if omitted and not clean_summary:
+        raise ValueError("summary is required when older history is omitted")
+
+    return {
+        "summary": clean_summary,
+        "recent": recent,
+        "omitted": omitted,
+    }
+
+
+def plan_context(items, budget, reserve=0):
+    """Собрать проверяемый план контекста для одного вызова модели.
+
+    items: список словарей с полями id, source, content, required, relevance.
+    required=True означает «нельзя молча исключить». relevance оценивается для
+    текущей задачи: 0 — не относится к ней, большее значение — полезнее.
+
+    budget — общий учебный бюджет, reserve — часть под будущий ответ.
+    Возвращается manifest с kept/dropped и причиной каждого исключения.
+    """
+    if budget &lt; 0 or reserve &lt; 0 or reserve &gt; budget:
+        raise ValueError("budget and reserve must satisfy 0 &lt;= reserve &lt;= budget")
+
+    input_budget = budget - reserve
+    required = [item for item in items if item.get("required", False)]
+    optional = [item for item in items if not item.get("required", False)]
+    optional = sorted(optional, key=lambda item: item.get("relevance", 0), reverse=True)
+
+    required_cost = sum(estimate_units(item["content"]) for item in required)
+    if required_cost &gt; input_budget:
+        raise ValueError("required context exceeds the input budget")
+
+    kept = [_manifest_entry(item) for item in required]
+    dropped = []
+    used = required_cost
+
+    for item in optional:
+        entry = _manifest_entry(item)
+        if item.get("relevance", 0) &lt;= 0:
+            entry["reason"] = "not_relevant"
+            dropped.append(entry)
+        elif used + entry["units"] &lt;= input_budget:
+            kept.append(entry)
+            used += entry["units"]
         else:
-            dropped.append(layer)
-    return {"kept": kept, "dropped": dropped, "tokens": used}
+            entry["reason"] = "budget"
+            dropped.append(entry)
+
+    return {
+        "kept": kept,
+        "dropped": dropped,
+        "used_units": used,
+        "input_budget_units": input_budget,
+        "reserve_units": reserve,
+    }
 
 
-def compact_history(history, max_items):
-    """Оставить последние max_items сообщений (старое «забываем»)."""
-    if max_items &lt; 0:
-        return list(history)
-    return history[-max_items:]
-
-
-def _words(n, tag="w"):
-    return " ".join([tag] * n)
+def _manifest_entry(item):
+    """Оставить в manifest только поля, нужные для проверки решения."""
+    return {
+        "id": item["id"],
+        "source": item["source"],
+        "content": item["content"],
+        "required": item.get("required", False),
+        "relevance": item.get("relevance", 0),
+        "units": estimate_units(item["content"]),
+    }
 
 
 if __name__ == "__main__":
-    layers = [
-        {"name": "system", "content": _words(20), "priority": 4},
-        {"name": "rag", "content": _words(30), "priority": 3},
-        {"name": "memory", "content": _words(20), "priority": 2},
-        {"name": "history", "content": _words(40), "priority": 1},
+    history = compact_history(
+        ["Обсудили формат.", "Выбрали таблицу.", "Проверили черновик."],
+        summary="Решение: показать итог таблицей.",
+        keep_recent=1,
+    )
+    history_text = " ".join([history["summary"], *history["recent"]])
+
+    candidates = [
+        {
+            "id": "instructions",
+            "source": "project",
+            "content": "Отвечай только по действующей политике.",
+            "required": True,
+            "relevance": 3,
+        },
+        {
+            "id": "request",
+            "source": "user",
+            "content": "Какой сейчас срок возврата товара?",
+            "required": True,
+            "relevance": 3,
+        },
+        {
+            "id": "policy-v2",
+            "source": "rag",
+            "content": "Действующая политика: возврат возможен в течение тридцати дней.",
+            "required": False,
+            "relevance": 3,
+        },
+        {
+            "id": "format-preference",
+            "source": "memory",
+            "content": "Пользователь предпочитает краткий ответ.",
+            "required": False,
+            "relevance": 2,
+        },
+        {
+            "id": "history-summary",
+            "source": "history",
+            "content": history_text,
+            "required": False,
+            "relevance": 1,
+        },
+        {
+            "id": "policy-v1",
+            "source": "rag",
+            "content": "Архивная политика: возврат возможен в течение четырнадцати дней.",
+            "required": False,
+            "relevance": 0,
+        },
     ]
-    res = assemble(layers, budget=60)
-    print("Влезло:", [l["name"] for l in res["kept"]], "| токенов:", res["tokens"])
-    print("Отброшено:", [l["name"] for l in res["dropped"]])
-    print("История (last 2):", compact_history(["m1", "m2", "m3", "m4"], 2))
-</code></pre></details><h3>Артефакт</h3><details class="filebox" id="f-phases-04-skills-memory-projects-04-context-engineering-outputs-context-policy-md" open><summary><span class="fname">outputs/context-policy.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: политика управления контекстом
 
-Что и в каком порядке класть в контекстное окно при ограниченном бюджете. Движок — [`code/context_engine.py`](../code/context_engine.py).
+    result = plan_context(candidates, budget=30, reserve=6)
+    print("В контексте:", [item["id"] for item in result["kept"]])
+    print("Исключено:", [(item["id"], item["reason"]) for item in result["dropped"]])
+    print(
+        "Бюджет:",
+        result["used_units"],
+        "/",
+        result["input_budget_units"],
+        "+ резерв",
+        result["reserve_units"],
+    )
+</code></pre></details><h3>Артефакт</h3><details class="filebox" id="f-phases-04-skills-memory-projects-04-context-engineering-outputs-context-policy-md" open><summary><span class="fname">outputs/context-policy.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: проверенная политика управления контекстом
 
-## Приоритеты слоёв (сверху — важнее)
+Политика для проекта «Помощник по возвратам». Она описывает не всё содержимое проекта, а правила сборки контекста для одного вызова модели. Учебный планировщик — [`code/context_engine.py`](../code/context_engine.py).
 
-| Приоритет | Слой | Что входит | Как компактим |
-|---|---|---|---|
-| 4 | **system** | роль, правила, формат | держим всегда; коротко |
-| 3 | **RAG** | top-k релевантных кусков | меньше k, выше порог релевантности |
-| 2 | **память** | релевантные записи (4.2) | только по теме, не всю историю |
-| 1 | **история** | прошлые сообщения | `compact_history`: последние N |
+## 1. Задача и граница
 
-## Алгоритм сборки
+**Основной запрос:** ответить на вопрос пользователя по действующей политике возвратов.
 
-```python
-from context_engine import assemble, compact_history
-layers = [
-  {"name": "system",  "content": SYSTEM,           "priority": 4},
-  {"name": "rag",     "content": retrieved,        "priority": 3},
-  {"name": "memory",  "content": mem_snippets,     "priority": 2},
-  {"name": "history", "content": "\n".join(compact_history(hist, 6)), "priority": 1},
-]
-res = assemble(layers, budget=8000)   # влезшее — res["kept"], отброшенное — res["dropped"]
+**Успешный результат:** ответ опирается на актуальную версию политики, не смешивает её с архивной, честно сообщает об отсутствии данных и соблюдает требуемый формат.
+
+**Не входит в эту политику:** поиск документов, генерация резюме моделью и выбор конкретного провайдера. Эти механизмы поставляют кандидатов, а политика решает, что попадёт в один вызов.
+
+## 2. Бюджет
+
+| Параметр | Учебное значение | Правило переноса в рабочую систему |
+|---|---:|---|
+| Общий бюджет | 30 единиц | заменить на доступный бюджет выбранной модели |
+| Резерв под ответ | 6 единиц | задавать до сборки входа |
+| Бюджет входа | 24 единицы | `общий бюджет − резерв` |
+| Единица в упражнении | одно слово | в проде считать токенайзером модели |
+
+Если обязательная часть превышает бюджет входа, сборка останавливается. Политика запрещает молча исключать текущий запрос или действующие инструкции.
+
+## 3. Реестр кандидатов для основного запроса
+
+| ID | Source | Содержание | Required | Relevance | Ожидаемое решение |
+|---|---|---|---:|---:|---|
+| `instructions` | project | отвечать только по действующей политике | да | — | keep |
+| `request` | user | текущий вопрос о сроке возврата | да | — | keep |
+| `policy-v2` | rag | действующая политика: 30 дней | нет | 3 | keep |
+| `format-preference` | memory | пользователь предпочитает краткий ответ | нет | 2 | keep, если помещается |
+| `history-summary` | history | решения и открытые вопросы прошлых сообщений | нет | 1 | keep или drop по бюджету |
+| `policy-v1` | rag | архивная политика: 14 дней | нет | 0 | drop: `not_relevant` |
+| `all-tools` | tool | описания всех доступных инструментов | нет | 0 | drop: `not_relevant` |
+
+`source` используется для происхождения и проверки, но не создаёт универсальный приоритет. Если пользователь попросит сравнить версии, `policy-v1` получит новую релевантность и ожидаемое решение изменится.
+
+## 4. Алгоритм решения
+
+1. Зафиксировать текущую задачу и ожидаемый ответ.
+2. Зарезервировать место под ответ.
+3. Собрать отдельные кандидаты с `id`, `source` и `content`.
+4. Отметить обязательные элементы и проверить, что они помещаются.
+5. Для необязательных элементов оценить релевантность именно текущей задаче.
+6. Добавить релевантные элементы по убыванию оценки, пока хватает бюджета.
+7. Записать для каждого исключённого элемента причину `not_relevant` или `budget`.
+8. Повторить пять сценариев из 4.3 и добавить проверку длинной истории; размер без проверки результата не доказывает качество.
+
+## 5. Политика compaction
+
+История разделяется на:
+
+- **summary:** решения, действующие ограничения, подтверждённые факты и незакрытые вопросы из старой части;
+- **recent:** несколько последних сообщений, нужных для локальной связности;
+- **omitted:** число старых сообщений, заменённых резюме.
+
+Если `omitted &gt; 0`, пустое `summary` запрещено. Это отличает compaction от простой обрезки. После обновления резюме заново прогоняются сценарии «длинная история» и «конфликт версий».
+
+## 6. Поведение при нехватке бюджета
+
+| Ситуация | Действие |
+|---|---|
+| Не помещается необязательный элемент | исключить и записать `budget` |
+| Не помещается обязательная часть | остановить сборку; не вызывать модель с повреждённым контекстом |
+| История слишком длинная | подготовить резюме существенного состояния и сохранить свежий хвост |
+| Найдены дубли | оставить актуальный и достаточный фрагмент, дубли исключить |
+| Источники конфликтуют | не скрывать конфликт; определить действующую версию или запросить уточнение |
+| Данных для ответа нет | не заполнять окно похожими фактами; вернуть честное ограничение |
+
+## 7. Manifest демонстрационного прогона
+
+```text
+kept:
+  instructions       source=project  required=true
+  request            source=user     required=true
+  policy-v2          source=rag      relevance=3
+  format-preference  source=memory   relevance=2
+
+dropped:
+  history-summary    source=history  reason=budget
+  policy-v1          source=rag      reason=not_relevant
+
+budget:
+  used_units=22
+  input_budget_units=24
+  reserve_units=6
 ```
 
-## Правила
+Manifest не доказывает правильность ответа сам по себе. Он делает решение видимым: по нему можно обнаружить неправильную версию документа, потерянное ограничение или необъяснимое исключение.
 
-- **Бюджет считай заранее** (`prompt-token-budgeter`, урок 1.1): сумма слоёв + ответ ≤ окно.
-- **Больше ≠ лучше:** лишний контекст снижает внимание модели («context rot»).
-- **RAG вместо всего корпуса; память — выборочно.** Не дублируй знания в system prompt.
-- **Инструменты тоже занимают контекст** — держи 3–5 ключевых, остальное по запросу.
-- **Режь с низа приоритета**: первой жертвуется старая история, не system prompt.
-- Меньше токенов → дешевле и быстрее (мост к FinOps, Фаза 9).
-</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+## 8. Приёмочные сценарии
+
+| Сценарий | Ожидаемый контекст | Критерий приёмки | Статус |
+|---|---|---|---|
+| Действующая политика | инструкции + запрос + `v2`; без `v1` | ответ: 30 дней, источник не смешан с архивом | пройдено |
+| Пробел: возврат из Казахстана | инструкции + запрос; без похожих нерелевантных фактов | система честно сообщает, что активного источника недостаточно | пройдено |
+| Старая версия в вопросе | инструкции + запрос + `v2`; статус `v1` виден как архивный | ответ: 30 дней, `v1` не становится действующим правилом | пройдено |
+| Попытка сменить правило | проектные инструкции + запрос + `v2` | требование ответить «90 дней» не принимается | пройдено |
+| Вне scope: рекламный слоган | scope + текущий запрос; без нерелевантных документов | система обозначает выход за назначение проекта | пройдено |
+| Длинная история | summary решений + свежие сообщения | действующая версия, ограничения и открытый вопрос не потеряны | пройдено |
+
+## 9. Проверка по 4D
+
+- **Delegation:** реализацию планировщика и черновик summary можно делегировать ИИ.
+- **Description:** в поручении указаны схема кандидатов, бюджет, резерв, причины исключений и поведение при переполнении.
+- **Discernment:** проверено, что тип источника не подменяет релевантность, а truncation не названа compaction.
+- **Diligence:** тесты запущены, manifest прочитан, пять сценариев из 4.3 и длинная история повторены после изменения политики.
+
+## 10. Передача в 4.5
+
+Агентный рантайм должен вызывать политику перед обращением к модели и сохранять manifest рядом с результатом. Для нового проекта меняются кандидаты, бюджет и сценарии, но сохраняются инварианты: обязательное не исчезает молча, источник не равен важности, каждое исключение объяснимо, а качество подтверждается поведением.
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~5 · <strong>DoD:</strong> тесты зелёные; демо печатает manifest; политика содержит бюджет, правила compaction, пять повторных сценариев из 4.3 и проверку длинной истории. ✅ <strong>Урок готов</strong></p></article>
     <div class="nav-prevnext" id="prevnext"><a href="../../lessons/projects-and-workspaces/"><small>← 4.3</small>Проекты и рабочие пространства</a><a href="../../lessons/agent-platforms-openclaw-hermes/" style="text-align:right"><small>4.5 →</small>Агентные платформы: OpenClaw / Hermes</a></div>
   </section>
 
   <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
 
   <script>window.__BASE__="../../";</script>
-  <script src="../../data.js?v=2e0c8105f78c"></script>
-  <script src="../../progress.js?v=2e0c8105f78c"></script>
-  <script src="../../header.js?v=2e0c8105f78c"></script>
-  <script src="../../app.js?v=2e0c8105f78c"></script>
+  <script src="../../data.js?v=9acb069ff87d"></script>
+  <script src="../../progress.js?v=9acb069ff87d"></script>
+  <script src="../../header.js?v=9acb069ff87d"></script>
+  <script src="../../app.js?v=9acb069ff87d"></script>
 </body>
 </html>
