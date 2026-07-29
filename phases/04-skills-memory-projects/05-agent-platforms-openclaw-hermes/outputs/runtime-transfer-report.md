@@ -17,10 +17,11 @@
 
 | Что создано раньше | Что видит runtime | Доказательство |
 |---|---|---|
-| Skill из 4.1 | `returns-answer-review`; требуется логическая возможность `knowledge.read` | Имя и требования присутствуют в `mapping` и `permissions` |
-| Управляемая память из 4.2 | Активная запись `format-preference` владельца `support-project` | ID присутствует и в `memory_ids`, и в manifest контекста |
-| Blueprint из 4.3 | Проект `returns-assistant`, границы доступа и сценарии `P-01`–`P-06` | Проект и сценарии записаны в отчёте |
-| Политика контекста из 4.4 | Kept/dropped, бюджет и причины исключения | Manifest сохранён целиком |
+| Skill из 4.1 | Имя `returns-answer-review`; адаптер вывел требование `knowledge.read` из шагов skill | Имя присутствует в `mapping`, а решение адаптера — в `permissions` |
+| Управляемая память из 4.2 | Snapshot владельца `support-project`; запись `id=0`, `key=response.format` | Manifest ссылается на неё через `source_ref`, а preflight проверяет запись snapshot |
+| Blueprint из 4.3 | Проект `returns-assistant`, решения о доступе и сценарии `P-01`–`P-05` | Проект и сценарии записаны в отчёте |
+| Политика контекста из 4.4 | Kept/dropped, бюджет, причины исключения, `source_ref` и P-06 | Manifest сохранён целиком |
+| Adapter-контракт 4.5 | Required context IDs, формальные allowlists и одобренные внешние соединения | Для каждого нового поля указан источник решения |
 
 Сопоставление не доказывает качество ответа модели. Оно доказывает, что runtime получил именно те части системы, которые мы намеревались передать.
 
@@ -38,8 +39,11 @@ mapping:
     - request
     - policy-v2
     - format-preference
-  memory_ids:
-    - format-preference
+  memory_refs:
+    - context_id: format-preference
+      owner: support-project
+      key: response.format
+      record_id: 0
 
 context:
   used_units: 22
@@ -61,6 +65,9 @@ permissions:
 data_egress: []
 blockers: []
 ```
+
+Контекстный ID `format-preference` не подменяет ID исходной памяти. Preflight разрешил
+`source_ref` в запись `id=0` snapshot, проверил `key`, владельца, active и срок жизни.
 
 ## 4. Граница данных
 

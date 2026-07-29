@@ -84,7 +84,7 @@ def plan_context(items, budget, reserve=0):
 
 def _manifest_entry(item):
     """Оставить в manifest только поля, нужные для проверки решения."""
-    return {
+    entry = {
         "id": item["id"],
         "source": item["source"],
         "content": item["content"],
@@ -92,6 +92,9 @@ def _manifest_entry(item):
         "relevance": item.get("relevance", 0),
         "units": estimate_units(item["content"]),
     }
+    if "source_ref" in item:
+        entry["source_ref"] = dict(item["source_ref"])
+    return entry
 
 
 if __name__ == "__main__":
@@ -130,6 +133,11 @@ if __name__ == "__main__":
             "content": "Пользователь предпочитает краткий ответ.",
             "required": False,
             "relevance": 2,
+            "source_ref": {
+                "owner": "support-project",
+                "key": "response.format",
+                "record_id": 0,
+            },
         },
         {
             "id": "history-summary",

@@ -120,17 +120,21 @@ class MemoryStore:
         )
         return "\n".join(lines)
 
-    def save(self, path):
-        """Атомарно сохранить записи вместе с настройками хранилища."""
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {
+    def snapshot(self):
+        """Вернуть переносимый снимок хранилища для сохранения или adapter-контракта."""
+        return {
             "schema_version": SCHEMA_VERSION,
             "owner": self.owner,
             "half_life_days": self.half_life_days,
             "next_id": self._next_id,
-            "items": self.items,
+            "items": [dict(item) for item in self.items],
         }
+
+    def save(self, path):
+        """Атомарно сохранить записи вместе с настройками хранилища."""
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = self.snapshot()
         temporary = path.with_suffix(path.suffix + ".tmp")
         temporary.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2),

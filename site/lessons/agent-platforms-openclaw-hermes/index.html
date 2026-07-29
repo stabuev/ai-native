@@ -13,7 +13,7 @@
   <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
   <meta name="twitter:card" content="summary_large_image">
   <script>(function(){try{var t=localStorage.getItem("theme")||"light";document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
-  <link rel="stylesheet" href="../../style.css?v=4ff8a4e9ee2e">
+  <link rel="stylesheet" href="../../style.css?v=6137d04f0cc6">
   <!-- Yandex.Metrika counter -->
   <script type="text/javascript">
       (function(m,e,t,r,i,k,a){
@@ -31,41 +31,51 @@
   <section class="container" style="padding-top:24px">
     <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
     <div class="lessonbar" id="lessonbar"></div>
-    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 4.5 · От проекта к агентному рантайму</h1><p><strong>Фаза 4 — Скиллы, память и проекты</strong> · <strong>Результат фазы:</strong> упаковывать способности в <code>SKILL.md</code>, хранить контекст в памяти и собирать рабочие проекты.</p><p><strong>Результат урока:</strong> ты сопоставишь skill, память, blueprint проекта и политику контекста с возможностями выбранного рантайма; до запуска увидишь недостающие разрешения и внешние пути данных; затем подтвердишь перенос приёмочными сценариями.</p><p><strong>Requires:</strong> Python 3 и <code>pytest</code> для офлайн-практики, а для поведенческой проверки — тот же доступный агент или workspace, который использовался в 4.1 и 4.3. Собственные артефакты 4.1–4.4 полезны, но не обязательны для Build It: в коде есть готовый учебный набор. Для необязательного маршрута с OpenClaw или Hermes понадобятся сеть, поддерживаемая ими среда и выбранный способ доступа к модели.</p><p><strong>Это интеграционный финал фазы.</strong> В 4.1 ты описал повторяемый процесс как skill, в 4.2 отделил управляемую память от истории чата, в 4.3 зафиксировал проект и приёмочные сценарии, а в 4.4 получил manifest фактически выбранного контекста. Теперь нужно доказать, что конкретная среда выполнения не потеряла эти решения при переносе.</p><blockquote><strong>Главная мысль.</strong> Успешный импорт файлов ещё не означает успешный перенос поведения. Сначала сделай конфигурацию наблюдаемой, затем разрешай запуск и проверяй сценарии.</blockquote><h2>PROBLEM</h2><p>Представь, что ты переносишь проект «Помощник по возвратам» в постоянно работающего ассистента. Папка skill скопировалась, документы загрузились, модель отвечает — интерфейс выглядит готовым.</p><p>Но внутри могли произойти незаметные изменения:</p><ul><li>runtime нашёл <code>SKILL.md</code>, но не имеет нужного инструмента чтения knowledge;</li><li>память принадлежит другому пользователю, устарела или была подключена целиком;</li><li>обязательные project instructions не поместились в контекст;</li><li>облачная модель получила запрос и выбранные документы, хотя команда считала установку «полностью локальной»;</li><li>тестовый вопрос прошёл, а конфликт версий и выход за scope никто не проверил.</li></ul><p>Это не пять отдельных проблем. Все они возникают на одной границе: <strong>наши проверенные артефакты нужно сопоставить с реальными возможностями и настройками runtime</strong>.</p><h2>CONCEPT</h2><h3>Что такое runtime</h3><p><strong>Agent runtime</strong>, или среда выполнения агента, — это работающая программа, которая принимает задачу, собирает доступный контекст, обращается к модели и при необходимости даёт ей инструменты. OpenClaw и Hermes — примеры готовых runtime, но в уроке нас интересует не устройство конкретного продукта, а проверяемая граница переноса.</p><p>Полноценный агентный цикл, tool use, MCP и model routing появятся в фазах 6, 7 и 9. Здесь мы не строим их уменьшенные копии.</p><h3>Четыре новых слова</h3><ul><li><strong>Adapter, или адаптер переноса</strong> — явное сопоставление наших артефактов с сущностями конкретного runtime: где находится skill, откуда берутся инструкции, какая память подключена и какие возможности доступны.</li><li><strong>Preflight</strong> — проверка перед запуском. Она ничего не исполняет, а отвечает: конфигурация готова или запуск нужно заблокировать.</li><li><strong>Run manifest</strong> — отчёт одного preflight: что выбрано, что исключено, какой бюджет использован, какие разрешения нужны и какие блокеры найдены.</li><li><strong>Data egress, или внешний путь данных</strong> — передача данных с нашей машины внешнему получателю: провайдеру модели, мессенджеру, API инструмента или системе журналирования.</li></ul><p>Preflight похож на предполётную проверку: чек-лист не управляет самолётом, но не даёт начать полёт с незакрытой дверью или отсутствующим топливом.</p><h3>Что именно соединяет финал фазы</h3><pre><code>4.1 validated skill ──────────────┐
-4.2 governed memory records ──────┤
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 4.5 · От проекта к агентному рантайму</h1><p><strong>Фаза 4 — Скиллы, память и проекты</strong> · <strong>Результат фазы:</strong> для одного собственного процесса связать проверенный skill, memory snapshot, project blueprint, context manifest и воспроизводимый preflight переноса.</p><p><strong>Результат урока:</strong> ты сопоставишь skill, память, blueprint проекта и политику контекста с возможностями выбранного рантайма; до запуска увидишь недостающие разрешения и внешние пути данных; затем подтвердишь перенос приёмочными сценариями.</p><p><strong>Requires:</strong> Python 3 и <code>pytest</code> для офлайн-практики, а для поведенческой проверки — тот же доступный агент или workspace, который использовался в 4.1 и 4.3. Собственные артефакты 4.1–4.4 не обязательны для первого прохождения Build It: в коде есть готовый учебный набор. Для завершения всей фазы понадобится повторить mapping со своими артефактами, но устанавливать новый runtime не требуется. Для необязательного маршрута с OpenClaw или Hermes понадобятся сеть, поддерживаемая ими среда и выбранный способ доступа к модели.</p><p><strong>Это интеграционный финал фазы.</strong> В 4.1 ты описал повторяемый процесс как skill, в 4.2 отделил управляемую память от истории чата, в 4.3 зафиксировал проект и приёмочные сценарии, а в 4.4 получил manifest фактически выбранного контекста. Теперь нужно доказать, что конкретная среда выполнения не потеряла эти решения при переносе.</p><p>Заполненные примеры уроков не обязаны изображать одну предметную систему: <code>retrieval-decision-review</code> из 4.1 и проект возвратов ниже показывают разные применения тех же контрактов. Сквозная нить фазы — <strong>твой собственный процесс</strong>. <code>DEMO_*</code> помогают понять adapter-контракт, а итоговое досье связывает реальные артефакты студента.</p><blockquote><strong>Главная мысль.</strong> Успешный импорт файлов ещё не означает успешный перенос поведения. Сначала сделай конфигурацию наблюдаемой, затем разрешай запуск и проверяй сценарии.</blockquote><h2>PROBLEM</h2><p>Представь, что ты переносишь проект «Помощник по возвратам» в постоянно работающего ассистента. Папка skill скопировалась, документы загрузились, модель отвечает — интерфейс выглядит готовым.</p><p>Но внутри могли произойти незаметные изменения:</p><ul><li>runtime нашёл <code>SKILL.md</code>, но не имеет нужного инструмента чтения knowledge;</li><li>память принадлежит другому пользователю, устарела или была подключена целиком;</li><li>обязательные project instructions не поместились в контекст;</li><li>облачная модель получила запрос и выбранные документы, хотя команда считала установку «полностью локальной»;</li><li>тестовый вопрос прошёл, а конфликт версий и выход за scope никто не проверил.</li></ul><p>Это не пять отдельных проблем. Все они возникают на одной границе: <strong>наши проверенные артефакты нужно сопоставить с реальными возможностями и настройками runtime</strong>.</p><h2>CONCEPT</h2><h3>Что такое runtime</h3><p><strong>Agent runtime</strong>, или среда выполнения агента, — это работающая программа, которая принимает задачу, собирает доступный контекст, обращается к модели и при необходимости даёт ей инструменты. OpenClaw и Hermes — примеры готовых runtime, но в уроке нас интересует не устройство конкретного продукта, а проверяемая граница переноса.</p><p>Полноценный агентный цикл, tool use, MCP и model routing появятся в фазах 6, 7 и 9. Здесь мы не строим их уменьшенные копии.</p><h3>Четыре новых слова</h3><ul><li><strong>Adapter, или адаптер переноса</strong> — явное сопоставление наших артефактов с сущностями конкретного runtime: где находится skill, откуда берутся инструкции, какая память подключена и какие возможности доступны.</li><li><strong>Preflight</strong> — проверка перед запуском. Она ничего не исполняет, а отвечает: конфигурация готова или запуск нужно заблокировать.</li><li><strong>Run manifest</strong> — отчёт одного preflight: что выбрано, что исключено, какой бюджет использован, какие разрешения нужны и какие блокеры найдены.</li><li><strong>Data egress, или внешний путь данных</strong> — передача данных с нашей машины внешнему получателю: провайдеру модели, мессенджеру, API инструмента или системе журналирования.</li></ul><p>Preflight похож на предполётную проверку: чек-лист не управляет самолётом, но не даёт начать полёт с незакрытой дверью или отсутствующим топливом.</p><h3>Что именно соединяет финал фазы</h3><pre><code>4.1 validated skill ──────────────┐
+4.2 governed memory snapshot ─────┤
 4.3 project scope + permissions ──┼─&gt; runtime preflight ─&gt; ready / blocked
 4.4 context manifest ─────────────┤          │
 runtime capabilities + endpoints ─┘          └─&gt; transfer report
                                                      │
-                                                     └─&gt; acceptance scenarios</code></pre><p>Каждый слой отвечает на отдельный вопрос:</p><table><thead><tr><th>Слой</th><th>Вопрос перед запуском</th><th>Доказательство</th></tr></thead><tbody><tr><td>Skill, 4.1</td><td>Какой процесс нужен и какие возможности он предполагает?</td><td>Имя, назначение и требования проверенного skill</td></tr><tr><td>Memory, 4.2</td><td>Какие записи допустимо использовать сейчас?</td><td>Владелец, active/version, срок жизни и выбранные IDs</td></tr><tr><td>Project, 4.3</td><td>Где границы процесса и что разрешено?</td><td>Scope, allowed tools, внешние подключения и сценарии</td></tr><tr><td>Context, 4.4</td><td>Что реально попадёт в этот вызов?</td><td>Kept/dropped, причины, бюджет и резерв</td></tr><tr><td>Runtime, 4.5</td><td>Может ли выбранная среда выполнить этот контракт без скрытого расхождения?</td><td>Возможности, имена секретов, соединения и итоговый статус</td></tr></tbody></table><h3>Почему мы не пишем ещё один загрузчик SKILL.md</h3><p>Формат и поведенческая проверка skill уже разобраны в 4.1. Кроме того, настоящий Agent Skills frontmatter — YAML с обязательными и необязательными полями, ограничениями имён и зависимыми от реализации расширениями. Самодельный разбор строк вида <code>key: value</code> создаст ложное ощущение совместимости.</p><p>В Build It мы передаём в preflight <strong>результат предыдущей проверки</strong>: имя skill и краткий список его требований. Чтение пакета и исполнение инструкций остаются ответственностью выбранного runtime.</p><h3>Self-hosted не означает «данные не покидают машину»</h3><p><strong>Self-hosted</strong> означает, что сам runtime запущен в инфраструктуре, которую контролируешь ты или твоя организация. Из этого не следует, что все остальные компоненты локальны.</p><p>Например:</p><pre><code>Telegram ──&gt; self-hosted runtime ──&gt; облачный провайдер модели
+                                                     └─&gt; acceptance scenarios</code></pre><p>Каждый слой отвечает на отдельный вопрос:</p><table><thead><tr><th>Слой</th><th>Вопрос перед запуском</th><th>Доказательство</th></tr></thead><tbody><tr><td>Skill, 4.1</td><td>Какой процесс нужен?</td><td>Имя, назначение и поведенческая проверка skill</td></tr><tr><td>Memory, 4.2</td><td>Какая управляемая запись породила кандидат?</td><td>Snapshot с владельцем, <code>key</code>, числовым <code>record_id</code>, active и сроком жизни</td></tr><tr><td>Project, 4.3</td><td>Где границы процесса и что разрешено?</td><td>Scope, решения о возможностях и сценарии</td></tr><tr><td>Context, 4.4</td><td>Что реально выбрано для этого вызова?</td><td>Kept/dropped, причины, бюджет, резерв и <code>source_ref</code></td></tr><tr><td>Runtime, 4.5</td><td>Может ли выбранная среда выполнить этот контракт без скрытого расхождения?</td><td>Возможности, имена секретов, соединения и итоговый статус</td></tr></tbody></table><h3>Какие поля переносим, а какие создаёт адаптер</h3><p>Preflight не получает готовую машинную конфигурацию из воздуха. Часть полей переносится из предыдущих артефактов, а часть впервые формализуется на границе runtime:</p><table><thead><tr><th>Поле preflight</th><th>Откуда берётся</th></tr></thead><tbody><tr><td><code>skill.name</code>, назначение</td><td>Проверенный skill 4.1</td></tr><tr><td><code>required_tools</code>, <code>required_secrets</code></td><td>Вывод адаптера 4.5 из шагов, зависимостей и выбранного runtime; передаются только имена</td></tr><tr><td><code>memory_snapshot</code></td><td><code>MemoryStore.snapshot()</code> из 4.2 без изменения владельца и IDs</td></tr><tr><td><code>project.name</code>, scope, решения о возможностях, acceptance IDs</td><td>Blueprint 4.3</td></tr><tr><td><code>required_context_ids</code></td><td>Обязательные кандидаты, формализованные при переносе политики 4.4</td></tr><tr><td><code>approved_external_connections</code></td><td>Новое решение владельца при переносе в 4.5</td></tr><tr><td><code>context_manifest</code> и <code>source_ref</code></td><td>Фактический результат планировщика 4.4</td></tr><tr><td>Возможности и endpoints</td><td>Наблюдаемая конфигурация выбранного runtime</td></tr></tbody></table><h3>Почему мы не пишем ещё один загрузчик SKILL.md</h3><p>Формат и поведенческая проверка skill уже разобраны в 4.1. Кроме того, настоящий Agent Skills frontmatter — YAML с обязательными и необязательными полями, ограничениями имён и зависимыми от реализации расширениями. Самодельный разбор строк вида <code>key: value</code> создаст ложное ощущение совместимости.</p><p>В Build It мы передаём в preflight имя проверенного skill и явно выведенные адаптером требования runtime. <code>required_tools</code> и <code>required_secrets</code> не обязаны буквально находиться во frontmatter 4.1: это часть mapping 4.5, которую нужно обосновать шагами skill. Чтение пакета и исполнение инструкций остаются ответственностью выбранного runtime.</p><h3>Self-hosted не означает «данные не покидают машину»</h3><p><strong>Self-hosted</strong> означает, что сам runtime запущен в инфраструктуре, которую контролируешь ты или твоя организация. Из этого не следует, что все остальные компоненты локальны.</p><p>Например:</p><pre><code>Telegram ──&gt; self-hosted runtime ──&gt; облачный провайдер модели
                     │
                     └──────────────&gt; внешний API инструмента</code></pre><p>В этом варианте процесс runtime и его локальные файлы находятся у тебя, но сообщения, выбранный контекст и аргументы инструментов могут уходить внешним сервисам. Поэтому preflight проверяет не ярлык «self-hosted», а каждый настроенный endpoint.</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Возьмём уже знакомый проект возвратов.</p><h3>Шаг 1. Сопоставляем skill и возможности</h3><p>Проверенный skill <code>returns-answer-review</code> требует логическую возможность <code>knowledge.read</code>. Preflight сравнивает три списка:</p><pre><code>skill requires:     knowledge.read
 project allows:     knowledge.read
 runtime provides:   knowledge.read</code></pre><p>Возможность пригодна только на пересечении <code>требуется ∩ разрешено ∩ доступно</code>. Если runtime предоставляет инструмент, но проект его не разрешает, использовать его нельзя. Если проект разрешает, но runtime не предоставляет, выполнить контракт невозможно.</p><h3>Шаг 2. Проверяем manifest контекста</h3><p>Политика 4.4 сохранила:</p><pre><code>kept:    instructions, request, policy-v2, format-preference
 dropped: history-summary → budget
          policy-v1       → not_relevant
-budget:  22 / 24 входных единиц + 6 в резерве</code></pre><p>Blueprint требует, чтобы <code>instructions</code> и <code>request</code> никогда не исчезали молча. Preflight не выбирает контекст заново: он проверяет уже принятое решение. Если обязательного ID нет или <code>used_units &gt; input_budget_units</code>, статус становится <code>blocked</code>.</p><h3>Шаг 3. Проверяем выбранную память</h3><p>Источник <code>format-preference</code> помечен как <code>memory</code>. Значит, для него должна существовать управляемая запись из 4.2:</p><pre><code>id: format-preference
-owner: support-project
-active: true
-expires_at: null</code></pre><p>Отсутствующая, неактивная, просроченная или принадлежащая другому владельцу запись блокирует запуск. Preflight не сохраняет весь входящий разговор как «память» и не оживляет архивные версии.</p><h3>Шаг 4. Показываем внешние пути</h3><p>Учебная конфигурация использует условную локальную модель:</p><pre><code>connection: local-model
+budget:  22 / 24 входных единиц + 6 в резерве</code></pre><p>Blueprint требует, чтобы <code>instructions</code> и <code>request</code> никогда не исчезали молча. Preflight не выбирает контекст заново: он проверяет уже принятое решение. Если обязательного ID нет или <code>used_units &gt; input_budget_units</code>, статус становится <code>blocked</code>.</p><h3>Шаг 3. Проверяем выбранную память</h3><p>Источник <code>format-preference</code> помечен как <code>memory</code>. Значит, для него должна существовать управляемая запись из 4.2:</p><pre><code>context candidate:
+  id: format-preference
+  source_ref:
+    owner: support-project
+    key: response.format
+    record_id: 0
+
+memory snapshot:
+  owner: support-project
+  items:
+    - id: 0
+      key: response.format
+      active: true
+      expires_at: null</code></pre><p>Строковый ID кандидата и числовой ID записи решают разные задачи: первый делает manifest читаемым, второй сохраняет идентичность исходной памяти. Отсутствующая, неактивная, просроченная, принадлежащая другому владельцу или имеющая другой <code>key</code> запись блокирует запуск. Preflight не сохраняет весь входящий разговор как «память» и не оживляет архивные версии.</p><h3>Шаг 4. Показываем внешние пути</h3><p>Учебная конфигурация использует условную локальную модель:</p><pre><code>connection: local-model
 external: false</code></pre><p>Поэтому <code>data_egress</code> пуст. Если заменить её облачной моделью, preflight запишет получателя и поля, которые ему отправляются:</p><pre><code>name: cloud-model
 kind: model
-sends: request, selected_context</code></pre><p>Внешнее соединение не является автоматической ошибкой. Ошибка — использовать его, не сопоставив с решением проекта. Пока <code>cloud-model</code> не внесён в <code>approved_external_connections</code>, статус будет <code>blocked</code>.</p><h3>Шаг 5. Правильно читаем статус</h3><p><code>ready</code> означает:</p><ul><li>обязательный контекст присутствует и помещается;</li><li>выбранная память принадлежит нужному владельцу и действует;</li><li>необходимые возможности одновременно требуются, разрешены и доступны;</li><li>внешние соединения перечислены и одобрены;</li><li>можно переходить к поведенческим сценариям.</li></ul><p><code>ready</code> <strong>не означает</strong>, что модель даст правильный ответ, prompt injection нейтрализован, sandbox надёжен или система готова к production. Preflight проверяет целостность переноса, а не всё качество будущего агента.</p><h2>BUILD IT</h2><p><strong>Задание: собери офлайн-preflight переноса</strong> — функцию, которая принимает краткие представления артефактов 4.1–4.4 и конфигурацию runtime, а возвращает <code>ready</code> или <code>blocked</code> с наблюдаемыми причинами.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке <code>ai-native-work</code>, созданной в фазе 0. Клонировать курс не нужно: скопируй со страницы урока тесты в <code>course-work/phase-4/runtime-transfer/code/</code> и создай файл по сигнатуре ниже. Если личные артефакты 4.1–4.4 ещё неудобно привести к этому формату, сначала используй встроенные <code>DEMO_*</code>.</blockquote><p>Создай <code>runtime_preflight.py</code> и реализуй:</p><pre><code>def prepare_run(
+sends: request, selected_context</code></pre><p>Внешнее соединение не является автоматической ошибкой. Ошибка — использовать его, не сопоставив с решением проекта. Пока <code>cloud-model</code> не внесён в <code>approved_external_connections</code>, статус будет <code>blocked</code>.</p><h3>Шаг 5. Правильно читаем статус</h3><p><code>ready</code> означает:</p><ul><li>обязательный контекст присутствует и помещается;</li><li>выбранная память разрешается по <code>owner + key + record_id</code>, принадлежит нужному владельцу и действует;</li><li>необходимые возможности одновременно требуются, разрешены и доступны;</li><li>внешние соединения перечислены и одобрены;</li><li>можно переходить к поведенческим сценариям.</li></ul><p><code>ready</code> <strong>не означает</strong>, что модель даст правильный ответ, prompt injection нейтрализован, sandbox надёжен или система готова к production. Preflight проверяет целостность переноса, а не всё качество будущего агента.</p><h2>BUILD IT</h2><p><strong>Задание: собери офлайн-preflight переноса</strong> — функцию, которая принимает краткие представления артефактов 4.1–4.4 и конфигурацию runtime, а возвращает <code>ready</code> или <code>blocked</code> с наблюдаемыми причинами.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке <code>ai-native-work</code>, созданной в фазе 0. Клонировать курс не нужно: скопируй со страницы урока тесты в <code>course-work/phase-4/runtime-transfer/code/</code> и создай файл по сигнатуре ниже. Если личные артефакты 4.1–4.4 ещё неудобно привести к этому формату, сначала используй встроенные <code>DEMO_*</code>.</blockquote><p>Создай <code>runtime_preflight.py</code> и реализуй:</p><pre><code>def prepare_run(
     skill,
     project,
-    memories,
+    memory_snapshot,
     context_manifest,
     runtime,
     now=None,
 ):
-    ...</code></pre><p>Входы:</p><table><thead><tr><th>Вход</th><th>Минимальное содержание</th></tr></thead><tbody><tr><td><code>skill</code></td><td><code>name</code>, <code>required_tools</code>, имена <code>required_secrets</code></td></tr><tr><td><code>project</code></td><td><code>name</code>, обязательные context IDs, разрешённые tools, владелец памяти, одобренные внешние соединения, acceptance IDs</td></tr><tr><td><code>memories</code></td><td>ID, owner, active и expires_at только для записей, на которые ссылается manifest</td></tr><tr><td><code>context_manifest</code></td><td><code>kept</code>, <code>dropped</code>, <code>used_units</code>, <code>input_budget_units</code>, <code>reserve_units</code> из 4.4</td></tr><tr><td><code>runtime</code></td><td>имя, доступные tools, имена доступных секретов и список соединений</td></tr></tbody></table><p>Не передавай значения API-ключей. Preflight проверяет только наличие имени секрета, например <code>MODEL_API_KEY</code>.</p><p>До реализации предскажи четыре результата:</p><ol><li>Полная локальная конфигурация из <code>DEMO_*</code> должна дать <code>ready</code>.</li><li>Удаление <code>knowledge.read</code> из runtime должно дать <code>missing_tool</code>.</li><li>Удаление <code>instructions</code> из kept должно дать <code>required_context_missing</code>.</li><li>Добавление неодобренного <code>cloud-model</code> должно показать его в <code>data_egress</code> и заблокировать запуск.</li></ol><p><strong>Готово, когда</strong> тесты подтверждают:</p><ul><li>все четыре артефакта фазы видны в mapping и manifest;</li><li>отсутствующая возможность блокирует запуск;</li><li>обязательный контекст нельзя молча потерять или переполнить;</li><li>неподходящая память не проходит проверку владельца и срока жизни;</li><li>внешний путь данных наблюдаем и требует решения проекта;</li><li>повреждённый вход не превращается в убедительный, но ложный отчёт.</li></ul><pre><code>pytest code -q
-python code/runtime_preflight.py</code></pre><p>После зелёных тестов прочитай напечатанный JSON глазами и ответь:</p><ul><li>Из какого предыдущего урока пришёл каждый блок?</li><li>Какой факт позволяет назвать статус <code>ready</code>?</li><li>Какой важный риск этот отчёт сознательно не проверяет?</li></ul><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, находятся тесты-ТЗ, эталон и три способа пройти упражнение.</p><h2>USE IT</h2><p>Обязательный маршрут не требует устанавливать новую платформу. Сначала выполни офлайн-preflight, затем повтори приёмочные сценарии в том доступном агенте или workspace, где уже проверял skill и проект в 4.1 и 4.3. Новый runtime подключай только если он действительно нужен и это безопасно для выбранных данных.</p><h3>Маршрут A. Проверить перенос в уже доступном агенте</h3><ol><li>Замени <code>DEMO_SKILL</code> кратким контрактом своего skill из 4.1.</li><li>Перенеси в <code>DEMO_PROJECT</code> scope, разрешения и IDs сценариев из blueprint 4.3.</li><li>Добавь только те записи 4.2, которые фактически выбрал manifest.</li><li>Подставь реальный manifest 4.4.</li><li>Опиши уже используемого агента через его возможности и endpoints; если часть конфигурации не видна, зафиксируй это как ограничение наблюдаемости.</li><li>Исправляй блокеры по одному и сохраняй отчёт до и после исправления.</li><li>В чистых сессиях повтори P-01–P-06 и приложи существенные результаты к отчёту.</li></ol><h3>Маршрут B. Повторить проверку в OpenClaw или Hermes</h3><p><a href="https://github.com/openclaw/openclaw" target="_blank" rel="noopener">OpenClaw</a> и <a href="https://github.com/NousResearch/hermes-agent" target="_blank" rel="noopener">Hermes Agent</a> — развивающиеся open-source runtime с поддержкой skills, памяти, моделей и каналов. Их интерфейсы и требования меняются, поэтому не копируй команду установки из статичного урока: открой актуальный официальный quickstart, зафиксируй дату и версию, прочитай действие команды до запуска.</p><p>Выбери <strong>одну</strong> платформу и заполни таблицу сопоставления:</p><table><thead><tr><th>Наш артефакт</th><th>Где он представлен в выбранном runtime</th><th>Как проверить</th></tr></thead><tbody><tr><td>Skill 4.1</td><td>Папка или реестр skills</td><td>Положительный, отрицательный и граничный сценарии выбора</td></tr><tr><td>Project instructions 4.3</td><td>Workspace / system instructions / конфигурация агента</td><td>Подмена правил не меняет границы проекта</td></tr><tr><td>Knowledge 4.3</td><td>Файлы, resources или доступный инструмент</td><td>Ответ ссылается на активную версию</td></tr><tr><td>Memory 4.2</td><td>Хранилище или memory-файлы runtime</td><td>Владелец, срок жизни, замена и удаление наблюдаемы</td></tr><tr><td>Context policy 4.4</td><td>Настройки загрузки, hooks либо адаптер до вызова модели</td><td>Видно, что kept/dropped соответствуют manifest</td></tr><tr><td>Permissions</td><td>Tool allowlist, sandbox или подтверждения</td><td>Запрещённая возможность недоступна</td></tr><tr><td>Connections</td><td>Model, channel, external APIs, telemetry</td><td>Для каждого записано, что именно отправляется</td></tr></tbody></table><p>Совпадение структуры <code>SKILL.md</code> помогает переносу, но не гарантирует одинакового поведения. <a href="https://agentskills.io/specification" target="_blank" rel="noopener">Спецификация Agent Skills</a> допускает требования совместимости, а поддержка некоторых полей и инструментов зависит от реализации. После импорта всегда повторяй сценарии.</p><p><a href="https://hermes-agent.nousresearch.com/docs/guides/migrate-from-openclaw/" target="_blank" rel="noopener">Hermes предлагает отдельный маршрут миграции конфигурации из OpenClaw</a>, но наличие команды импорта также не заменяет повторную приёмку: перенесённый файл и сохранённый контракт поведения — не одно и то же.</p><h3>4D на границе переноса</h3><ul><li><strong>Delegation:</strong> отдай runtime только исполнение явно ограниченного процесса; не включай все доступные инструменты «на будущее».</li><li><strong>Description:</strong> передай skill, project instructions, knowledge registry, memory policy и manifest как разные слои, а не как одну длинную инструкцию.</li><li><strong>Discernment:</strong> сравни обещания интерфейса с фактическим mapping, data egress и результатами сценариев.</li><li><strong>Diligence:</strong> сохрани версию, отчёт preflight, доказательства прогонов и процедуру отката; ответственность за решение о запуске остаётся у тебя.</li></ul><h2>SHIP IT</h2><p><strong>Артефакт:</strong> проверенный отчёт о переносе → <a href="#f-phases-04-skills-memory-projects-05-agent-platforms-openclaw-hermes-outputs-runtime-transfer-report-md"><code>outputs/runtime-transfer-report.md</code></a></p><p>В отчёте должны быть:</p><ul><li>выбранный runtime и точная версия либо явная пометка <code>offline-preflight</code>;</li><li>mapping артефактов 4.1–4.4;</li><li>сохранённый manifest со статусом и блокерами;</li><li>карта разрешений и внешних путей данных;</li><li>результаты сценариев P-01–P-06;</li><li>обнаруженные расхождения между исходным проектом и runtime;</li><li>процедура отключения, отзыва доступа и удаления памяти.</li></ul><p>Артефакт принят, когда другой человек может понять, почему запуск разрешён или заблокирован, повторить проверки и безопасно отменить подключение. Скриншот работающего чата без manifest и сценариев не является доказательством переноса.</p><h2>ТИПИЧНЫЕ ОШИБКИ</h2><ul><li><strong>Считать установленный skill работающим skill.</strong> Импорт подтверждает наличие файлов, но не правильный выбор, доступ к зависимостям или сохранение поведения; повтори сценарии 4.1.</li><li><strong>Путать available и allowed.</strong> Runtime может предоставлять инструмент, который проект не разрешает; usable-возможность должна пройти обе границы.</li><li><strong>Называть любой список сообщений памятью.</strong> В manifest могут попасть только управляемые записи нужного владельца, действующей версии и срока жизни.</li><li><strong>Собирать контекст заново внутри preflight.</strong> Решение уже приняла политика 4.4; здесь нужно проверить и передать manifest, а не скрыть его новым эвристическим выбором.</li><li><strong>Считать self-hosted синонимом offline.</strong> Локальный runtime может отправлять данные облачной модели, каналу, инструменту и telemetry.</li><li><strong>Считать <code>ready</code> доказательством качества ответа.</strong> Это разрешение перейти к сценариям, а не сертификат корректности или безопасности.</li><li><strong>Обещать универсальную переносимость.</strong> Стандарт переносит ядро формата, но tools, permissions, memory и расширения runtime требуют нового mapping и тестов.</li><li><strong>Сразу подключать мессенджер.</strong> Новый внешний вход расширяет круг недоверенных данных и адресатов ответа; сначала проверь локальный сценарий и границы доступа.</li></ul><h2>ЧТО СОЗНАТЕЛЬНО ОСТАЛОСЬ ЗА ГРАНИЦЕЙ</h2><ul><li>Парсинг полного Agent Skills YAML и продуктовые расширения: формат skill и его валидация уже разобраны в 4.1.</li><li>Function calling, схемы tools и MCP: это фаза 6.</li><li>Цикл reason → act → observe, планирование, human-in-the-loop и agent evals: это фаза 7.</li><li>Автоматический model routing, fallback и FinOps: это фаза 9.</li><li>Полная модель угроз, sandbox и защита от prompt injection: это фаза 11; здесь мы только не разрешаем скрывать границы.</li><li>Обязательная установка VPS, мессенджера или конкретной платформы: outcome урока — проверяемый перенос, а не владение одним продуктом.</li></ul><h2>ПЕРЕХОД В ФАЗУ 5</h2><p>Фаза 4 дала постоянный слой рабочей системы: повторяемый skill, управляемую память, проект с источниками и правила сборки контекста. Урок 4.5 добавил границу переноса: теперь видно, что конкретная среда действительно получила и что она может отправить наружу.</p><p>В фазе 5 мы применим этот способ мышления к данным и аналитике. Начинать 5.1 можно без установленного OpenClaw или Hermes: возьми проверенный проект, его границы и приёмочные сценарии, а новый аналитический процесс сначала проверь на файлах. Позже его можно будет упаковать в тот же runtime без повторного изобретения памяти, контекста и разрешений.</p><h2>ПРОВЕРЬ СЕБЯ</h2><p>Вопросы ниже проверяют не названия платформ, а решения на границе переноса: куда уходят данные, что гарантирует формат skill, когда блокировать запуск и чем подтверждать интеграцию.</p><div class="quiz-section" data-lesson="4.5"></div><p>Хочешь квиз по всей фазе — спроси агента: <code>/check-understanding 4</code>.</p><h2>Дополнительное чтение</h2><p>Материалы ниже факультативны. Читать всё не нужно: для минимального продолжения открой спецификацию и документацию только выбранного runtime. Ветку безопасности используй перед подключением внешней модели, канала, инструмента или стороннего skill.</p><h3>Стандарт и граница переносимости</h3><ul><li><a href="https://agentskills.io/specification" target="_blank" rel="noopener">Agent Skills — Specification</a> — открой разделы <code>Frontmatter</code>, <code>Compatibility</code>, <code>allowed-tools</code> и <code>Validation</code>: стандарт переносит ядро пакета, но не гарантирует одинаковые tools, permissions и расширения в разных runtime.</li></ul><h3>Выбранный runtime</h3><ul><li><a href="https://docs.openclaw.ai/tools/skills" target="_blank" rel="noopener">OpenClaw — Skills</a> — ветка для OpenClaw: каталоги установки, dependency gates, runtime-specific metadata, проверка источника и граница доверия для сторонних skills.</li><li><a href="https://hermes-agent.nousresearch.com/docs/user-guide/features/skills" target="_blank" rel="noopener">Hermes — Skills System</a> — ветка для Hermes: progressive disclosure, platform-specific metadata, требования к toolsets и approval изменений, созданных самим агентом.</li><li><a href="https://hermes-agent.nousresearch.com/docs/guides/migrate-from-openclaw" target="_blank" rel="noopener">Hermes — Migrate from OpenClaw</a> — практический mapping двух runtime: что переносится напрямую, что архивируется без эквивалента, как обрабатываются secrets и что нужно проверить после миграции.</li></ul><h3>Безопасность и границы данных</h3><ul><li><a href="https://docs.openclaw.ai/gateway/security" target="_blank" rel="noopener">OpenClaw — Security</a> — официальный preflight для реальной установки: trust boundary, входящие каналы, tool blast radius, разрешения и команда <code>openclaw security audit</code>.</li><li><a href="https://blogs.cisco.com/ai/personal-ai-agents-like-openclaw-are-a-security-nightmare" target="_blank" rel="noopener">Cisco — Personal AI Agents like OpenClaw Are a Security Nightmare</a> — конкретный разбор стороннего skill с prompt injection и эксфильтрацией данных; показывает, почему успешная установка не равна безопасному переносу.</li><li><a href="https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/" target="_blank" rel="noopener">Simon Willison — The Lethal Trifecta for AI Agents</a> — независимая модель сочетания приватных данных, недоверенного содержимого и внешнего канала; сопоставь её со своим <code>data_egress</code>.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Если делегируешь ИИ, реши, что отдаёшь; опиши задачу и критерии; проверь результат; сохрани ответственность за итог.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-04-skills-memory-projects-05-agent-platforms-openclaw-hermes-code-test-runtime-preflight-py" open data-test="1"><summary><span class="fname">code/test_runtime_preflight.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from copy import deepcopy
+    ...</code></pre><p>Входы:</p><table><thead><tr><th>Вход</th><th>Минимальное содержание</th></tr></thead><tbody><tr><td><code>skill</code></td><td><code>name</code> из 4.1; <code>required_tools</code> и имена <code>required_secrets</code>, выведенные адаптером</td></tr><tr><td><code>project</code></td><td><code>name</code>, решения blueprint, обязательные context IDs, разрешённые tools, владелец памяти, одобренные при переносе внешние соединения, acceptance IDs</td></tr><tr><td><code>memory_snapshot</code></td><td>Неизменённый snapshot 4.2: <code>schema_version</code>, <code>owner</code>, <code>items</code> с числовыми ID, key, active и expires_at</td></tr><tr><td><code>context_manifest</code></td><td><code>kept</code>, <code>dropped</code>, <code>used_units</code>, <code>input_budget_units</code>, <code>reserve_units</code> и memory <code>source_ref</code> из 4.4</td></tr><tr><td><code>runtime</code></td><td>имя, доступные tools, имена доступных секретов и список соединений</td></tr></tbody></table><p>Не передавай значения API-ключей. Preflight проверяет только наличие имени секрета, например <code>MODEL_API_KEY</code>.</p><p>До реализации предскажи пять результатов:</p><ol><li>Полная локальная конфигурация из <code>DEMO_*</code> должна дать <code>ready</code>.</li><li>Удаление <code>knowledge.read</code> из runtime должно дать <code>missing_tool</code>.</li><li>Удаление <code>instructions</code> из kept должно дать <code>required_context_missing</code>.</li><li>Добавление неодобренного <code>cloud-model</code> должно показать его в <code>data_egress</code> и заблокировать запуск.</li><li>Подмена <code>key</code> внутри memory <code>source_ref</code> должна дать <code>memory_key_mismatch</code>.</li></ol><p><strong>Готово, когда</strong> тесты подтверждают:</p><ul><li>все четыре артефакта фазы видны в mapping и manifest;</li><li>отсутствующая возможность блокирует запуск;</li><li>обязательный контекст нельзя молча потерять или переполнить;</li><li>memory-кандидат трассируется до исходной записи по <code>owner + key + record_id</code>;</li><li>неподходящая память не проходит проверку владельца, ключа и срока жизни;</li><li>внешний путь данных наблюдаем и требует решения проекта;</li><li>повреждённый вход не превращается в убедительный, но ложный отчёт.</li></ul><pre><code>pytest code -q
+python code/runtime_preflight.py</code></pre><p>После зелёных тестов прочитай напечатанный JSON глазами и ответь:</p><ul><li>Из какого предыдущего урока пришёл каждый блок?</li><li>Какой факт позволяет назвать статус <code>ready</code>?</li><li>Какой важный риск этот отчёт сознательно не проверяет?</li></ul><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, находятся тесты-ТЗ, эталон и три способа пройти упражнение.</p><h2>USE IT</h2><p>Обязательный маршрут не требует устанавливать новую платформу. Сначала выполни офлайн-preflight, затем повтори приёмочные сценарии в том доступном агенте или workspace, где уже проверял skill и проект в 4.1 и 4.3. Новый runtime подключай только если он действительно нужен и это безопасно для выбранных данных.</p><h3>Маршрут A. Проверить перенос в уже доступном агенте</h3><ol><li>Замени <code>DEMO_SKILL</code> кратким контрактом своего skill из 4.1.</li><li>Перенеси в <code>DEMO_PROJECT</code> scope, разрешения и IDs сценариев из blueprint 4.3.</li><li>Передай snapshot своего <code>MemoryStore</code> 4.2 без переименования владельца, ключей и числовых IDs.</li><li>Подставь реальный manifest 4.4 и проверь, что каждый memory <code>source_ref</code> указывает на запись этого snapshot.</li><li>Опиши уже используемого агента через его возможности и endpoints; если часть конфигурации не видна, зафиксируй это как ограничение наблюдаемости.</li><li>Исправляй блокеры по одному и сохраняй отчёт до и после исправления.</li><li>В чистых сессиях повтори P-01–P-06 и приложи существенные результаты к отчёту.</li></ol><h3>Маршрут B. Повторить проверку в OpenClaw или Hermes</h3><p><a href="https://github.com/openclaw/openclaw" target="_blank" rel="noopener">OpenClaw</a> и <a href="https://github.com/NousResearch/hermes-agent" target="_blank" rel="noopener">Hermes Agent</a> — развивающиеся open-source runtime с поддержкой skills, памяти, моделей и каналов. Их интерфейсы и требования меняются, поэтому не копируй команду установки из статичного урока: открой актуальный официальный quickstart, зафиксируй дату и версию, прочитай действие команды до запуска.</p><p>Выбери <strong>одну</strong> платформу и заполни таблицу сопоставления:</p><table><thead><tr><th>Наш артефакт</th><th>Где он представлен в выбранном runtime</th><th>Как проверить</th></tr></thead><tbody><tr><td>Skill 4.1</td><td>Папка или реестр skills</td><td>Положительный, отрицательный и граничный сценарии выбора</td></tr><tr><td>Project instructions 4.3</td><td>Workspace / system instructions / конфигурация агента</td><td>Подмена правил не меняет границы проекта</td></tr><tr><td>Knowledge 4.3</td><td>Файлы, resources или доступный инструмент</td><td>Ответ ссылается на активную версию</td></tr><tr><td>Memory 4.2</td><td>Хранилище или memory-файлы runtime</td><td>Владелец, срок жизни, замена и удаление наблюдаемы</td></tr><tr><td>Context policy 4.4</td><td>Настройки загрузки, hooks либо адаптер до вызова модели</td><td>Видно, что kept/dropped соответствуют manifest</td></tr><tr><td>Permissions</td><td>Tool allowlist, sandbox или подтверждения</td><td>Запрещённая возможность недоступна</td></tr><tr><td>Connections</td><td>Model, channel, external APIs, telemetry</td><td>Для каждого записано, что именно отправляется</td></tr></tbody></table><p>Совпадение структуры <code>SKILL.md</code> помогает переносу, но не гарантирует одинакового поведения. <a href="https://agentskills.io/specification" target="_blank" rel="noopener">Спецификация Agent Skills</a> допускает требования совместимости, а поддержка некоторых полей и инструментов зависит от реализации. После импорта всегда повторяй сценарии.</p><p><a href="https://hermes-agent.nousresearch.com/docs/guides/migrate-from-openclaw/" target="_blank" rel="noopener">Hermes предлагает отдельный маршрут миграции конфигурации из OpenClaw</a>, но наличие команды импорта также не заменяет повторную приёмку: перенесённый файл и сохранённый контракт поведения — не одно и то же.</p><h3>4D на границе переноса</h3><ul><li><strong>Delegation:</strong> отдай runtime только исполнение явно ограниченного процесса; не включай все доступные инструменты «на будущее».</li><li><strong>Description:</strong> передай skill, project instructions, knowledge registry, memory policy и manifest как разные слои, а не как одну длинную инструкцию.</li><li><strong>Discernment:</strong> сравни обещания интерфейса с фактическим mapping, data egress и результатами сценариев.</li><li><strong>Diligence:</strong> сохрани версию, отчёт preflight, доказательства прогонов и процедуру отката; ответственность за решение о запуске остаётся у тебя.</li></ul><h2>SHIP IT</h2><p><strong>Артефакт урока:</strong> проверенный отчёт о переносе → <a href="#f-phases-04-skills-memory-projects-05-agent-platforms-openclaw-hermes-outputs-runtime-transfer-report-md"><code>outputs/runtime-transfer-report.md</code></a></p><p>В отчёте должны быть:</p><ul><li>выбранный runtime и точная версия либо явная пометка <code>offline-preflight</code>;</li><li>mapping артефактов 4.1–4.4;</li><li>сохранённый manifest со статусом и блокерами;</li><li>карта разрешений и внешних путей данных;</li><li>результаты сценариев P-01–P-06;</li><li>обнаруженные расхождения между исходным проектом и runtime;</li><li>процедура отключения, отзыва доступа и удаления памяти.</li></ul><p>Артефакт принят, когда другой человек может понять, почему запуск разрешён или заблокирован, повторить проверки и безопасно отменить подключение. Скриншот работающего чата без manifest и сценариев не является доказательством переноса.</p><h3>Когда завершена вся Фаза 4</h3><p>Зелёный прогон <code>DEMO_*</code> завершает Build It этого урока, но ещё не доказывает, что собственный постоянный слой собран. Для выхода из фазы скопируй <a href="#f-phases-04-skills-memory-projects-05-agent-platforms-openclaw-hermes-outputs-phase-4-dossier-md"><code>outputs/phase-4-dossier.md</code></a> в <code>ai-native-work/course-work/phase-4/phase-4-dossier.md</code> и заполни его своими артефактами.</p><p>Фаза завершена, когда:</p><ol><li>один собственный процесс связан с реальными артефактами 4.1–4.4;</li><li>memory <code>source_ref</code> разрешается в запись настоящего snapshot;</li><li>preflight со своими данными даёт объяснимый <code>ready</code> либо честный <code>blocked</code>;</li><li>P-01–P-06 выполнены и содержат фактические доказательства, а не пометку «позже»;</li><li>разрешения, внешние пути, ограничения и откат зафиксированы.</li></ol><p>Новый runtime для этого не обязателен: можно использовать офлайн-preflight и уже доступный агент или workspace.</p><h2>ТИПИЧНЫЕ ОШИБКИ</h2><ul><li><strong>Считать установленный skill работающим skill.</strong> Импорт подтверждает наличие файлов, но не правильный выбор, доступ к зависимостям или сохранение поведения; повтори сценарии 4.1.</li><li><strong>Путать available и allowed.</strong> Runtime может предоставлять инструмент, который проект не разрешает; usable-возможность должна пройти обе границы.</li><li><strong>Называть любой список сообщений памятью.</strong> В manifest могут попасть только управляемые записи нужного владельца, действующей версии и срока жизни.</li><li><strong>Подменять ID записи удобным названием кандидата.</strong> <code>format-preference</code> помогает читать manifest, но исходную память доказывает <code>source_ref</code> с <code>owner</code>, <code>key</code> и числовым <code>record_id</code>.</li><li><strong>Собирать контекст заново внутри preflight.</strong> Решение уже приняла политика 4.4; здесь нужно проверить и передать manifest, а не скрыть его новым эвристическим выбором.</li><li><strong>Считать self-hosted синонимом offline.</strong> Локальный runtime может отправлять данные облачной модели, каналу, инструменту и telemetry.</li><li><strong>Считать <code>ready</code> доказательством качества ответа.</strong> Это разрешение перейти к сценариям, а не сертификат корректности или безопасности.</li><li><strong>Обещать универсальную переносимость.</strong> Стандарт переносит ядро формата, но tools, permissions, memory и расширения runtime требуют нового mapping и тестов.</li><li><strong>Сразу подключать мессенджер.</strong> Новый внешний вход расширяет круг недоверенных данных и адресатов ответа; сначала проверь локальный сценарий и границы доступа.</li></ul><h2>ЧТО СОЗНАТЕЛЬНО ОСТАЛОСЬ ЗА ГРАНИЦЕЙ</h2><ul><li>Парсинг полного Agent Skills YAML и продуктовые расширения: формат skill и его валидация уже разобраны в 4.1.</li><li>Function calling, схемы tools и MCP: это фаза 6.</li><li>Цикл reason → act → observe, планирование, human-in-the-loop и agent evals: это фаза 7.</li><li>Автоматический model routing, fallback и FinOps: это фаза 9.</li><li>Полная модель угроз, sandbox и защита от prompt injection: это фаза 11; здесь мы только не разрешаем скрывать границы.</li><li>Обязательная установка VPS, мессенджера или конкретной платформы: outcome урока — проверяемый перенос, а не владение одним продуктом.</li></ul><h2>ПЕРЕХОД В ФАЗУ 5</h2><p>Фаза 4 дала постоянный слой рабочей системы: повторяемый skill, управляемую память, проект с источниками и правила сборки контекста. Урок 4.5 добавил границу переноса: теперь видно, что конкретная среда действительно получила и что она может отправить наружу.</p><p>В фазе 5 мы применим этот способ мышления к данным и аналитике. Начинать 5.1 можно без установленного OpenClaw или Hermes: возьми проверенный проект, его границы и приёмочные сценарии, а новый аналитический процесс сначала проверь на файлах. Позже его можно будет упаковать в тот же runtime без повторного изобретения памяти, контекста и разрешений.</p><h2>ПРОВЕРЬ СЕБЯ</h2><p>Вопросы ниже проверяют не названия платформ, а решения на границе переноса: куда уходят данные, что гарантирует формат skill, когда блокировать запуск и чем подтверждать интеграцию.</p><div class="quiz-section" data-lesson="4.5"></div><p>Хочешь квиз по всей фазе — спроси агента: <code>/check-understanding 4</code>.</p><h2>Дополнительное чтение</h2><p>Материалы ниже факультативны. Читать всё не нужно: для минимального продолжения открой спецификацию и документацию только выбранного runtime. Ветку безопасности используй перед подключением внешней модели, канала, инструмента или стороннего skill.</p><h3>Стандарт и граница переносимости</h3><ul><li><a href="https://agentskills.io/specification" target="_blank" rel="noopener">Agent Skills — Specification</a> — открой разделы <code>Frontmatter</code>, <code>Compatibility</code>, <code>allowed-tools</code> и <code>Validation</code>: стандарт переносит ядро пакета, но не гарантирует одинаковые tools, permissions и расширения в разных runtime.</li></ul><h3>Выбранный runtime</h3><ul><li><a href="https://docs.openclaw.ai/tools/skills" target="_blank" rel="noopener">OpenClaw — Skills</a> — ветка для OpenClaw: каталоги установки, dependency gates, runtime-specific metadata, проверка источника и граница доверия для сторонних skills.</li><li><a href="https://hermes-agent.nousresearch.com/docs/user-guide/features/skills" target="_blank" rel="noopener">Hermes — Skills System</a> — ветка для Hermes: progressive disclosure, platform-specific metadata, требования к toolsets и approval изменений, созданных самим агентом.</li><li><a href="https://hermes-agent.nousresearch.com/docs/guides/migrate-from-openclaw" target="_blank" rel="noopener">Hermes — Migrate from OpenClaw</a> — практический mapping двух runtime: что переносится напрямую, что архивируется без эквивалента, как обрабатываются secrets и что нужно проверить после миграции.</li></ul><h3>Безопасность и границы данных</h3><ul><li><a href="https://docs.openclaw.ai/gateway/security" target="_blank" rel="noopener">OpenClaw — Security</a> — официальный preflight для реальной установки: trust boundary, входящие каналы, tool blast radius, разрешения и команда <code>openclaw security audit</code>.</li><li><a href="https://blogs.cisco.com/ai/personal-ai-agents-like-openclaw-are-a-security-nightmare" target="_blank" rel="noopener">Cisco — Personal AI Agents like OpenClaw Are a Security Nightmare</a> — конкретный разбор стороннего skill с prompt injection и эксфильтрацией данных; показывает, почему успешная установка не равна безопасному переносу.</li><li><a href="https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/" target="_blank" rel="noopener">Simon Willison — The Lethal Trifecta for AI Agents</a> — независимая модель сочетания приватных данных, недоверенного содержимого и внешнего канала; сопоставь её со своим <code>data_egress</code>.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Если делегируешь ИИ, реши, что отдаёшь; опиши задачу и критерии; проверь результат; сохрани ответственность за итог.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-04-skills-memory-projects-05-agent-platforms-openclaw-hermes-code-test-runtime-preflight-py" open data-test="1"><summary><span class="fname">code/test_runtime_preflight.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from copy import deepcopy
 
 import pytest
 
 from runtime_preflight import (
     DEMO_CONTEXT_MANIFEST,
-    DEMO_MEMORIES,
+    DEMO_MEMORY_SNAPSHOT,
     DEMO_PROJECT,
     DEMO_RUNTIME,
     DEMO_SKILL,
@@ -80,7 +90,7 @@ def _inputs():
     return (
         deepcopy(DEMO_SKILL),
         deepcopy(DEMO_PROJECT),
-        deepcopy(DEMO_MEMORIES),
+        deepcopy(DEMO_MEMORY_SNAPSHOT),
         deepcopy(DEMO_CONTEXT_MANIFEST),
         deepcopy(DEMO_RUNTIME),
     )
@@ -100,7 +110,14 @@ def test_ready_report_maps_all_phase_artifacts():
             "policy-v2",
             "format-preference",
         ],
-        "memory_ids": ["format-preference"],
+        "memory_refs": [
+            {
+                "context_id": "format-preference",
+                "owner": "support-project",
+                "key": "response.format",
+                "record_id": 0,
+            }
+        ],
     }
     assert report["context"]["dropped"] == [
         {"id": "history-summary", "reason": "budget"},
@@ -110,10 +127,17 @@ def test_ready_report_maps_all_phase_artifacts():
 
 
 def test_missing_runtime_capability_blocks_the_run():
-    skill, project, memories, manifest, runtime = _inputs()
+    skill, project, memory_snapshot, manifest, runtime = _inputs()
     runtime["available_tools"] = []
 
-    report = prepare_run(skill, project, memories, manifest, runtime, now=NOW)
+    report = prepare_run(
+        skill,
+        project,
+        memory_snapshot,
+        manifest,
+        runtime,
+        now=NOW,
+    )
 
     assert report["status"] == "blocked"
     assert report["permissions"]["missing_tools"] == ["knowledge.read"]
@@ -121,13 +145,20 @@ def test_missing_runtime_capability_blocks_the_run():
 
 
 def test_required_context_cannot_disappear_or_exceed_budget():
-    skill, project, memories, manifest, runtime = _inputs()
+    skill, project, memory_snapshot, manifest, runtime = _inputs()
     manifest["kept"] = [
         item for item in manifest["kept"] if item["id"] != "instructions"
     ]
     manifest["used_units"] = 25
 
-    report = prepare_run(skill, project, memories, manifest, runtime, now=NOW)
+    report = prepare_run(
+        skill,
+        project,
+        memory_snapshot,
+        manifest,
+        runtime,
+        now=NOW,
+    )
 
     assert report["status"] == "blocked"
     assert "required_context_missing:instructions" in report["blockers"]
@@ -135,11 +166,18 @@ def test_required_context_cannot_disappear_or_exceed_budget():
 
 
 def test_expired_or_wrong_owner_memory_blocks_the_run():
-    skill, project, memories, manifest, runtime = _inputs()
-    memories[0]["owner"] = "another-project"
-    memories[0]["expires_at"] = NOW
+    skill, project, memory_snapshot, manifest, runtime = _inputs()
+    memory_snapshot["owner"] = "another-project"
+    memory_snapshot["items"][0]["expires_at"] = NOW
 
-    report = prepare_run(skill, project, memories, manifest, runtime, now=NOW)
+    report = prepare_run(
+        skill,
+        project,
+        memory_snapshot,
+        manifest,
+        runtime,
+        now=NOW,
+    )
 
     assert report["status"] == "blocked"
     assert "memory_owner_mismatch:format-preference" in report["blockers"]
@@ -147,7 +185,7 @@ def test_expired_or_wrong_owner_memory_blocks_the_run():
 
 
 def test_external_data_path_is_visible_and_requires_approval():
-    skill, project, memories, manifest, runtime = _inputs()
+    skill, project, memory_snapshot, manifest, runtime = _inputs()
     runtime["connections"].append(
         {
             "name": "cloud-model",
@@ -157,7 +195,14 @@ def test_external_data_path_is_visible_and_requires_approval():
         }
     )
 
-    blocked = prepare_run(skill, project, memories, manifest, runtime, now=NOW)
+    blocked = prepare_run(
+        skill,
+        project,
+        memory_snapshot,
+        manifest,
+        runtime,
+        now=NOW,
+    )
     assert blocked["data_egress"] == [
         {
             "name": "cloud-model",
@@ -168,21 +213,62 @@ def test_external_data_path_is_visible_and_requires_approval():
     assert "external_connection_not_approved:cloud-model" in blocked["blockers"]
 
     project["approved_external_connections"] = ["cloud-model"]
-    ready = prepare_run(skill, project, memories, manifest, runtime, now=NOW)
+    ready = prepare_run(
+        skill,
+        project,
+        memory_snapshot,
+        manifest,
+        runtime,
+        now=NOW,
+    )
     assert ready["status"] == "ready"
 
 
 def test_malformed_artifact_fails_before_a_misleading_report():
-    skill, project, memories, manifest, runtime = _inputs()
+    skill, project, memory_snapshot, manifest, runtime = _inputs()
     skill["name"] = ""
 
     with pytest.raises(ValueError, match="skill.name"):
-        prepare_run(skill, project, memories, manifest, runtime, now=NOW)
+        prepare_run(
+            skill,
+            project,
+            memory_snapshot,
+            manifest,
+            runtime,
+            now=NOW,
+        )
 
     skill["name"] = "returns-answer-review"
     skill["required_tools"] = "knowledge.read"
     with pytest.raises(ValueError, match="skill.required_tools"):
-        prepare_run(skill, project, memories, manifest, runtime, now=NOW)
+        prepare_run(
+            skill,
+            project,
+            memory_snapshot,
+            manifest,
+            runtime,
+            now=NOW,
+        )
+
+
+def test_memory_manifest_reference_must_match_snapshot_record():
+    skill, project, memory_snapshot, manifest, runtime = _inputs()
+    memory_item = next(
+        item for item in manifest["kept"] if item["source"] == "memory"
+    )
+    memory_item["source_ref"]["key"] = "another.key"
+
+    report = prepare_run(
+        skill,
+        project,
+        memory_snapshot,
+        manifest,
+        runtime,
+        now=NOW,
+    )
+
+    assert report["status"] == "blocked"
+    assert "memory_key_mismatch:format-preference" in report["blockers"]
 </code></pre></details><h3>Эталонное решение</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-04-skills-memory-projects-05-agent-platforms-openclaw-hermes-code-runtime-preflight-py"><summary><span class="fname">code/runtime_preflight.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Offline preflight for transferring Phase 4 artifacts into an agent runtime.
 
 The module does not call a model, execute a tool, install a platform, or pretend to
@@ -212,14 +298,14 @@ def _require_text(mapping, key, label):
     return value.strip()
 
 
-def prepare_run(skill, project, memories, context_manifest, runtime, now=None):
+def prepare_run(skill, project, memory_snapshot, context_manifest, runtime, now=None):
     """Build a reproducible readiness report for one planned agent run.
 
     The inputs are summaries of artifacts created in lessons 4.1–4.4:
 
-    - skill: validated SKILL.md metadata and its runtime requirements;
-    - project: scope, permissions, memory owner, and acceptance scenarios;
-    - memories: only governed records that may be referenced by the manifest;
+    - skill: validated SKILL.md metadata plus requirements derived by the adapter;
+    - project: blueprint decisions plus transfer fields derived by the adapter;
+    - memory_snapshot: the governed snapshot produced by MemoryStore in lesson 4.2;
     - context_manifest: the kept/dropped decision produced by lesson 4.4;
     - runtime: available capabilities and declared external connections.
 
@@ -229,13 +315,12 @@ def prepare_run(skill, project, memories, context_manifest, runtime, now=None):
     for value, label in (
         (skill, "skill"),
         (project, "project"),
+        (memory_snapshot, "memory_snapshot"),
         (context_manifest, "context_manifest"),
         (runtime, "runtime"),
     ):
         if not isinstance(value, dict):
             raise ValueError(f"{label} must be a mapping")
-    if not isinstance(memories, list):
-        raise ValueError("memories must be a list")
 
     skill_name = _require_text(skill, "name", "skill")
     project_name = _require_text(project, "name", "project")
@@ -294,30 +379,85 @@ def prepare_run(skill, project, memories, context_manifest, runtime, now=None):
     missing_secrets = sorted(set(required_secrets) - set(available_secrets))
     blockers.extend(f"missing_secret:{name}" for name in missing_secrets)
 
+    if memory_snapshot.get("schema_version") != 1:
+        raise ValueError("memory_snapshot.schema_version must be 1")
+    snapshot_owner = _require_text(memory_snapshot, "owner", "memory_snapshot")
+    memory_items = memory_snapshot.get("items")
+    if not isinstance(memory_items, list):
+        raise ValueError("memory_snapshot.items must be a list")
+
     memory_by_id = {}
-    for record in memories:
+    for record in memory_items:
         if not isinstance(record, dict):
             raise ValueError("every memory record must be a mapping")
-        record_id = _require_text(record, "id", "memory record")
+        record_id = record.get("id")
+        if (
+            not isinstance(record_id, int)
+            or isinstance(record_id, bool)
+            or record_id &lt; 0
+        ):
+            raise ValueError("memory record.id must be a non-negative integer")
         if record_id in memory_by_id:
             raise ValueError("memory ids must be unique")
         memory_by_id[record_id] = record
 
-    selected_memory_ids = [item["id"] for item in kept if item["source"] == "memory"]
+    selected_memory_refs = []
     expected_owner = project.get("memory_owner")
     current_time = time.time() if now is None else float(now)
-    for record_id in selected_memory_ids:
+    for item in kept:
+        if item["source"] != "memory":
+            continue
+        context_id = item["id"]
+        source_ref = item.get("source_ref")
+        if not isinstance(source_ref, dict):
+            raise ValueError(
+                f"context memory item {context_id} must contain source_ref"
+            )
+        ref_owner = _require_text(
+            source_ref,
+            "owner",
+            f"context memory item {context_id}.source_ref",
+        )
+        ref_key = _require_text(
+            source_ref,
+            "key",
+            f"context memory item {context_id}.source_ref",
+        )
+        record_id = source_ref.get("record_id")
+        if (
+            not isinstance(record_id, int)
+            or isinstance(record_id, bool)
+            or record_id &lt; 0
+        ):
+            raise ValueError(
+                f"context memory item {context_id}.source_ref.record_id "
+                "must be a non-negative integer"
+            )
+        selected_memory_refs.append(
+            {
+                "context_id": context_id,
+                "owner": ref_owner,
+                "key": ref_key,
+                "record_id": record_id,
+            }
+        )
         record = memory_by_id.get(record_id)
         if record is None:
-            blockers.append(f"memory_record_missing:{record_id}")
+            blockers.append(f"memory_record_missing:{context_id}")
             continue
-        if expected_owner and record.get("owner") != expected_owner:
-            blockers.append(f"memory_owner_mismatch:{record_id}")
+        if (
+            not expected_owner
+            or snapshot_owner != expected_owner
+            or ref_owner != expected_owner
+        ):
+            blockers.append(f"memory_owner_mismatch:{context_id}")
+        if record.get("key") != ref_key:
+            blockers.append(f"memory_key_mismatch:{context_id}")
         if not record.get("active", False):
-            blockers.append(f"memory_inactive:{record_id}")
+            blockers.append(f"memory_inactive:{context_id}")
         expires_at = record.get("expires_at")
         if expires_at is not None and float(expires_at) &lt;= current_time:
-            blockers.append(f"memory_expired:{record_id}")
+            blockers.append(f"memory_expired:{context_id}")
 
     approved_external = set(
         _unique(
@@ -355,7 +495,7 @@ def prepare_run(skill, project, memories, context_manifest, runtime, now=None):
             "project": project_name,
             "runtime": runtime_name,
             "context_ids": kept_ids,
-            "memory_ids": selected_memory_ids,
+            "memory_refs": selected_memory_refs,
         },
         "context": {
             "used_units": used_units,
@@ -400,14 +540,24 @@ DEMO_PROJECT = {
     "acceptance_scenarios": ["P-01", "P-02", "P-03", "P-04", "P-05", "P-06"],
 }
 
-DEMO_MEMORIES = [
-    {
-        "id": "format-preference",
-        "owner": "support-project",
-        "active": True,
-        "expires_at": None,
-    }
-]
+DEMO_MEMORY_SNAPSHOT = {
+    "schema_version": 1,
+    "owner": "support-project",
+    "half_life_days": 30.0,
+    "next_id": 1,
+    "items": [
+        {
+            "id": 0,
+            "key": "response.format",
+            "text": "Пользователь предпочитает краткий ответ.",
+            "source": "user confirmation",
+            "created_at": 1_799_900_000,
+            "expires_at": None,
+            "active": True,
+            "superseded_at": None,
+        }
+    ],
+}
 
 DEMO_CONTEXT_MANIFEST = {
     "kept": [
@@ -442,6 +592,11 @@ DEMO_CONTEXT_MANIFEST = {
             "required": False,
             "relevance": 2,
             "units": 4,
+            "source_ref": {
+                "owner": "support-project",
+                "key": "response.format",
+                "record_id": 0,
+            },
         },
     ],
     "dropped": [
@@ -490,7 +645,7 @@ if __name__ == "__main__":
             prepare_run(
                 DEMO_SKILL,
                 DEMO_PROJECT,
-                DEMO_MEMORIES,
+                DEMO_MEMORY_SNAPSHOT,
                 DEMO_CONTEXT_MANIFEST,
                 DEMO_RUNTIME,
                 now=1_800_000_000,
@@ -499,7 +654,136 @@ if __name__ == "__main__":
             indent=2,
         )
     )
-</code></pre></details><h3>Артефакт</h3><details class="filebox" id="f-phases-04-skills-memory-projects-05-agent-platforms-openclaw-hermes-outputs-runtime-transfer-report-md" open><summary><span class="fname">outputs/runtime-transfer-report.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: отчёт о переносе проекта в агентный рантайм
+</code></pre></details><h3>Артефакт</h3><details class="filebox" id="f-phases-04-skills-memory-projects-05-agent-platforms-openclaw-hermes-outputs-phase-4-dossier-md" open><summary><span class="fname">outputs/phase-4-dossier.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Досье завершения Фазы 4
+
+Это не ещё один учебный ответ и не отчёт по `DEMO_*`. Скопируй шаблон в
+`ai-native-work/course-work/phase-4/phase-4-dossier.md` и свяжи в нём артефакты одного
+собственного процесса. OpenClaw, Hermes или другой новый runtime для завершения фазы не
+обязательны: достаточно офлайн-preflight и уже доступного агента или workspace.
+
+## 1. Собственный процесс
+
+| Поле | Решение |
+|---|---|
+| Название процесса |  |
+| Для кого он создан |  |
+| Какую повторяемую работу выполняет |  |
+| Что остаётся за его границами |  |
+| Владелец процесса и решения о запуске |  |
+| Где выполнялась итоговая проверка | `offline-preflight` / существующий агент или workspace / другой runtime |
+
+Не смешивай разные демонстрационные сюжеты уроков. Во всех следующих разделах речь
+должна идти об одном выбранном здесь процессе.
+
+## 2. Реальные артефакты
+
+| Слой | Путь в `ai-native-work` | Что проверено | Доказательство |
+|---|---|---|---|
+| Skill 4.1 |  | Положительные, отрицательный и граничный сценарии выбора и исполнения |  |
+| Memory 4.2 |  | Владелец, версии, срок жизни, удаление и snapshot |  |
+| Project 4.3 |  | Scope, инструкции, knowledge, возможности и P-01–P-05 |  |
+| Context 4.4 |  | Бюджет, kept/dropped, compaction, `source_ref` и P-06 |  |
+| Runtime transfer 4.5 |  | Mapping, разрешения, data egress, preflight и откат |  |
+
+Ссылка на файл без результата проверки не является доказательством. Назови конкретный
+тест, manifest, заполненную строку сценария или сохранённый отчёт.
+
+## 3. Adapter-контракт
+
+| Поле preflight | Значение | Источник или решение |
+|---|---|---|
+| `skill.name` |  | Skill 4.1 |
+| `required_tools` |  | Выведены из шагов skill при переносе |
+| `required_secrets` |  | Выведены при переносе; только имена, без значений |
+| `project.name` |  | Blueprint 4.3 |
+| `required_context_ids` |  | Обязательные кандидаты политики 4.4 |
+| `allowed_tools` |  | Решение о возможностях проекта 4.3 |
+| `memory_owner` |  | Snapshot 4.2 и область памяти проекта |
+| `approved_external_connections` |  | Решение владельца при переносе 4.5 |
+| `acceptance_scenarios` |  | P-01–P-06 |
+| Runtime capabilities и endpoints |  | Фактическая конфигурация выбранной среды |
+
+Для каждого поля должно быть понятно, было ли оно перенесено из предыдущего артефакта
+или впервые создано адаптером. Не приписывай `SKILL.md` или blueprint полей, которых в
+них нет.
+
+## 4. Трассировка памяти
+
+Заполни строку для каждого memory-кандидата, оставленного в `kept`.
+
+| Context ID | `source_ref.owner` | `source_ref.key` | `source_ref.record_id` | Запись найдена в snapshot | Active и не просрочена | Совпадает с `project.memory_owner` |
+|---|---|---|---:|---:|---:|---:|
+|  |  |  |  |  |  |  |
+
+Контекстный ID может быть удобным названием вроде `format-preference`, но он не заменяет
+числовой `record_id` исходной записи.
+
+## 5. Итог preflight
+
+| Поле | Значение |
+|---|---|
+| Дата и версия проверяемой конфигурации |  |
+| Статус | `ready` / `blocked` |
+| Обязательный контекст присутствует |  |
+| Бюджет не превышен |  |
+| Memory references разрешены |  |
+| Необходимые tools доступны и разрешены |  |
+| Имена необходимых secrets доступны |  |
+| Внешние соединения перечислены и одобрены |  |
+| Блокеры |  |
+| Путь к сохранённому run manifest |  |
+
+`ready` разрешает перейти к поведенческой приёмке. `blocked` является корректным
+результатом, если причины наблюдаемы и запуск действительно остановлен.
+
+## 6. Сквозные сценарии
+
+Для выхода из фазы нельзя оставлять сценарии как «следующий шаг».
+
+| ID | Риск | Ожидаемое поведение | Фактическое доказательство | Результат | Что исправлено и повторено |
+|---|---|---|---|---|---|
+| P-01 | Действующий факт или основной успешный случай |  |  |  |  |
+| P-02 | Пробел в знаниях или отсутствующий вход |  |  |  |  |
+| P-03 | Старая версия или конфликт |  |  |  |  |
+| P-04 | Попытка изменить постоянные правила входом |  |  |  |  |
+| P-05 | Запрос вне scope |  |  |  |  |
+| P-06 | Длинная история и compaction |  |  |  |  |
+
+## 7. Граница данных и откат
+
+| Соединение | Что получает | Внешнее? | Кто одобрил | Как отключить |
+|---|---|---:|---|---|
+| Модель |  |  |  |  |
+| Канал |  |  |  |  |
+| Инструменты |  |  |  |  |
+| Телеметрия и логи |  |  |  |  |
+
+Дополнительно зафиксируй:
+
+1. как отключить skill и runtime mapping;
+2. как отозвать доступ и имена secrets;
+3. как экспортировать или удалить память;
+4. где находятся логи и какие данные в них остаются;
+5. какой безопасный путь работает без AI-компонента.
+
+## 8. Решение о завершении
+
+Фаза завершена, только если все утверждения ниже подтверждены ссылкой или наблюдаемым
+результатом.
+
+- [ ] Один собственный процесс проходит через артефакты 4.1–4.5.
+- [ ] Каждый memory-кандидат трассируется до snapshot по `owner + key + record_id`.
+- [ ] Preflight выполнен на собственных данных и его статус объяснён.
+- [ ] P-01–P-06 выполнены, а найденные дефекты исправлены и перепроверены.
+- [ ] Разрешения, внешние пути, ограничения и откат зафиксированы.
+- [ ] Другой человек может повторить проверку по этому досье.
+
+**Итог:** Фаза 4 завершена / не завершена.
+
+**Почему:**
+
+**Следующий проверяемый шаг:**
+</code></pre></details><details class="filebox" id="f-phases-04-skills-memory-projects-05-agent-platforms-openclaw-hermes-outputs-runtime-transfer-report-md" open><summary><span class="fname">outputs/runtime-transfer-report.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: отчёт о переносе проекта в агентный рантайм
 
 Это заполненный пример для учебного проекта «Помощник по возвратам». Он не подтверждает установку OpenClaw или Hermes: сначала мы проверяем перенос офлайн, а затем при желании повторяем ту же приёмку в выбранной платформе.
 
@@ -518,10 +802,11 @@ if __name__ == "__main__":
 
 | Что создано раньше | Что видит runtime | Доказательство |
 |---|---|---|
-| Skill из 4.1 | `returns-answer-review`; требуется логическая возможность `knowledge.read` | Имя и требования присутствуют в `mapping` и `permissions` |
-| Управляемая память из 4.2 | Активная запись `format-preference` владельца `support-project` | ID присутствует и в `memory_ids`, и в manifest контекста |
-| Blueprint из 4.3 | Проект `returns-assistant`, границы доступа и сценарии `P-01`–`P-06` | Проект и сценарии записаны в отчёте |
-| Политика контекста из 4.4 | Kept/dropped, бюджет и причины исключения | Manifest сохранён целиком |
+| Skill из 4.1 | Имя `returns-answer-review`; адаптер вывел требование `knowledge.read` из шагов skill | Имя присутствует в `mapping`, а решение адаптера — в `permissions` |
+| Управляемая память из 4.2 | Snapshot владельца `support-project`; запись `id=0`, `key=response.format` | Manifest ссылается на неё через `source_ref`, а preflight проверяет запись snapshot |
+| Blueprint из 4.3 | Проект `returns-assistant`, решения о доступе и сценарии `P-01`–`P-05` | Проект и сценарии записаны в отчёте |
+| Политика контекста из 4.4 | Kept/dropped, бюджет, причины исключения, `source_ref` и P-06 | Manifest сохранён целиком |
+| Adapter-контракт 4.5 | Required context IDs, формальные allowlists и одобренные внешние соединения | Для каждого нового поля указан источник решения |
 
 Сопоставление не доказывает качество ответа модели. Оно доказывает, что runtime получил именно те части системы, которые мы намеревались передать.
 
@@ -539,8 +824,11 @@ mapping:
     - request
     - policy-v2
     - format-preference
-  memory_ids:
-    - format-preference
+  memory_refs:
+    - context_id: format-preference
+      owner: support-project
+      key: response.format
+      record_id: 0
 
 context:
   used_units: 22
@@ -562,6 +850,9 @@ permissions:
 data_egress: []
 blockers: []
 ```
+
+Контекстный ID `format-preference` не подменяет ID исходной памяти. Preflight разрешил
+`source_ref` в запись `id=0` snapshot, проверил `key`, владельца, active и срок жизни.
 
 ## 4. Граница данных
 
@@ -630,16 +921,16 @@ blockers: []
 6. где лежат логи и какие данные они содержат.
 
 Перенос завершён, когда другой человек может воспроизвести preflight, увидеть границы данных, повторить сценарии и безопасно отменить подключение.
-</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> шесть тестов preflight зелёные; manifest прочитан и объяснён; артефакты 4.1–4.4 сопоставлены; внешние пути и разрешения названы; сценарии P-01–P-06 повторены либо явно отмечены как следующий шаг. ✅ <strong>Урок готов</strong></p></article>
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD урока:</strong> семь тестов preflight зелёные; manifest и memory <code>source_ref</code> прочитаны и объяснены; артефакты 4.1–4.4 сопоставлены; внешние пути и разрешения названы. Сценарии P-01–P-06 могут остаться следующим шагом только для завершения отдельного урока; для выхода из Фазы 4 они выполнены и внесены в dossier. ✅ <strong>Урок готов</strong></p></article>
     <div class="nav-prevnext" id="prevnext"><a href="../../lessons/context-engineering/"><small>← 4.4</small>Контекст-инжиниринг</a><a href="../../lessons/ai-as-analyst/" style="text-align:right"><small>5.1 →</small>ИИ как аналитик</a></div>
   </section>
 
   <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
 
   <script>window.__BASE__="../../";</script>
-  <script src="../../data.js?v=4ff8a4e9ee2e"></script>
-  <script src="../../progress.js?v=4ff8a4e9ee2e"></script>
-  <script src="../../header.js?v=4ff8a4e9ee2e"></script>
-  <script src="../../app.js?v=4ff8a4e9ee2e"></script>
+  <script src="../../data.js?v=6137d04f0cc6"></script>
+  <script src="../../progress.js?v=6137d04f0cc6"></script>
+  <script src="../../header.js?v=6137d04f0cc6"></script>
+  <script src="../../app.js?v=6137d04f0cc6"></script>
 </body>
 </html>

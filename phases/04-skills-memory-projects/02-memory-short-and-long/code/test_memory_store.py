@@ -107,6 +107,16 @@ def test_save_load_preserves_records_configuration_and_next_id(tmp_path):
     assert new_item["id"] == 2
 
 
+def test_snapshot_preserves_store_owner_and_record_identity():
+    snapshot = _store().snapshot()
+
+    assert snapshot["schema_version"] == 1
+    assert snapshot["owner"] == "student-42"
+    assert snapshot["items"][0]["id"] == 0
+    assert snapshot["items"][0]["key"] == "report.format"
+    assert "owner" not in snapshot["items"][0]
+
+
 def test_load_rejects_another_owner_memory(tmp_path):
     path = tmp_path / "memory.json"
     _store().save(path)

@@ -27,14 +27,14 @@ def _require_text(mapping, key, label):
     return value.strip()
 
 
-def prepare_run(skill, project, memories, context_manifest, runtime, now=None):
+def prepare_run(skill, project, memory_snapshot, context_manifest, runtime, now=None):
     """Build a reproducible readiness report for one planned agent run.
 
     The inputs are summaries of artifacts created in lessons 4.1–4.4:
 
-    - skill: validated SKILL.md metadata and its runtime requirements;
-    - project: scope, permissions, memory owner, and acceptance scenarios;
-    - memories: only governed records that may be referenced by the manifest;
+    - skill: validated SKILL.md metadata plus requirements derived by the adapter;
+    - project: blueprint decisions plus transfer fields derived by the adapter;
+    - memory_snapshot: the governed snapshot produced by MemoryStore in lesson 4.2;
     - context_manifest: the kept/dropped decision produced by lesson 4.4;
     - runtime: available capabilities and declared external connections.
 
@@ -44,13 +44,12 @@ def prepare_run(skill, project, memories, context_manifest, runtime, now=None):
     for value, label in (
         (skill, "skill"),
         (project, "project"),
+        (memory_snapshot, "memory_snapshot"),
         (context_manifest, "context_manifest"),
         (runtime, "runtime"),
     ):
         if not isinstance(value, dict):
             raise ValueError(f"{label} must be a mapping")
-    if not isinstance(memories, list):
-        raise ValueError("memories must be a list")
 
     skill_name = _require_text(skill, "name", "skill")
     project_name = _require_text(project, "name", "project")
@@ -109,30 +108,85 @@ def prepare_run(skill, project, memories, context_manifest, runtime, now=None):
     missing_secrets = sorted(set(required_secrets) - set(available_secrets))
     blockers.extend(f"missing_secret:{name}" for name in missing_secrets)
 
+    if memory_snapshot.get("schema_version") != 1:
+        raise ValueError("memory_snapshot.schema_version must be 1")
+    snapshot_owner = _require_text(memory_snapshot, "owner", "memory_snapshot")
+    memory_items = memory_snapshot.get("items")
+    if not isinstance(memory_items, list):
+        raise ValueError("memory_snapshot.items must be a list")
+
     memory_by_id = {}
-    for record in memories:
+    for record in memory_items:
         if not isinstance(record, dict):
             raise ValueError("every memory record must be a mapping")
-        record_id = _require_text(record, "id", "memory record")
+        record_id = record.get("id")
+        if (
+            not isinstance(record_id, int)
+            or isinstance(record_id, bool)
+            or record_id < 0
+        ):
+            raise ValueError("memory record.id must be a non-negative integer")
         if record_id in memory_by_id:
             raise ValueError("memory ids must be unique")
         memory_by_id[record_id] = record
 
-    selected_memory_ids = [item["id"] for item in kept if item["source"] == "memory"]
+    selected_memory_refs = []
     expected_owner = project.get("memory_owner")
     current_time = time.time() if now is None else float(now)
-    for record_id in selected_memory_ids:
+    for item in kept:
+        if item["source"] != "memory":
+            continue
+        context_id = item["id"]
+        source_ref = item.get("source_ref")
+        if not isinstance(source_ref, dict):
+            raise ValueError(
+                f"context memory item {context_id} must contain source_ref"
+            )
+        ref_owner = _require_text(
+            source_ref,
+            "owner",
+            f"context memory item {context_id}.source_ref",
+        )
+        ref_key = _require_text(
+            source_ref,
+            "key",
+            f"context memory item {context_id}.source_ref",
+        )
+        record_id = source_ref.get("record_id")
+        if (
+            not isinstance(record_id, int)
+            or isinstance(record_id, bool)
+            or record_id < 0
+        ):
+            raise ValueError(
+                f"context memory item {context_id}.source_ref.record_id "
+                "must be a non-negative integer"
+            )
+        selected_memory_refs.append(
+            {
+                "context_id": context_id,
+                "owner": ref_owner,
+                "key": ref_key,
+                "record_id": record_id,
+            }
+        )
         record = memory_by_id.get(record_id)
         if record is None:
-            blockers.append(f"memory_record_missing:{record_id}")
+            blockers.append(f"memory_record_missing:{context_id}")
             continue
-        if expected_owner and record.get("owner") != expected_owner:
-            blockers.append(f"memory_owner_mismatch:{record_id}")
+        if (
+            not expected_owner
+            or snapshot_owner != expected_owner
+            or ref_owner != expected_owner
+        ):
+            blockers.append(f"memory_owner_mismatch:{context_id}")
+        if record.get("key") != ref_key:
+            blockers.append(f"memory_key_mismatch:{context_id}")
         if not record.get("active", False):
-            blockers.append(f"memory_inactive:{record_id}")
+            blockers.append(f"memory_inactive:{context_id}")
         expires_at = record.get("expires_at")
         if expires_at is not None and float(expires_at) <= current_time:
-            blockers.append(f"memory_expired:{record_id}")
+            blockers.append(f"memory_expired:{context_id}")
 
     approved_external = set(
         _unique(
@@ -170,7 +224,7 @@ def prepare_run(skill, project, memories, context_manifest, runtime, now=None):
             "project": project_name,
             "runtime": runtime_name,
             "context_ids": kept_ids,
-            "memory_ids": selected_memory_ids,
+            "memory_refs": selected_memory_refs,
         },
         "context": {
             "used_units": used_units,
@@ -215,14 +269,24 @@ DEMO_PROJECT = {
     "acceptance_scenarios": ["P-01", "P-02", "P-03", "P-04", "P-05", "P-06"],
 }
 
-DEMO_MEMORIES = [
-    {
-        "id": "format-preference",
-        "owner": "support-project",
-        "active": True,
-        "expires_at": None,
-    }
-]
+DEMO_MEMORY_SNAPSHOT = {
+    "schema_version": 1,
+    "owner": "support-project",
+    "half_life_days": 30.0,
+    "next_id": 1,
+    "items": [
+        {
+            "id": 0,
+            "key": "response.format",
+            "text": "Пользователь предпочитает краткий ответ.",
+            "source": "user confirmation",
+            "created_at": 1_799_900_000,
+            "expires_at": None,
+            "active": True,
+            "superseded_at": None,
+        }
+    ],
+}
 
 DEMO_CONTEXT_MANIFEST = {
     "kept": [
@@ -257,6 +321,11 @@ DEMO_CONTEXT_MANIFEST = {
             "required": False,
             "relevance": 2,
             "units": 4,
+            "source_ref": {
+                "owner": "support-project",
+                "key": "response.format",
+                "record_id": 0,
+            },
         },
     ],
     "dropped": [
@@ -305,7 +374,7 @@ if __name__ == "__main__":
             prepare_run(
                 DEMO_SKILL,
                 DEMO_PROJECT,
-                DEMO_MEMORIES,
+                DEMO_MEMORY_SNAPSHOT,
                 DEMO_CONTEXT_MANIFEST,
                 DEMO_RUNTIME,
                 now=1_800_000_000,

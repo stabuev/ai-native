@@ -23,17 +23,21 @@
 
 ## 3. Реестр кандидатов для основного запроса
 
-| ID | Source | Содержание | Required | Relevance | Ожидаемое решение |
-|---|---|---|---:|---:|---|
-| `instructions` | project | отвечать только по действующей политике | да | — | keep |
-| `request` | user | текущий вопрос о сроке возврата | да | — | keep |
-| `policy-v2` | rag | действующая политика: 30 дней | нет | 3 | keep |
-| `format-preference` | memory | пользователь предпочитает краткий ответ | нет | 2 | keep, если помещается |
-| `history-summary` | history | решения и открытые вопросы прошлых сообщений | нет | 1 | keep или drop по бюджету |
-| `policy-v1` | rag | архивная политика: 14 дней | нет | 0 | drop: `not_relevant` |
-| `all-tools` | tool | описания всех доступных инструментов | нет | 0 | drop: `not_relevant` |
+| ID | Source | Source ref | Содержание | Required | Relevance | Ожидаемое решение |
+|---|---|---|---|---:|---:|---|
+| `instructions` | project | — | отвечать только по действующей политике | да | — | keep |
+| `request` | user | — | текущий вопрос о сроке возврата | да | — | keep |
+| `policy-v2` | rag | — | действующая политика: 30 дней | нет | 3 | keep |
+| `format-preference` | memory | `support-project / response.format / record 0` | пользователь предпочитает краткий ответ | нет | 2 | keep, если помещается |
+| `history-summary` | history | — | решения и открытые вопросы прошлых сообщений | нет | 1 | keep или drop по бюджету |
+| `policy-v1` | rag | — | архивная политика: 14 дней | нет | 0 | drop: `not_relevant` |
+| `all-tools` | tool | — | описания всех доступных инструментов | нет | 0 | drop: `not_relevant` |
 
-`source` используется для происхождения и проверки, но не создаёт универсальный приоритет. Если пользователь попросит сравнить версии, `policy-v1` получит новую релевантность и ожидаемое решение изменится.
+`source` используется для происхождения и проверки, но не создаёт универсальный
+приоритет. `source_ref` сохраняет идентичность управляемой записи: ID кандидата удобен
+для manifest, но не подменяет числовой `record_id` из snapshot памяти. Если пользователь
+попросит сравнить версии, `policy-v1` получит новую релевантность и ожидаемое решение
+изменится.
 
 ## 4. Алгоритм решения
 
@@ -75,6 +79,7 @@ kept:
   request            source=user     required=true
   policy-v2          source=rag      relevance=3
   format-preference  source=memory   relevance=2
+    source_ref: owner=support-project, key=response.format, record_id=0
 
 dropped:
   history-summary    source=history  reason=budget

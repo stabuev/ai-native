@@ -3,14 +3,25 @@ import pytest
 from context_engine import compact_history, estimate_units, plan_context
 
 
-def item(item_id, source, content, *, required=False, relevance=0):
-    return {
+def item(
+    item_id,
+    source,
+    content,
+    *,
+    required=False,
+    relevance=0,
+    source_ref=None,
+):
+    candidate = {
         "id": item_id,
         "source": source,
         "content": content,
         "required": required,
         "relevance": relevance,
     }
+    if source_ref is not None:
+        candidate["source_ref"] = source_ref
+    return candidate
 
 
 def test_estimate_units_counts_words_without_calling_them_tokens():
@@ -69,6 +80,28 @@ def test_manifest_explains_budget_and_reserves_space_for_the_answer():
     assert result["used_units"] == 5
     assert [entry["id"] for entry in result["kept"]] == ["request", "fact-a"]
     assert result["dropped"][0]["reason"] == "budget"
+
+
+def test_manifest_preserves_reference_to_governed_memory_record():
+    source_ref = {
+        "owner": "support-project",
+        "key": "response.format",
+        "record_id": 7,
+    }
+    items = [
+        item(
+            "format-preference",
+            "memory",
+            "покажи ответ кратко",
+            relevance=2,
+            source_ref=source_ref,
+        )
+    ]
+
+    result = plan_context(items, budget=10)
+
+    assert result["kept"][0]["id"] == "format-preference"
+    assert result["kept"][0]["source_ref"] == source_ref
 
 
 def test_compaction_keeps_a_summary_and_recent_messages():
