@@ -88,6 +88,10 @@ def test_invalid_ranking_contract_is_rejected(rankings):
 def test_hybrid_search_preserves_the_canonical_record_and_adds_fusion_trace():
     original_records = copy.deepcopy(SAMPLE_RECORDS)
     launch_case = case("exact-launch")
+    for record in SAMPLE_RECORDS:
+        assert len(record["text"].split()) == (
+            record["word_end"] - record["word_start"]
+        )
 
     hits = hybrid_search(
         launch_case["rankings"],

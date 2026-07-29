@@ -3,17 +3,17 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>3.5 Production RAG — AI Native</title>
-  <meta name="description" content="Урок 3.5 курса AI Native: Production RAG. Практический материал с проверяемым результатом.">
+  <title>3.5 Гибридный retrieval: RRF и сравнительный eval — AI Native</title>
+  <meta name="description" content="Урок 3.5 курса AI Native: Гибридный retrieval: RRF и сравнительный eval. Практический материал с проверяемым результатом.">
   <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/production-rag/">
   <meta property="og:type" content="article">
-  <meta property="og:title" content="3.5 Production RAG — AI Native">
-  <meta property="og:description" content="Урок 3.5 курса AI Native: Production RAG. Практический материал с проверяемым результатом.">
+  <meta property="og:title" content="3.5 Гибридный retrieval: RRF и сравнительный eval — AI Native">
+  <meta property="og:description" content="Урок 3.5 курса AI Native: Гибридный retrieval: RRF и сравнительный eval. Практический материал с проверяемым результатом.">
   <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/production-rag/">
   <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
   <meta name="twitter:card" content="summary_large_image">
   <script>(function(){try{var t=localStorage.getItem("theme")||"light";document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
-  <link rel="stylesheet" href="../../style.css?v=d06785bf6264">
+  <link rel="stylesheet" href="../../style.css?v=d996a4891c42">
   <!-- Yandex.Metrika counter -->
   <script type="text/javascript">
       (function(m,e,t,r,i,k,a){
@@ -31,7 +31,7 @@
   <section class="container" style="padding-top:24px">
     <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
     <div class="lessonbar" id="lessonbar"></div>
-    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 3.5 · Production RAG: гибрид, rank fusion и eval</h1><p><strong>Фаза 3 — Текст и документы</strong> · <strong>Результат фазы:</strong> строить пайплайны резюмирования и редактуры; собрать базовый RAG над своим корпусом.</p><p><strong>Результат урока:</strong> после урока студент сможет объединить два действительно разных ранжирования через RRF, сохранить <code>id</code>, источник и позиции найденных записей, сравнить lexical, dense и hybrid retrieval на одном наборе запросов, обнаружить выигрыш и регрессию и обоснованно принять либо отклонить конфигурацию.</p><p><strong>Опора:</strong> трассируемые чанки, положительный score, честная пустая выдача и Hit@k из 3.3; канонические records, embedding adapter и persistent store из 3.4. · <strong>Дальше:</strong> этот же сравнительный процесс используется в домашнем doc-assistant над собственным корпусом.</p><p><strong>Requires:</strong> Python 3 и <code>pytest</code>. Объяснение и Build It работают офлайн, без сети, API-ключа и клонирования курса. Для необязательного переноса на настоящую dense-модель, managed reranker или LLM-оценку могут понадобиться скачивание модели, сеть и ключ выбранного провайдера.</p><blockquote><strong>Главная мысль.</strong> Production-дисциплина начинается не с добавления модного компонента, а со сравнения на одинаковых случаях: где изменение помогло, где сломало результат и можно ли его безопасно принять.</blockquote><h2>Ситуация: новый retriever ещё не означает улучшение</h2><p>В 3.3 появился лексический TF-IDF retriever. Он возвращал только положительные совпадения, сохранял provenance и честно выдавал <code>[]</code>, если словесного свидетельства нет. В 3.4 те же записи и их векторы научились жить после перезапуска:</p><pre><code>record с id/source/позициями
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 3.5 · Гибридный retrieval: RRF и сравнительный eval</h1><p><strong>Фаза 3 — Текст и документы</strong> · <strong>Результат фазы:</strong> строить пайплайны резюмирования и редактуры; собрать базовый RAG над своим корпусом.</p><p><strong>Результат урока:</strong> после урока студент сможет объединить два действительно разных ранжирования через RRF, сохранить <code>id</code>, источник и позиции найденных записей, сравнить lexical, dense и hybrid retrieval на одном наборе запросов, обнаружить выигрыш и регрессию и обоснованно принять либо отклонить конфигурацию.</p><p><strong>Опора:</strong> трассируемые чанки, положительный score, честная пустая выдача и Hit@k из 3.3; канонические records, embedding adapter и persistent store из 3.4. · <strong>Дальше:</strong> этот же сравнительный процесс используется в итоговом doc-assistant над собственным корпусом; в 4.1 ты разберёшь устройство готовых <code>editor</code> и <code>doc-assistant</code> skills из этой фазы и спроектируешь собственный skill.</p><p><strong>Requires:</strong> Python 3 и <code>pytest</code>. Объяснение и Build It работают офлайн, без сети, API-ключа и клонирования курса. Для необязательного переноса на настоящую dense-модель, managed reranker или LLM-оценку могут понадобиться скачивание модели, сеть и ключ выбранного провайдера.</p><blockquote><strong>Главная мысль.</strong> Production-дисциплина начинается не с добавления модного компонента, а со сравнения на одинаковых случаях: где изменение помогло, где сломало результат и можно ли его безопасно принять.</blockquote><h2>Ситуация: новый retriever ещё не означает улучшение</h2><p>В 3.3 появился лексический TF-IDF retriever. Он возвращал только положительные совпадения, сохранял provenance и честно выдавал <code>[]</code>, если словесного свидетельства нет. В 3.4 те же записи и их векторы научились жить после перезапуска:</p><pre><code>record с id/source/позициями
 → embedding adapter
 → persistent store
 → evidence или insufficient_context</code></pre><p>Но способ представления текста в обоих офлайн-уроках оставался <strong>лексическим</strong>:</p><ul><li>TF-IDF из 3.3 сравнивал слова с учётом их важности в корпусе;</li><li><code>hash_embed</code> из 3.4 складывал одинаковые слова в одинаковые координаты;</li><li>vector store сохранял переданные vectors, но не добавлял им понимание смысла.</li></ul><p>Поэтому запрос:</p><pre><code>кто автор финального документа</code></pre><p>может не найти чанк:</p><pre><code>Ответственный за итоговый отчёт пока не назначен.</code></pre><p>Слова разные, хотя намерение похоже. <strong>Dense retriever</strong> с нейросетевыми embeddings может исправить такой промах, потому что его представление обучено учитывать контекст и смысловую близость. Но замена не гарантирует улучшение каждого запроса: dense-модель может поставить ниже точный код, дату, имя, артикул или редкий термин.</p><p>Возникает соблазн запустить оба retriever и объявить результат гибридным. Этого недостаточно. Нужно ответить на четыре вопроса:</p><ol><li>Какие кандидаты каждый retriever действительно считает положительными?</li><li>Как объединить два порядка, если их исходные scores имеют разные шкалы?</li><li>Как не потерять <code>id</code>, источник и позиции из предыдущих уроков?</li><li>Стало ли лучше на всём проверочном наборе, а не на одном красивом запросе?</li></ol><p>Это и есть граница урока. Мы не строим всю production-инфраструктуру и не обещаем готовность к любому трафику. Мы вводим одну production-привычку: <strong>изменение retrieval проходит сравнительный eval и может быть отклонено</strong>.</p><h2>Два независимых сигнала</h2><p>Сначала разделим термины, которые часто смешивают.</p><h3>Lexical retrieval</h3><p><strong>Lexical retriever</strong> ищет совпадения слов и их формализованных весов. TF-IDF и BM25 — лексические методы. Они особенно полезны, когда сам вид строки важен:</p><ul><li><code>PAY-042</code>;</li><li><code>numpy</code>;</li><li>фамилия или название продукта;</li><li>точная дата;</li><li>фраза из договора.</li></ul><p>Лексический поиск не обязан понимать, что «автор документа» и «ответственный за отчёт» могут обозначать близкие роли.</p><h3>Dense retrieval</h3><p><strong>Dense retriever</strong> получает из обученной embedding-модели плотный вектор фиксированной длины и ищет близкие vectors. Он может находить перефразы без общих слов, но качество зависит от языка, домена, модели, chunking и самого запроса.</p><p>Слово <code>vector</code> само по себе не означает <code>semantic</code>. TF-IDF тоже можно представить вектором, но от этого он не начинает понимать синонимы. Поэтому в этом уроке используются точные названия:</p><pre><code>lexical ranking — порядок кандидатов по словесному сигналу
@@ -152,11 +152,12 @@ if __name__ == "__main__":
     print(evaluate(EVAL_CASES, SAMPLE_RECORDS, top_k=1))
 </code></pre></details><h3>Учебные данные</h3><p class="muted files-note">Этот безопасный пример можно использовать вместо рабочего файла.</p><details class="filebox" id="f-phases-03-text-and-documents-05-production-rag-code-sample-rankings-py" open><summary><span class="fname">code/sample_rankings.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Traceable offline fixtures for observing rank fusion.
 
-The records keep the IDs and provenance used in lessons 3.3–3.4.  The ranked
-lists are deliberately frozen, plausible successes and failures of two
-different retrievers.  They are not generated by the exercise and are not a
-benchmark for a particular embedding model.  Replace them with real retriever
-outputs when transferring the pipeline to your corpus.
+The records are copied verbatim from lesson 3.4: the same stable ID must never
+refer to shortened or otherwise changed text.  The ranked lists are deliberately
+frozen, plausible successes and failures of two different retrievers.  They are
+not generated by the exercise and are not a benchmark for a particular
+embedding model.  Replace them with real retriever outputs when transferring
+the pipeline to your corpus.
 """
 
 
@@ -174,8 +175,14 @@ SAMPLE_RECORDS = [
         "word_start": 0,
         "word_end": 70,
         "text": (
-            "Ограниченный пилот нового платёжного потока запускается 18 сентября "
-            "для 10% пользователей iOS. Android и веб в этот этап не входят."
+            "# Учебный отчёт о пилоте нового платёжного потока ## 1. Контекст и "
+            "границы пилота Команда готовит ограниченный пилот нового платёжного "
+            "потока. Принято решение запустить его 18 сентября для 10% "
+            "пользователей iOS. Пользователи Android и веб-версии в этот этап не "
+            "входят. Цель пилота — проверить техническую стабильность потока и "
+            "влияние на обращения в поддержку до решения о дальнейшем расширении. "
+            "Объём 10% выбран как контролируемая стартовая группа. В обсуждении "
+            "звучали варианты 5%"
         ),
     },
     {
@@ -185,8 +192,14 @@ SAMPLE_RECORDS = [
         "word_start": 120,
         "word_end": 190,
         "text": (
-            "Если согласование службы безопасности не получено к 16 сентября, "
-            "запуск переносится. Это обязательный gate запуска."
+            "не принимает решение за службу безопасности. Если согласование не "
+            "получено к 16 сентября, запуск переносится. Это условие является "
+            "обязательным gate запуска, а не рекомендацией. Новая дата в таком "
+            "случае должна быть согласована отдельно; в текущем протоколе она не "
+            "определена. ## 3. План запуска В день пилота команда планирует "
+            "включать поток постепенно и следить за техническими ошибками. При "
+            "критическом росте неуспешных оплат включение останавливается, после "
+            "чего трафик возвращается на прежний поток."
         ),
     },
     {
@@ -196,8 +209,14 @@ SAMPLE_RECORDS = [
         "word_start": 240,
         "word_end": 310,
         "text": (
-            "Утверждены две метрики пилота: доля успешных оплат и число обращений "
-            "в поддержку. Их смотрят отдельно для пилота и контроля."
+            "пилота утверждены две основные метрики: доля успешных оплат и число "
+            "обращений в поддержку. Дополнительно команда хочет наблюдать время "
+            "ответа платёжного сервиса, но порог для этой метрики ещё не "
+            "согласован. Метрики следует смотреть отдельно для пилотной группы и "
+            "контрольного потока. Складывать обращения двух групп в одно число "
+            "нельзя: это скроет различие, ради которого проводится пилот. ## 5. "
+            "Коммуникация и ответственность Статус пилота будет публиковаться во "
+            "внутреннем канале проекта. Рита сообщает только"
         ),
     },
     {
@@ -207,8 +226,15 @@ SAMPLE_RECORDS = [
         "word_start": 300,
         "word_end": 370,
         "text": (
-            "Команда поддержки сообщает динамику обращений. Ответственный за "
-            "итоговый отчёт пока не назначен; его назначает владелец продукта."
+            "пилота будет публиковаться во внутреннем канале проекта. Рита "
+            "сообщает только статус передачи схемы и полученного ответа "
+            "безопасности. Команда поддержки сообщает динамику обращений, а "
+            "техническая команда — ошибки и время ответа. Ответственный за "
+            "итоговый отчёт пока не назначен. Владелец продукта должен назначить "
+            "его до запуска. Нельзя автоматически считать Риту владельцем "
+            "итогового отчёта только потому, что она указана в разделе о "
+            "согласовании. ## 6. Открытые вопросы До запуска остаются три открытых "
+            "вопроса:"
         ),
     },
 ]
@@ -360,6 +386,10 @@ def test_invalid_ranking_contract_is_rejected(rankings):
 def test_hybrid_search_preserves_the_canonical_record_and_adds_fusion_trace():
     original_records = copy.deepcopy(SAMPLE_RECORDS)
     launch_case = case("exact-launch")
+    for record in SAMPLE_RECORDS:
+        assert len(record["text"].split()) == (
+            record["word_end"] - record["word_start"]
+        )
 
     hits = hybrid_search(
         launch_case["rankings"],
@@ -1026,9 +1056,9 @@ decision: pass | investigate | block
   <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
 
   <script>window.__BASE__="../../";</script>
-  <script src="../../data.js?v=d06785bf6264"></script>
-  <script src="../../progress.js?v=d06785bf6264"></script>
-  <script src="../../header.js?v=d06785bf6264"></script>
-  <script src="../../app.js?v=d06785bf6264"></script>
+  <script src="../../data.js?v=d996a4891c42"></script>
+  <script src="../../progress.js?v=d996a4891c42"></script>
+  <script src="../../header.js?v=d996a4891c42"></script>
+  <script src="../../app.js?v=d996a4891c42"></script>
 </body>
 </html>
