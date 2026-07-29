@@ -273,9 +273,9 @@ decision record 3.5. Если отдельная карточка неприме
 | 4.2 | Память: короткая и длинная | Файловая память: запись, поиск, замена, срок жизни и удаление | Сравнение контекста, истории чата и памяти платформ | Изолированный модуль памяти + поведенческие проверки | `phases/04-skills-memory-projects/02-memory-short-and-long` |
 | 4.3 | Проекты и рабочие пространства | Project blueprint: scope + instructions + реестр knowledge + приёмочные сценарии | Перенос в доступный Project / workspace / настроенного ассистента | Проверенный blueprint проекта + протокол приёмки | `phases/04-skills-memory-projects/03-projects-and-workspaces` |
 | 4.4 | Контекст-инжиниринг | Планировщик: обязательные элементы, релевантность, бюджет и manifest | Проверка политики на сценариях проекта 4.3 | Проверенная политика контекста + manifest решений | `phases/04-skills-memory-projects/04-context-engineering` |
-| 4.5 | Агентные платформы: OpenClaw / Hermes | Загрузка скилла (SKILL.md / agentskills.io) в локальный рантайм | OpenClaw / Hermes: скиллы + память + мульти-модель + MCP | Свой агент на self-hosted платформе | `phases/04-skills-memory-projects/05-agent-platforms-openclaw-hermes` |
+| 4.5 | От проекта к агентному рантайму | Офлайн-preflight: mapping артефактов 4.1–4.4, разрешения, data egress и manifest | Перенос в один выбранный runtime; OpenClaw / Hermes — необязательные маршруты | Проверенный отчёт о переносе | `phases/04-skills-memory-projects/05-agent-platforms-openclaw-hermes` |
 
-**Домашнее задание.** Собрать skill + проект с базой знаний + модуль памяти под один реальный процесс.
+**Домашнее задание.** Собрать под один реальный процесс skill, проект с knowledge, управляемую память и политику контекста; выполнить preflight переноса, зафиксировать разрешения и внешние пути данных, затем повторить приёмочные сценарии.
 
 **Ресурсы.** Claude Features (Projects, Memory, Skills, MCP); сравнение Custom GPTs vs Projects vs Gems
 
