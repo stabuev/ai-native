@@ -4,16 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>3.5 Production RAG — AI Native</title>
-  <meta name="description" content="Прод-RAG — это не «один ретривер», а гибрид сигналов, reranking и измеримое качество.">
+  <meta name="description" content="Урок 3.5 курса AI Native: Production RAG. Практический материал с проверяемым результатом.">
   <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/production-rag/">
   <meta property="og:type" content="article">
   <meta property="og:title" content="3.5 Production RAG — AI Native">
-  <meta property="og:description" content="Прод-RAG — это не «один ретривер», а гибрид сигналов, reranking и измеримое качество.">
+  <meta property="og:description" content="Урок 3.5 курса AI Native: Production RAG. Практический материал с проверяемым результатом.">
   <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/production-rag/">
   <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
   <meta name="twitter:card" content="summary_large_image">
   <script>(function(){try{var t=localStorage.getItem("theme")||"light";document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
-  <link rel="stylesheet" href="../../style.css?v=b2c0ea71efb8">
+  <link rel="stylesheet" href="../../style.css?v=d06785bf6264">
   <!-- Yandex.Metrika counter -->
   <script type="text/javascript">
       (function(m,e,t,r,i,k,a){
@@ -31,180 +31,1004 @@
   <section class="container" style="padding-top:24px">
     <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
     <div class="lessonbar" id="lessonbar"></div>
-    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 3.5 · Production RAG</h1><p><strong>Фаза 3 — Текст и документы</strong> · <strong>Результат фазы:</strong> Строить пайплайны резюмирования и редактуры; собрать базовый RAG над своим корпусом.</p><p><strong>Requires (только для USE IT):</strong> платный API-ключ одного из провайдеров. BUILD IT работает офлайн, без ключей и без сети.</p><p><strong>Это венец Фазы 3: базовый RAG доводим до продакшн-уровня.</strong> Один ретривер из 3.3–3.4 в реальности промахивается, а «стало ли лучше» — неизвестно. Прод-RAG добавляет три вещи: <strong>гибрид</strong> двух ретриверов (семантика + точные слова), <strong>переранжирование</strong> слиянием рангов (RRF) и <strong>измеримую оценку</strong> (RAGAS). Собираем гибрид сами, чтобы понять, как сводятся сигналы.</p><blockquote><strong>MOTTO.</strong> Прод-RAG — это не «один ретривер», а гибрид сигналов, reranking и измеримое качество.</blockquote><h2>PROBLEM</h2><p>Чистый vector-RAG (3.3–3.4) в проде проседает: семантика промахивается на <strong>точных</strong> терминах, кодах, именах (<code>numpy</code>, артикул, фамилия), потому что «по смыслу» они близки много к чему. А чистый keyword-поиск промахивается на синонимах и перефразировках. Вдобавок без оценки непонятно, помогла ли правка пайплайна. Прод-RAG объединяет оба сигнала, переранжирует и <strong>меряет</strong> качество ретрива и ответа.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Это как спросить <strong>двух экспертов</strong> с разными слепыми зонами: один судит по смыслу (vector), другой — по точным словам (keyword). Документ, который оба ставят высоко, почти наверняка релевантен. Гибрид берёт лучшее из обоих, а оценка заменяет «мне кажется, лучше» на число.</p><h3>Как это работает</h3><pre><code>запрос ─┬─ vector ranking (семантика, TF-IDF/эмбеддинги)
-        └─ keyword ranking (точные слова)
-                │ Reciprocal Rank Fusion (слияние рангов)
-                ▼
-        rerank → top-k → ответ
-                │
-        eval: faithfulness · context precision/recall (RAGAS)</code></pre><ul><li><strong>Два сигнала.</strong> <code>vector_ranking</code> — по косинусной близости (из 3.3), ловит смысл и синонимы. <code>keyword_ranking</code> — по числу точных совпадений слов, ловит термины и коды, которые семантика «размывает».</li><li><strong>RRF (Reciprocal Rank Fusion).</strong> Как слить два списка, если их «оценки» несравнимы (косинус 0..1 против числа совпадений)? RRF смотрит только на <strong>ранги</strong>: каждый документ получает <code>score = Σ 1/(k + rank + 1)</code> по всем спискам (обычно <code>k=60</code>). Документ, стоящий высоко <strong>в обоих</strong> списках, набирает больше всех — консенсус побеждает, и шкалы сигналов сравнивать не нужно.</li><li><strong>Reranking → top-k.</strong> Берём верх слитого списка. (В проде сюда же ставят cross-encoder-реранкер — отдельную модель, которая переоценивает пары «запрос-документ».)</li><li><strong>Оценка (RAGAS).</strong> Меряем пайплайн без ручной разметки и <strong>отдельно</strong> по частям: <code>context precision/recall</code> — качество <strong>ретрива</strong> (нашли ли нужное и не лишнее), <code>faithfulness</code> / <code>answer relevancy</code> — качество <strong>ответа</strong> (заземлён ли он на контекст и по делу ли). Так видно, чинить ретрив или генерацию.</li></ul><h2>РАЗБОР ПО ШАГАМ</h2><p>Главное здесь — <strong>как RRF сводит два ранжирования</strong>. Пусть на запрос vector выдал порядок документов <code>[2, 0, 1]</code>, а keyword — <code>[2, 1, 0]</code> (списки расходятся). Считаем RRF-скор каждого документа, <code>score = Σ 1/(60 + rank + 1)</code>:</p><pre><code>doc2: vector #1 (1/61) + keyword #1 (1/61) = 0.0328   ← топ в обоих → максимум
-doc0: vector #2 (1/62) + keyword #3 (1/63) = 0.0320
-doc1: vector #3 (1/63) + keyword #2 (1/62) = 0.0320</code></pre><p>Слитый порядок → <code>[2, 0, 1]</code>: <strong><code>doc2</code> первым</strong>, потому что он на вершине обоих списков. А вот <code>doc0</code> и <code>doc1</code> набрали <strong>поровну</strong> (0.0320) — их взаимный порядок решает тай-брейк: наш код обрабатывает vector-список первым, поэтому при равенстве очков выше встаёт тот, кто раньше попал в счётчик (<code>doc0</code>). Ключевая идея: RRF использует только позиции, поэтому честно сводит сигналы с разными шкалами.</p><p>И зачем нужен keyword рядом с vector: на запросе вроде <code>numpy матрицы</code> keyword <strong>гарантированно</strong> поднимает документ с точным словом <code>numpy</code>, даже если чистая семантика поставила бы его ниже. Гибрид через RRF забирает оба попадания — и точный термин, и смысловое.</p><h2>BUILD IT</h2><p><strong>Задание: собери гибридный ретривер с RRF</strong> — стандартная библиотека, без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/3.5-production-rag/</code>), а файлы урока клади в подпапку <code>code/</code> (по соглашению курса). Нужен только <strong>Python 3</strong>, всё офлайн (для теста ещё <code>pytest</code>).</blockquote><p>Реализуй (TF-IDF <code>build_index</code> — как в уроке 3.3):</p><ul><li><strong><code>vector_ranking(query, index)</code></strong> — верни индексы документов по убыванию косинусной близости запроса к их tf-idf векторам (семантика).</li><li><strong><code>keyword_ranking(query, index)</code></strong> — верни индексы по убыванию числа точных совпадений слов запроса со словами документа (лексика).</li><li><strong><code>reciprocal_rank_fusion(rankings, k=60)</code></strong> — слей несколько ранжирований: для каждого списка и каждой позиции <code>rank</code> (с 0) прибавь документу <code>1/(k + rank + 1)</code>; верни индексы по убыванию суммарного score.</li><li><strong><code>hybrid_search(query, index, top_k=3)</code></strong> — слей <code>vector_ranking</code> и <code>keyword_ranking</code> через RRF и верни <code>top_k</code> как <code>[{"doc": ...}]</code>.</li></ul><p><strong>Готово, когда</strong> тест <code>test_hybrid_retriever.py</code> зелёный — он проверяет, что RRF ставит консенсус-документ первым, что keyword ловит точный термин (<code>numpy</code>), что гибрид выдаёт релевантный документ первым, уважает <code>top_k</code>, а ранжирования возвращают все индексы.</p><pre><code>pytest code -q                  # красное → реализуй функции → зелёное
-python code/hybrid_retriever.py # демо: гибридный поиск по «numpy матрицы»</code></pre><p><strong>Подсказка.</strong> В RRF держи <code>Counter</code> по индексам; пройди каждое ранжирование с <code>enumerate</code> и прибавляй <code>1/(k + rank + 1)</code>, затем <code>scores.most_common()</code>.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>В проде — managed retrieval, графовый RAG и автоматическая оценка (мульти-провайдер):</p><ul><li><strong>GraphRAG</strong> (Microsoft) — строит граф сущностей/связей и community-саммари: сильнее baseline-RAG на «глобальных» вопросах по большому корпусу.</li><li><strong>Managed retrieval</strong> — гибридный поиск из коробки (Chroma/pgvector/векторные БД), нейроэмбеддинги вместо TF-IDF.</li><li><strong>RAGAS</strong> — оценка пайплайна без ручной разметки: faithfulness, answer relevancy, context precision/recall — отдельно по ретриверу и генератору.</li></ul><h2>SHIP IT</h2><p><strong>Артефакт:</strong> production-rag pipeline + eval-отчёт → <a href="#f-phases-03-text-and-documents-05-production-rag-outputs-production-rag-pipeline-md"><code>outputs/production-rag-pipeline.md</code></a></p><p>Рецепт прод-RAG (chunking → гибрид → rerank → ответ → eval) + шаблон отчёта по метрикам RAGAS. Связь с 3.2 (chunking), 3.3–3.4 (retrieval/store), 2.5/7.5 (eval).</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Полагаться только на vector.</strong> На точных терминах, кодах и именах семантика промахивается — добавь keyword-сигнал и слей через RRF.</li><li><strong>Складывать несравнимые скоры.</strong> Косинус и число совпадений в разных шкалах; усреднять их «в лоб» неверно. RRF сводит по рангам, а не по сырым значениям.</li><li><strong>Оценивать RAG «на глаз» и целиком.</strong> Меряй метриками (RAGAS) и <strong>раздельно</strong>: плохой ответ может быть из-за ретрива (не нашли) или генерации (не использовал контекст) — лечится по-разному.</li><li><strong>Усложнять раньше времени.</strong> GraphRAG и реранкеры стоят денег и задержки; включай их, когда базовый гибрид измеримо не дотягивает, а не «на всякий случай».</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="3.5"></div><h2>Дополнительное чтение</h2><ul><li><a href="https://microsoft.github.io/graphrag/" target="_blank" rel="noopener">Microsoft GraphRAG</a> — графовый RAG для сложных запросов.</li><li><a href="https://docs.ragas.io/en/stable/concepts/metrics/available_metrics/" target="_blank" rel="noopener">Ragas — метрики</a> — faithfulness, context precision/recall.</li><li><a href="https://arxiv.org/abs/2309.15217" target="_blank" rel="noopener">Ragas (arXiv 2309.15217)</a> — first-source автоматической оценки RAG.</li><li><a href="https://doi.org/10.1145/1571941.1572114" target="_blank" rel="noopener">Cormack et al., 2009 — Reciprocal Rank Fusion (RRF)</a> — первоисточник фьюжна ранжирований, который урок собирает своими руками.</li><li><a href="https://doi.org/10.1561/1500000019" target="_blank" rel="noopener">Robertson &amp; Zaragoza, 2009 — BM25 and Beyond</a> — keyword-ретрив (вторая половина гибрида vector+keyword).</li><li><a href="https://www.anthropic.com/news/contextual-retrieval" target="_blank" rel="noopener">Anthropic — Contextual Retrieval (2024)</a> — production-гибрид: контекстные эмбеддинги + BM25 + reranking.</li><li><a href="https://www.sbert.net/examples/applications/retrieve_rerank/README.html" target="_blank" rel="noopener">Sentence-Transformers — Retrieve &amp; Re-Rank</a> — bi-encoder ретрив + cross-encoder reranking.</li><li><a href="https://docs.cohere.com/docs/rerank-overview" target="_blank" rel="noopener">Cohere — Rerank</a> — managed-reranker для RAG.</li><li><a href="https://arxiv.org/abs/2312.10997" target="_blank" rel="noopener">Gao et al., 2023 — RAG: A Survey</a> — карта Naive / Advanced / Modular RAG.</li><li><a href="https://medium.com/@devalshah1619/mathematical-intuition-behind-reciprocal-rank-fusion-rrf-explained-in-2-mins-002df0cc5e2a" target="_blank" rel="noopener">Deval Shah — RRF explained (Medium)</a> — доступная интуиция и формула RRF.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Если делегируешь ИИ, реши, что отдаёшь; опиши задачу и критерии; проверь результат; сохрани ответственность за итог.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-03-text-and-documents-05-production-rag-code-test-hybrid-retriever-py" open data-test="1"><summary><span class="fname">code/test_hybrid_retriever.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from hybrid_retriever import (build_index, vector_ranking, keyword_ranking,
-                              reciprocal_rank_fusion, hybrid_search)
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 3.5 · Production RAG: гибрид, rank fusion и eval</h1><p><strong>Фаза 3 — Текст и документы</strong> · <strong>Результат фазы:</strong> строить пайплайны резюмирования и редактуры; собрать базовый RAG над своим корпусом.</p><p><strong>Результат урока:</strong> после урока студент сможет объединить два действительно разных ранжирования через RRF, сохранить <code>id</code>, источник и позиции найденных записей, сравнить lexical, dense и hybrid retrieval на одном наборе запросов, обнаружить выигрыш и регрессию и обоснованно принять либо отклонить конфигурацию.</p><p><strong>Опора:</strong> трассируемые чанки, положительный score, честная пустая выдача и Hit@k из 3.3; канонические records, embedding adapter и persistent store из 3.4. · <strong>Дальше:</strong> этот же сравнительный процесс используется в домашнем doc-assistant над собственным корпусом.</p><p><strong>Requires:</strong> Python 3 и <code>pytest</code>. Объяснение и Build It работают офлайн, без сети, API-ключа и клонирования курса. Для необязательного переноса на настоящую dense-модель, managed reranker или LLM-оценку могут понадобиться скачивание модели, сеть и ключ выбранного провайдера.</p><blockquote><strong>Главная мысль.</strong> Production-дисциплина начинается не с добавления модного компонента, а со сравнения на одинаковых случаях: где изменение помогло, где сломало результат и можно ли его безопасно принять.</blockquote><h2>Ситуация: новый retriever ещё не означает улучшение</h2><p>В 3.3 появился лексический TF-IDF retriever. Он возвращал только положительные совпадения, сохранял provenance и честно выдавал <code>[]</code>, если словесного свидетельства нет. В 3.4 те же записи и их векторы научились жить после перезапуска:</p><pre><code>record с id/source/позициями
+→ embedding adapter
+→ persistent store
+→ evidence или insufficient_context</code></pre><p>Но способ представления текста в обоих офлайн-уроках оставался <strong>лексическим</strong>:</p><ul><li>TF-IDF из 3.3 сравнивал слова с учётом их важности в корпусе;</li><li><code>hash_embed</code> из 3.4 складывал одинаковые слова в одинаковые координаты;</li><li>vector store сохранял переданные vectors, но не добавлял им понимание смысла.</li></ul><p>Поэтому запрос:</p><pre><code>кто автор финального документа</code></pre><p>может не найти чанк:</p><pre><code>Ответственный за итоговый отчёт пока не назначен.</code></pre><p>Слова разные, хотя намерение похоже. <strong>Dense retriever</strong> с нейросетевыми embeddings может исправить такой промах, потому что его представление обучено учитывать контекст и смысловую близость. Но замена не гарантирует улучшение каждого запроса: dense-модель может поставить ниже точный код, дату, имя, артикул или редкий термин.</p><p>Возникает соблазн запустить оба retriever и объявить результат гибридным. Этого недостаточно. Нужно ответить на четыре вопроса:</p><ol><li>Какие кандидаты каждый retriever действительно считает положительными?</li><li>Как объединить два порядка, если их исходные scores имеют разные шкалы?</li><li>Как не потерять <code>id</code>, источник и позиции из предыдущих уроков?</li><li>Стало ли лучше на всём проверочном наборе, а не на одном красивом запросе?</li></ol><p>Это и есть граница урока. Мы не строим всю production-инфраструктуру и не обещаем готовность к любому трафику. Мы вводим одну production-привычку: <strong>изменение retrieval проходит сравнительный eval и может быть отклонено</strong>.</p><h2>Два независимых сигнала</h2><p>Сначала разделим термины, которые часто смешивают.</p><h3>Lexical retrieval</h3><p><strong>Lexical retriever</strong> ищет совпадения слов и их формализованных весов. TF-IDF и BM25 — лексические методы. Они особенно полезны, когда сам вид строки важен:</p><ul><li><code>PAY-042</code>;</li><li><code>numpy</code>;</li><li>фамилия или название продукта;</li><li>точная дата;</li><li>фраза из договора.</li></ul><p>Лексический поиск не обязан понимать, что «автор документа» и «ответственный за отчёт» могут обозначать близкие роли.</p><h3>Dense retrieval</h3><p><strong>Dense retriever</strong> получает из обученной embedding-модели плотный вектор фиксированной длины и ищет близкие vectors. Он может находить перефразы без общих слов, но качество зависит от языка, домена, модели, chunking и самого запроса.</p><p>Слово <code>vector</code> само по себе не означает <code>semantic</code>. TF-IDF тоже можно представить вектором, но от этого он не начинает понимать синонимы. Поэтому в этом уроке используются точные названия:</p><pre><code>lexical ranking — порядок кандидатов по словесному сигналу
+dense ranking   — порядок кандидатов по обученному dense-представлению</code></pre><h3>Candidate — это уже положительное свидетельство</h3><p><strong>Кандидат</strong> — record, который отдельный retriever решил допустить к объединению. Нулевые совпадения не нужно дополнять до фиксированного <code>k</code>.</p><pre><code>нет положительного lexical evidence → lexical ranking = []
+нет положительного dense evidence   → dense ranking = []
+оба списка пусты                    → hybrid result = []</code></pre><p>RRF умеет менять порядок существующих кандидатов, но не умеет превращать нулевое свидетельство в доказательство.</p><h2>Почему нельзя просто сложить исходные scores</h2><p>Предположим, lexical retriever вернул score <code>7.4</code>, а dense retriever — cosine <code>0.81</code>. Какой вклад больше? Без отдельной калибровки ответ неизвестен:</p><ul><li>у методов разные единицы и диапазоны;</li><li>распределение scores меняется от корпуса и запроса;</li><li>даже одинаковое число может означать разную уверенность.</li></ul><p>Можно строить нормализацию или обучать fusion-модель, но это уже другой механизм. В этом уроке используется <strong>Reciprocal Rank Fusion</strong>, сокращённо <strong>RRF</strong>. Он игнорирует исходные scores и использует только место кандидата в каждом списке.</p><p>Для документа <code>d</code>:</p><pre><code>RRF(d) = Σ 1 / (rank_constant + rank(d))</code></pre><ul><li><code>rank</code> начинается с 1;</li><li>сумма берётся по спискам, где документ действительно присутствует;</li><li>обычно в примерах используют <code>rank_constant = 60</code>;</li><li>чем выше документ стоит в одном или нескольких списках, тем больше итоговый score.</li></ul><p>Константа смягчает разницу между соседними местами. Значение <code>60</code> — распространённый baseline из исходной работы, а не универсальный оптимум для любого корпуса.</p><h2>Разбор RRF на трёх документах</h2><p>Пусть два retriever вернули стабильные ID:</p><pre><code>lexical: [A, B]
+dense:   [C, A]</code></pre><p>Прежде чем читать дальше, попробуй предсказать итоговый порядок. <code>A</code> не первый в dense, но встречается в обоих списках.</p><p>При <code>rank_constant = 60</code>:</p><pre><code>A: lexical #1 → 1/61  + dense #2 → 1/62 = 0.032522
+C: dense   #1 → 1/61                         = 0.016393
+B: lexical #2 → 1/62                         = 0.016129</code></pre><p>Итог:</p><pre><code>[A, C, B]</code></pre><p><code>A</code> получает поддержку двух сигналов и становится первым. Исходные lexical и dense scores сравнивать не понадобилось.</p><p>Вместе с каждым результатом наш код сохраняет объяснение:</p><pre><code>{
+  "id": "A",
+  "rrf_score": 0.032522,
+  "matched_by": ["lexical", "dense"],
+  "ranks": {"lexical": 1, "dense": 2}
+}</code></pre><p>Это не доказательство релевантности, но достаточный trace для диагностики: видно, какие retriever поддержали кандидата и на каких местах он находился.</p><h2>Неудобный случай: два списка расходятся</h2><p>Теперь каждый retriever вернул по одному разному кандидату:</p><pre><code>lexical: [M]
+dense:   [O]</code></pre><p>Оба получают <code>1/61</code>. RRF не знает, какой из них содержательно правильный. Нужна явная политика tie-break. Учебная реализация сохраняет порядок первого появления: сначала обрабатывается lexical-список, поэтому порядок будет <code>[M, O]</code>.</p><p>Это делает результат воспроизводимым, но не автоматически правильным. В учебном eval-наборе как раз есть такой запрос:</p><pre><code>кто сообщает динамику обращений</code></pre><p>Lexical ranking поднимает чанк про метрику обращений, dense — чанк про роль команды поддержки. При <code>top_k=1</code> hybrid выбирает lexical-кандидата и <strong>регрессирует</strong> относительно dense. При <code>top_k=2</code> правильный record остаётся среди evidence, но генератор получает больше контекста и потенциального шума.</p><p>Вот почему средняя цифра без просмотра отдельных случаев опасна.</p><h2>Rank fusion и reranker — не одно и то же</h2><p>RRF иногда нестрого называют reranking, потому что после него порядок меняется. Для архитектуры полезнее различать механизмы:</p><table><thead><tr><th>Механизм</th><th>Что получает</th><th>Что делает</th><th>Что не делает</th></tr></thead><tbody><tr><td>Retriever</td><td>запрос и индекс</td><td>создаёт кандидатов и их порядок</td><td>не объединяет независимые списки</td></tr><tr><td>RRF / rank fusion</td><td>несколько порядков ID</td><td>суммирует вклад позиций</td><td>не читает текст пары «запрос — документ»</td></tr><tr><td>Reranker</td><td>запрос и набор кандидатов</td><td>заново оценивает каждую пару</td><td>обычно не ищет по всему корпусу</td></tr></tbody></table><p>Полный pipeline может выглядеть так:</p><pre><code>                         ┌─ lexical retriever ─┐
+query ───────────────────┤                     ├─► RRF ─► optional reranker ─► top-k
+                         └─ dense retriever ───┘                              │
+                                                                              ▼
+                                                                     traceable evidence</code></pre><p>Cross-encoder reranker может помочь разрешить конфликт <code>M</code> против <code>O</code>, потому что читает запрос вместе с текстом каждого кандидата. Но его модель, стоимость и latency — отдельное решение. Build It намеренно ограничен RRF и измерением результата.</p><h2>Как доказать, что гибрид помог</h2><p>В 3.3 у каждого eval-случая уже были:</p><pre><code>{
+    "query": "кто автор финального документа",
+    "expected_ids": ["sample_report.md#chunk-0005"],
+}</code></pre><p>Пустой <code>expected_ids</code> обозначал запрос вне корпуса. Мы сохраняем тот же контракт и добавляем зафиксированные результаты двух retriever:</p><pre><code>{
+    "id": "owner-paraphrase",
+    "query": "кто автор финального документа",
+    "expected_ids": ["sample_report.md#chunk-0005"],
+    "rankings": {
+        "lexical": [],
+        "dense": ["sample_report.md#chunk-0005"],
+    },
+}</code></pre><p>Для ответимого запроса вариант проходит, если его top-k содержит хотя бы один ожидаемый ID. Для no-answer случая проходит только пустой top-k.</p><p>Сравнение должно быть честным:</p><ol><li>одинаковые records и стабильные ID;</li><li>одинаковые запросы и ожидания;</li><li>одинаковый <code>top_k</code>;</li><li>отдельные результаты lexical, dense и hybrid;</li><li>просмотр каждого выигрыша и каждой регрессии;</li><li>только после этого — агрегированные Hit@k и accuracy воздержания.</li></ol><p>Зафиксированные ranking fixtures в <code>sample_rankings.py</code> нужны только для воспроизводимого офлайн-эксперимента. Они изображают правдоподобные успехи и ошибки разных retriever, но <strong>не являются результатами конкретной embedding-модели</strong>. В своём проекте их нужно заменить настоящими выдачами на своём корпусе.</p><h2>BUILD IT: RRF и сравнительный eval</h2><p><strong>Задание:</strong> реализуй rank fusion над стабильными ID, верни канонические records с provenance и сравни два retriever с гибридом на одинаковых случаях.</p><p>Работай в собственной папке — курс клонировать не нужно:</p><pre><code>course-work/
+└── 3.5/
+    ├── hybrid_retriever.py
+    ├── sample_rankings.py
+    └── test_hybrid_retriever.py</code></pre><p>Из <a href="#lesson-files">«Исходников урока»</a>:</p><ol><li>скопируй <code>starter_hybrid_retriever.py</code> как <code>course-work/3.5/hybrid_retriever.py</code>;</li><li>скопируй рядом <code>sample_rankings.py</code> и <code>test_hybrid_retriever.py</code>;</li><li>эталонный <code>hybrid_retriever.py</code> до первой попытки не открывай.</li></ol><p>Реализуй три функции.</p><h3><code>reciprocal_rank_fusion(rankings, *, rank_constant=60)</code></h3><p>Вход:</p><pre><code>{
+    "lexical": ["chunk-a", "chunk-b"],
+    "dense": ["chunk-c", "chunk-a"],
+}</code></pre><p>Контракт:</p><ul><li><code>rank_constant</code> — положительное целое число, <code>bool</code> не считается числом;</li><li>имя каждого ranking — непустая строка;</li><li>внутри одного ranking ID не повторяется;</li><li>rank начинается с 1;</li><li>tie сохраняет порядок первого появления;</li><li>пустые списки не создают результатов.</li></ul><p>Выход — список объектов:</p><pre><code>{
+    "id": "chunk-a",
+    "rrf_score": 0.032522,
+    "matched_by": ["lexical", "dense"],
+    "ranks": {"lexical": 1, "dense": 2},
+}</code></pre><h3><code>hybrid_search(rankings, records, *, top_k=3, rank_constant=60)</code></h3><p>Контракт:</p><ul><li>требуется минимум два ranking;</li><li><code>top_k</code> — положительное целое число;</li><li>каждый candidate ID обязан существовать среди canonical records;</li><li>record содержит непустые <code>id</code>, <code>source</code> и <code>text</code>;</li><li>исходный record не изменяется;</li><li>результат сохраняет record целиком и добавляет RRF trace рядом с ним;</li><li>если все retriever вернули <code>[]</code>, результат тоже <code>[]</code>.</li></ul><p>Форма одного hit:</p><pre><code>{
+    "record": {
+        "id": "sample_report.md#chunk-0000",
+        "source": "sample_report.md",
+        "word_start": 0,
+        "word_end": 70,
+        "text": "...",
+    },
+    "rrf_score": 0.032522,
+    "matched_by": ["lexical", "dense"],
+    "ranks": {"lexical": 1, "dense": 2},
+}</code></pre><h3><code>evaluate(cases, records, *, top_k=1, rank_constant=60)</code></h3><p>Контракт:</p><ul><li>все cases используют одинаковые ranking names в одинаковом порядке;</li><li>у case есть непустые <code>id</code>, <code>query</code>, список <code>expected_ids</code> и <code>rankings</code>;</li><li>expected и retrieved IDs существуют среди records;</li><li>каждый исходный retriever и <code>hybrid</code> проверяются на одном случае и одном <code>top_k</code>;</li><li>answerable Hit@k и no-answer accuracy считаются отдельно;</li><li>отчёт сохраняет per-case retrieved IDs и <code>passed</code> по каждому варианту.</li></ul><p>Перед запуском предскажи три результата:</p><ol><li>кто победит в <code>exact-launch</code>, если правильный ID первый в lexical и второй в dense;</li><li>что случится в <code>support-role</code>, если оба списка содержат по одному разному ID;</li><li>что вернёт hybrid для <code>outside-corpus</code>, где оба списка пусты.</li></ol><p><strong>Готово, когда</strong> 27 behavioral-тестов зелёные. Они проверяют формулу и trace RRF, стабильный tie-break, дубликаты, неизвестные IDs, сохранение provenance, отсутствие выдуманного evidence, сравнение вариантов, no-answer и видимость выигрыша и регрессии.</p><pre><code>cd course-work/3.5
+pytest -q                   # красное → реализуй функции → зелёное
+python hybrid_retriever.py  # отчёты lexical/dense/hybrid для top_k=1 и 2</code></pre><p><strong>Подсказка.</strong> Для каждого ID храни три структуры: сумму RRF-вкладов, порядковый номер первого появления и словарь <code>{signal: rank}</code>. Сортируй по убыванию суммы, затем по первому появлению. В eval сначала получи retrieved IDs каждого варианта, а уже потом одинаково проверь их против <code>expected_ids</code>.</p><p>Внизу находятся стартовый файл, безопасные учебные данные, тесты-ТЗ и свёрнутое эталонное решение. Независимо от выбранного пути критерии приёмки одинаковы.</p><h2>USE IT: подключи настоящие retriever</h2><p>Учебные fixtures изолировали механизм fusion. Перенос начинается не с копирования списков, а с замены их реальными результатами.</p><h3>1. Оставь record каноническим</h3><p>Продолжай использовать контракт 3.4:</p><pre><code>{
+    "id": "report.md#chunk-0012",
+    "source": "report.md",
+    "word_start": 840,
+    "word_end": 930,
+    "text": "...",
+}</code></pre><p>Lexical и dense indexes могут храниться по-разному, но оба обязаны возвращать тот же стабильный ID. Текст и provenance берутся из одного канонического record, а не склеиваются из двух расходящихся копий.</p><h3>2. Получи только положительных кандидатов</h3><pre><code>lexical_hits = lexical_retriever.search(query, k=20)
+dense_hits = dense_retriever.search(query, k=20)
 
-DOCS = [
-    "машинное обучение и нейронные сети для классификации",
-    "рецепт борща со свёклой и капустой",
-    "библиотека numpy быстрые операции над матрицами в python",
-]
+rankings = {
+    "lexical": [hit["id"] for hit in lexical_hits],
+    "dense": [hit["id"] for hit in dense_hits],
+}</code></pre><p>Не добавляй нулевые совпадения только ради длины списка. Если retriever не нашёл свидетельств, его ranking должен быть пустым.</p><h3>3. Объедини IDs и восстанови records</h3><pre><code>evidence = hybrid_search(
+    rankings,
+    canonical_records,
+    top_k=2,
+)</code></pre><p>Перед генерацией логируй:</p><ul><li>query и версию eval-набора;</li><li>IDs до и после fusion;</li><li><code>matched_by</code> и ranks;</li><li>выбранные <code>top_k</code> и <code>rank_constant</code>;</li><li>версию lexical index и dense embedding model;</li><li>пустую выдачу как нормальный исход, а не исключение.</li></ul><h3>4. Сравни конфигурации</h3><p>Для каждого query сохрани реальные rankings в формате <code>EVAL_CASES</code> и запусти <code>evaluate()</code> при одинаковом <code>top_k</code>. Изменение можно принять, если оно:</p><ul><li>улучшает заранее выбранную метрику;</li><li>не ломает критические кейсы;</li><li>сохраняет корректные no-answer ответы;</li><li>не теряет provenance;</li><li>укладывается в допустимые latency и стоимость.</li></ul><p>Среднее улучшение не отменяет критическую регрессию. Если hybrid проиграл важному baseline-кейсу, сначала разберись в candidate lists, tie policy, <code>top_k</code> или добавь отдельный reranker — затем повтори тот же eval.</p><h3>5. Только затем оцени генерацию</h3><p>Retrieval eval по ожидаемым IDs отвечает: <strong>нашли ли нужное доказательство</strong>. После него можно отдельно оценивать ответ:</p><ul><li><strong>faithfulness</strong> — поддерживаются ли утверждения ответа найденным контекстом;</li><li><strong>response relevancy</strong> — отвечает ли response на вопрос, но не обязательно верен ли он;</li><li><strong>context precision</strong> — насколько полезные chunks находятся высоко;</li><li><strong>context recall</strong> — сколько ожидаемого свидетельства найдено; для recall нужен reference answer, reference contexts или ожидаемые IDs.</li></ul><p>Ragas предоставляет такие метрики, но LLM-based варианты сами делают вызовы модели-судьи. Зафиксируй evaluator model, prompts, версии и входные поля. Не назначай универсальные пороги <code>0.8</code> или <code>0.9</code> без baseline и проверки на своём домене.</p><h2>SHIP IT: решение о конфигурации, а не пустой шаблон</h2><p><strong>Артефакт:</strong> <a href="#f-phases-03-text-and-documents-05-production-rag-outputs-production-rag-pipeline-md"><code>outputs/production-rag-pipeline.md</code></a></p><p>Это заполненный decision record для учебного корпуса:</p><ul><li>схема pipeline с границей между retrieval, fusion и optional reranking;</li><li>одинаковые eval cases для трёх вариантов;</li><li>результаты при <code>top_k=1</code> и <code>top_k=2</code>;</li><li>конкретный выигрыш и конкретная регрессия;</li><li>решение выбрать <code>hybrid, top_k=2</code> для следующего прогона;</li><li>ограничения, которые не позволяют назвать шесть учебных случаев доказательством production-готовности.</li></ul><p>Для своего корпуса скопируй структуру отчёта, но замени records, rankings, ожидания, метрики и решение. Не переноси учебные числа и пороги.</p><h2>Типичные ошибки и как их заметить</h2><ul><li><strong>Назвать TF-IDF семантическим поиском.</strong> Векторная форма не равна пониманию смысла; явно записывай тип каждого retriever и embedding model.</li><li><strong>Передать в RRF полный корпус с нулевыми scores.</strong> Появляются случайные «доказательства»; оба пустых ranking должны давать <code>[]</code>.</li><li><strong>Сложить raw scores без калибровки.</strong> Числа разных методов несопоставимы; RRF использует позиции.</li><li><strong>Назвать RRF reranker.</strong> Fusion не читает пару «query — document»; логируй его как отдельный этап.</li><li><strong>Потерять ID после объединения.</strong> Текст без provenance нельзя проверить; fusion работает над ID, затем возвращает canonical record.</li><li><strong>Сравнить варианты при разных <code>top_k</code> и запросах.</strong> Это уже разные эксперименты; меняй один фактор за раз.</li><li><strong>Смотреть только на aggregate.</strong> <code>5/6</code> может скрывать поломку важного кейса; проверяй per-case diff.</li><li><strong>Объявить hybrid победителем заранее.</strong> Иногда dense или lexical baseline лучше; решение следует из eval.</li><li><strong>Считать Ragas источником истины.</strong> LLM-метрика — измерительный инструмент со своей моделью, стоимостью и ошибками.</li><li><strong>Назвать шесть fixtures production-тестом.</strong> Они проверяют код и способ рассуждения; production-решение требует репрезентативного корпуса, latency, cost, security и наблюдаемости.</li></ul><h2>Что сознательно осталось за границей</h2><ul><li>Реализация BM25, выбор dense embedding model и сравнение vendors.</li><li>Обучение score calibration, weighted RRF и learning-to-rank.</li><li>Cross-encoder reranker: в уроке определена его роль, но не добавлена в Build It.</li><li>Генерация ответа и вызов LLM: сначала проверяем retrieval.</li><li>Автоматический Ragas pipeline и универсальные числовые пороги.</li><li>GraphRAG: это отдельная архитектура для графа сущностей и глобальных вопросов, а не обязательное продолжение RRF.</li><li>Production-инфраструктура: access control, latency SLO, cost budgets, monitoring, rollout и rollback появятся в следующих фазах курса.</li></ul><h2>Проверь себя</h2><p>Вопросы ниже проверяют решения при пустых списках, конфликте retriever, регрессии, разнице между fusion и reranking и выборе подходящей оценки.</p><div class="quiz-section" data-lesson="3.5"></div><h2>Дополнительное чтение</h2><ul><li><a href="https://www.anthropic.com/engineering/contextual-retrieval" target="_blank" rel="noopener">Anthropic — Contextual Retrieval (2024)</a> — практический разбор гибрида из эмбеддингов и BM25, rank fusion, reranking и сравнения конфигураций на eval-наборе.</li><li><a href="https://cormack.uwaterloo.ca/cormacksigir09-rrf.pdf" target="_blank" rel="noopener">Cormack et al., 2009 — Reciprocal Rank Fusion (RRF)</a> — открытый первоисточник RRF: формула, роль константы <code>k</code> и результаты экспериментов.</li><li><a href="https://docs.ragas.io/en/stable/concepts/metrics/available_metrics/" target="_blank" rel="noopener">Ragas — метрики</a> — актуальные определения, входные данные и ограничения context precision/recall, faithfulness и response relevancy.</li><li><a href="https://arxiv.org/abs/2309.15217" target="_blank" rel="noopener">Es et al. — Ragas: Automated Evaluation of RAG</a> — первоисточник фреймворка и разделения качества ретрива и генерации; реализацию сверяй с текущей документацией выше.</li><li><a href="https://www.sbert.net/examples/sentence_transformer/applications/retrieve_rerank/README.html" target="_blank" rel="noopener">Sentence-Transformers — Retrieve &amp; Re-Rank</a> — чем быстрый bi-encoder-ретрив отличается от повторной оценки кандидатов cross-encoder-реранкером.</li><li><a href="https://docs.cohere.com/docs/rerank-overview" target="_blank" rel="noopener">Cohere — Rerank</a> — актуальный пример managed-реранкера: запрос, список кандидатов, relevance score и <code>top_n</code>.</li><li><a href="https://www.nowpublishers.com/article/DownloadEBook/INR-019" target="_blank" rel="noopener">Robertson &amp; Zaragoza, 2009 — BM25 and Beyond</a> — разделы 3.4–3.5 объясняют, как устроен BM25 и чем он усиливает простой TF-IDF.</li><li><a href="https://arxiv.org/abs/2312.10997" target="_blank" rel="noopener">Gao et al., 2023 — RAG: A Survey</a> — карта Naive / Advanced / Modular RAG; к этому уроку особенно относятся разделы II, III-D1, IV-A1, VI и VII-E.</li><li><a href="https://microsoft.github.io/graphrag/query/overview/" target="_blank" rel="noopener">Microsoft GraphRAG — Query overview</a> — отдельная архитектурная ветка: когда выбирать global, local или DRIFT search вместо обычного top-k-поиска.</li><li><a href="https://deval-shah.github.io/visualizations/rrf/" target="_blank" rel="noopener">RRF visualizer</a> — интерактивная интуиция: как позиции документов и константа <code>k</code> меняют итоговый RRF-рейтинг.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Если делегируешь ИИ, реши, что отдаёшь; опиши задачу и критерии; проверь результат; сохрани ответственность за итог.</p></div><h3>Стартовый файл</h3><p class="muted files-note">Скопируй этот файл под указанным в задании именем и реализуй отмеченные функции.</p><details class="filebox" id="f-phases-03-text-and-documents-05-production-rag-code-starter-hybrid-retriever-py" open><summary><span class="fname">code/starter_hybrid_retriever.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Starter for the offline Build It exercise from lesson 3.5.
 
-
-def test_rrf_ranks_consensus_first():
-    # документ 2 первый в обоих списках → первый после слияния
-    fused = reciprocal_rank_fusion([[2, 0, 1], [2, 1, 0]])
-    assert fused[0] == 2
-
-
-def test_keyword_catches_exact_term():
-    index = build_index(DOCS)
-    assert keyword_ranking("numpy", index)[0] == 2
-
-
-def test_hybrid_returns_relevant_first():
-    index = build_index(DOCS)
-    top = hybrid_search("numpy матрицами", index, top_k=1)
-    assert "numpy" in top[0]["doc"]
-
-
-def test_hybrid_respects_top_k():
-    index = build_index(DOCS)
-    assert len(hybrid_search("обучение", index, top_k=2)) == 2
-
-
-def test_vector_and_keyword_return_all_indices():
-    index = build_index(DOCS)
-    assert sorted(vector_ranking("x", index)) == [0, 1, 2]
-</code></pre></details><h3>Эталонное решение</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-03-text-and-documents-05-production-rag-code-hybrid-retriever-py"><summary><span class="fname">code/hybrid_retriever.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Production RAG: гибридный ретривер (vector+keyword) + RRF-reranking — Build It 3.5.
-
-Без зависимостей. Чистый vector-RAG (3.3) промахивается на точных терминах/кодах,
-keyword — на синонимах. Прод-RAG объединяет оба сигнала и переранжирует слиянием
-рангов (Reciprocal Rank Fusion). В USE IT — managed retrieval / GraphRAG + RAGAS.
+Copy this file as ``hybrid_retriever.py``.  Candidate generation is already
+represented by frozen ranked IDs in ``sample_rankings.py``; implement fusion,
+traceable search and comparative evaluation.
 """
-import math
-import re
-from collections import Counter
+
+from __future__ import annotations
+
+from collections.abc import Iterable, Mapping, Sequence
+from typing import Any
 
 
-def _tok(text):
-    return re.findall(r"\w+", text.lower())
+def reciprocal_rank_fusion(
+    rankings: Mapping[str, Sequence[str]],
+    *,
+    rank_constant: int = 60,
+) -&gt; list[dict[str, Any]]:
+    """Fuse unique ranked IDs and expose score, signals and one-based ranks."""
+    raise NotImplementedError
 
 
-def build_index(docs):
-    toks = [_tok(d) for d in docs]
-    df = Counter()
-    for t in toks:
-        df.update(set(t))
-    n = len(docs)
-    idf = {w: math.log((n + 1) / (c + 1)) + 1 for w, c in df.items()}
-
-    def vec(t):
-        tf = Counter(t)
-        total = sum(tf.values()) or 1
-        return {w: (c / total) * idf.get(w, 0.0) for w, c in tf.items()}
-
-    return {"docs": list(docs), "idf": idf, "vecs": [vec(t) for t in toks]}
+def hybrid_search(
+    rankings: Mapping[str, Sequence[str]],
+    records: Iterable[Mapping[str, Any]],
+    *,
+    top_k: int = 3,
+    rank_constant: int = 60,
+) -&gt; list[dict[str, Any]]:
+    """Return top-k fused candidates together with canonical records."""
+    raise NotImplementedError
 
 
-def _cos(a, b):
-    common = set(a) &amp; set(b)
-    dot = sum(a[w] * b[w] for w in common)
-    na = math.sqrt(sum(v * v for v in a.values()))
-    nb = math.sqrt(sum(v * v for v in b.values()))
-    return dot / (na * nb) if na and nb else 0.0
-
-
-def vector_ranking(query, index):
-    """Индексы документов по убыванию косинусной близости (семантика)."""
-    qtf = Counter(_tok(query))
-    total = sum(qtf.values()) or 1
-    qv = {w: (c / total) * index["idf"].get(w, 0.0) for w, c in qtf.items()}
-    return sorted(range(len(index["docs"])),
-                  key=lambda i: _cos(qv, index["vecs"][i]), reverse=True)
-
-
-def keyword_ranking(query, index):
-    """Индексы документов по числу точных совпадений слов (лексика)."""
-    q = set(_tok(query))
-    return sorted(range(len(index["docs"])),
-                  key=lambda i: len(q &amp; set(_tok(index["docs"][i]))), reverse=True)
-
-
-def reciprocal_rank_fusion(rankings, k=60):
-    """Слить несколько ранжирований в одно (RRF): score = sum 1/(k + rank)."""
-    scores = Counter()
-    for ranking in rankings:
-        for rank, idx in enumerate(ranking):
-            scores[idx] += 1 / (k + rank + 1)
-    return [idx for idx, _ in scores.most_common()]
-
-
-def hybrid_search(query, index, top_k=3):
-    """Гибрид: vector + keyword, переранжированные через RRF."""
-    fused = reciprocal_rank_fusion([vector_ranking(query, index), keyword_ranking(query, index)])
-    return [{"doc": index["docs"][i]} for i in fused[:top_k]]
+def evaluate(
+    cases: Iterable[Mapping[str, Any]],
+    records: Iterable[Mapping[str, Any]],
+    *,
+    top_k: int = 1,
+    rank_constant: int = 60,
+) -&gt; dict[str, Any]:
+    """Compare each signal and their hybrid on the same evaluation cases."""
+    raise NotImplementedError
 
 
 if __name__ == "__main__":
-    docs = [
-        "машинное обучение и нейронные сети для классификации",
-        "рецепт борща со свёклой и капустой",
-        "библиотека numpy: быстрые операции над матрицами в python",
+    from sample_rankings import EVAL_CASES, SAMPLE_RECORDS
+
+    print(evaluate(EVAL_CASES, SAMPLE_RECORDS, top_k=1))
+</code></pre></details><h3>Учебные данные</h3><p class="muted files-note">Этот безопасный пример можно использовать вместо рабочего файла.</p><details class="filebox" id="f-phases-03-text-and-documents-05-production-rag-code-sample-rankings-py" open><summary><span class="fname">code/sample_rankings.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Traceable offline fixtures for observing rank fusion.
+
+The records keep the IDs and provenance used in lessons 3.3–3.4.  The ranked
+lists are deliberately frozen, plausible successes and failures of two
+different retrievers.  They are not generated by the exercise and are not a
+benchmark for a particular embedding model.  Replace them with real retriever
+outputs when transferring the pipeline to your corpus.
+"""
+
+
+IOS_LAUNCH = "sample_report.md#chunk-0000"
+SAFETY_GATE = "sample_report.md#chunk-0002"
+PILOT_METRICS = "sample_report.md#chunk-0004"
+REPORT_OWNER = "sample_report.md#chunk-0005"
+
+
+SAMPLE_RECORDS = [
+    {
+        "id": IOS_LAUNCH,
+        "source": "sample_report.md",
+        "index": 0,
+        "word_start": 0,
+        "word_end": 70,
+        "text": (
+            "Ограниченный пилот нового платёжного потока запускается 18 сентября "
+            "для 10% пользователей iOS. Android и веб в этот этап не входят."
+        ),
+    },
+    {
+        "id": SAFETY_GATE,
+        "source": "sample_report.md",
+        "index": 2,
+        "word_start": 120,
+        "word_end": 190,
+        "text": (
+            "Если согласование службы безопасности не получено к 16 сентября, "
+            "запуск переносится. Это обязательный gate запуска."
+        ),
+    },
+    {
+        "id": PILOT_METRICS,
+        "source": "sample_report.md",
+        "index": 4,
+        "word_start": 240,
+        "word_end": 310,
+        "text": (
+            "Утверждены две метрики пилота: доля успешных оплат и число обращений "
+            "в поддержку. Их смотрят отдельно для пилота и контроля."
+        ),
+    },
+    {
+        "id": REPORT_OWNER,
+        "source": "sample_report.md",
+        "index": 5,
+        "word_start": 300,
+        "word_end": 370,
+        "text": (
+            "Команда поддержки сообщает динамику обращений. Ответственный за "
+            "итоговый отчёт пока не назначен; его назначает владелец продукта."
+        ),
+    },
+]
+
+
+EVAL_CASES = [
+    {
+        "id": "exact-launch",
+        "query": "какая доля пользователей iOS участвует и когда старт",
+        "expected_ids": [IOS_LAUNCH],
+        "rankings": {
+            "lexical": [IOS_LAUNCH],
+            "dense": [SAFETY_GATE, IOS_LAUNCH],
+        },
+    },
+    {
+        "id": "owner-paraphrase",
+        "query": "кто автор финального документа",
+        "expected_ids": [REPORT_OWNER],
+        "rankings": {
+            "lexical": [],
+            "dense": [REPORT_OWNER],
+        },
+    },
+    {
+        "id": "safety-gate",
+        "query": "что произойдёт без согласования безопасности",
+        "expected_ids": [SAFETY_GATE],
+        "rankings": {
+            "lexical": [SAFETY_GATE],
+            "dense": [SAFETY_GATE, IOS_LAUNCH],
+        },
+    },
+    {
+        "id": "pilot-metrics",
+        "query": "какие метрики пилота утверждены",
+        "expected_ids": [PILOT_METRICS],
+        "rankings": {
+            "lexical": [PILOT_METRICS],
+            "dense": [REPORT_OWNER],
+        },
+    },
+    {
+        "id": "outside-corpus",
+        "query": "какой рекламный бюджет",
+        "expected_ids": [],
+        "rankings": {
+            "lexical": [],
+            "dense": [],
+        },
+    },
+    {
+        "id": "support-role",
+        "query": "кто сообщает динамику обращений",
+        "expected_ids": [REPORT_OWNER],
+        "rankings": {
+            "lexical": [PILOT_METRICS],
+            "dense": [REPORT_OWNER],
+        },
+    },
+]
+</code></pre></details><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-03-text-and-documents-05-production-rag-code-test-hybrid-retriever-py" open data-test="1"><summary><span class="fname">code/test_hybrid_retriever.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>import copy
+
+import pytest
+
+from hybrid_retriever import evaluate, hybrid_search, reciprocal_rank_fusion
+from sample_rankings import (
+    EVAL_CASES,
+    IOS_LAUNCH,
+    PILOT_METRICS,
+    REPORT_OWNER,
+    SAMPLE_RECORDS,
+)
+
+
+def case(case_id):
+    return next(item for item in EVAL_CASES if item["id"] == case_id)
+
+
+def test_rrf_uses_positions_and_exposes_its_trace():
+    fused = reciprocal_rank_fusion(
+        {
+            "lexical": ["a", "b"],
+            "dense": ["c", "a"],
+        }
+    )
+
+    assert [item["id"] for item in fused] == ["a", "c", "b"]
+    assert fused[0] == {
+        "id": "a",
+        "rrf_score": round(1 / 61 + 1 / 62, 6),
+        "matched_by": ["lexical", "dense"],
+        "ranks": {"lexical": 1, "dense": 2},
+    }
+
+
+def test_rrf_tie_break_is_stable_and_explicitly_depends_on_signal_order():
+    lexical_first = reciprocal_rank_fusion(
+        {"lexical": ["a"], "dense": ["b"]}
+    )
+    dense_first = reciprocal_rank_fusion(
+        {"dense": ["b"], "lexical": ["a"]}
+    )
+
+    assert [item["id"] for item in lexical_first] == ["a", "b"]
+    assert [item["id"] for item in dense_first] == ["b", "a"]
+
+
+def test_empty_candidate_lists_do_not_create_evidence():
+    assert reciprocal_rank_fusion({"lexical": [], "dense": []}) == []
+    assert (
+        hybrid_search(
+            {"lexical": [], "dense": []},
+            SAMPLE_RECORDS,
+            top_k=3,
+        )
+        == []
+    )
+
+
+@pytest.mark.parametrize("rank_constant", [0, -1, True, 1.5])
+def test_invalid_rank_constant_is_rejected(rank_constant):
+    with pytest.raises(ValueError, match="rank_constant"):
+        reciprocal_rank_fusion(
+            {"lexical": ["a"]},
+            rank_constant=rank_constant,
+        )
+
+
+def test_duplicate_id_inside_one_ranking_is_rejected():
+    with pytest.raises(ValueError, match="duplicate"):
+        reciprocal_rank_fusion({"lexical": ["a", "a"]})
+
+
+@pytest.mark.parametrize(
+    "rankings",
+    [
+        {},
+        {"": ["a"]},
+        {"lexical": "a"},
+        {"lexical": [""]},
+    ],
+)
+def test_invalid_ranking_contract_is_rejected(rankings):
+    with pytest.raises((TypeError, ValueError)):
+        reciprocal_rank_fusion(rankings)
+
+
+def test_hybrid_search_preserves_the_canonical_record_and_adds_fusion_trace():
+    original_records = copy.deepcopy(SAMPLE_RECORDS)
+    launch_case = case("exact-launch")
+
+    hits = hybrid_search(
+        launch_case["rankings"],
+        SAMPLE_RECORDS,
+        top_k=1,
+    )
+
+    assert hits[0]["record"]["id"] == IOS_LAUNCH
+    assert hits[0]["record"]["source"] == "sample_report.md"
+    assert hits[0]["record"]["word_start"] == 0
+    assert hits[0]["matched_by"] == ["lexical", "dense"]
+    assert hits[0]["ranks"] == {"lexical": 1, "dense": 2}
+    assert SAMPLE_RECORDS == original_records
+
+
+def test_hybrid_search_rejects_unknown_candidate_id():
+    with pytest.raises(ValueError, match="unknown record id"):
+        hybrid_search(
+            {"lexical": ["missing"], "dense": []},
+            SAMPLE_RECORDS,
+        )
+
+
+def test_hybrid_search_requires_two_signals():
+    with pytest.raises(ValueError, match="at least two"):
+        hybrid_search({"lexical": [IOS_LAUNCH]}, SAMPLE_RECORDS)
+
+
+@pytest.mark.parametrize("top_k", [0, -1, True, 1.5])
+def test_invalid_top_k_is_rejected(top_k):
+    with pytest.raises(ValueError, match="top_k"):
+        hybrid_search(
+            {"lexical": [IOS_LAUNCH], "dense": []},
+            SAMPLE_RECORDS,
+            top_k=top_k,
+        )
+
+
+def test_top_one_evaluation_shows_gain_and_regression_instead_of_hiding_them():
+    report = evaluate(EVAL_CASES, SAMPLE_RECORDS, top_k=1)
+
+    assert {
+        variant: result["passed"]
+        for variant, result in report["variants"].items()
+    } == {
+        "lexical": 4,
+        "dense": 4,
+        "hybrid": 5,
+    }
+    details = {item["id"]: item for item in report["cases"]}
+    assert details["exact-launch"]["passed"] == {
+        "lexical": True,
+        "dense": False,
+        "hybrid": True,
+    }
+    assert details["support-role"]["passed"] == {
+        "lexical": False,
+        "dense": True,
+        "hybrid": False,
+    }
+
+
+def test_top_two_hybrid_passes_all_sample_cases_but_baselines_do_not():
+    report = evaluate(EVAL_CASES, SAMPLE_RECORDS, top_k=2)
+
+    assert report["variants"]["lexical"]["passed"] == 4
+    assert report["variants"]["dense"]["passed"] == 5
+    assert report["variants"]["hybrid"]["passed"] == 6
+    assert report["variants"]["hybrid"]["answerable"] == {
+        "total": 5,
+        "hits": 5,
+        "hit_rate_at_k": 1.0,
+    }
+    assert report["variants"]["hybrid"]["no_answer"] == {
+        "total": 1,
+        "correct_abstentions": 1,
+        "accuracy": 1.0,
+    }
+
+
+def test_no_answer_false_positive_fails_for_the_responsible_variants():
+    false_positive_case = [
+        {
+            "id": "false-positive",
+            "query": "вопрос вне корпуса",
+            "expected_ids": [],
+            "rankings": {
+                "lexical": [PILOT_METRICS],
+                "dense": [],
+            },
+        }
     ]
-    index = build_index(docs)
-    for hit in hybrid_search("numpy матрицы", index, top_k=2):
-        print(hit["doc"])
-</code></pre></details><h3>Артефакт</h3><details class="filebox" id="f-phases-03-text-and-documents-05-production-rag-outputs-production-rag-pipeline-md" open><summary><span class="fname">outputs/production-rag-pipeline.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: production-RAG pipeline + eval-отчёт
 
-Рецепт прод-RAG и шаблон отчёта по качеству. Код гибрида — [`code/hybrid_retriever.py`](../code/hybrid_retriever.py).
+    report = evaluate(false_positive_case, SAMPLE_RECORDS, top_k=1)
 
-## Пайплайн
+    assert report["variants"]["lexical"]["no_answer"]["accuracy"] == 0.0
+    assert report["variants"]["dense"]["no_answer"]["accuracy"] == 1.0
+    assert report["variants"]["hybrid"]["no_answer"]["accuracy"] == 0.0
 
+
+def test_evaluation_requires_consistent_signal_names_and_order():
+    changed = copy.deepcopy(EVAL_CASES[:2])
+    changed[1]["rankings"] = {
+        "dense": [REPORT_OWNER],
+        "lexical": [],
+    }
+
+    with pytest.raises(ValueError, match="same ranking names"):
+        evaluate(changed, SAMPLE_RECORDS)
+
+
+@pytest.mark.parametrize(
+    "broken_case, message",
+    [
+        (
+            {
+                "id": "",
+                "query": "q",
+                "expected_ids": [],
+                "rankings": {"lexical": [], "dense": []},
+            },
+            "non-empty id",
+        ),
+        (
+            {
+                "id": "x",
+                "query": "",
+                "expected_ids": [],
+                "rankings": {"lexical": [], "dense": []},
+            },
+            "non-empty query",
+        ),
+        (
+            {
+                "id": "x",
+                "query": "q",
+                "expected_ids": ["missing"],
+                "rankings": {"lexical": [], "dense": []},
+            },
+            "unknown record id",
+        ),
+    ],
+)
+def test_invalid_evaluation_case_is_rejected(broken_case, message):
+    with pytest.raises(ValueError, match=message):
+        evaluate([broken_case], SAMPLE_RECORDS)
+
+
+def test_evaluation_needs_at_least_one_case():
+    with pytest.raises(ValueError, match="at least one"):
+        evaluate([], SAMPLE_RECORDS)
+</code></pre></details><h3>Эталонное решение</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-03-text-and-documents-05-production-rag-code-hybrid-retriever-py"><summary><span class="fname">code/hybrid_retriever.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Rank fusion and comparative retrieval evaluation for lesson 3.5.
+
+The module deliberately receives already ranked candidate IDs.  Producing
+lexical or dense candidates is a separate retriever responsibility.  Keeping
+that boundary visible lets the offline exercise focus on three production
+properties:
+
+    positive candidate lists -&gt; RRF -&gt; traceable records
+    no candidates             -&gt; []
+    lexical vs dense vs hybrid -&gt; one shared evaluation set
+"""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Iterable, Mapping, Sequence
+from typing import Any
+
+
+def _positive_integer(value: Any, name: str) -&gt; int:
+    if isinstance(value, bool) or not isinstance(value, int) or value &lt;= 0:
+        raise ValueError(f"{name} must be a positive integer")
+    return value
+
+
+def _normalize_rankings(
+    rankings: Mapping[str, Sequence[str]],
+) -&gt; dict[str, list[str]]:
+    if not isinstance(rankings, Mapping) or not rankings:
+        raise ValueError("rankings must be a non-empty mapping")
+
+    normalized: dict[str, list[str]] = {}
+    for signal, ranking in rankings.items():
+        if not isinstance(signal, str) or not signal.strip():
+            raise ValueError("ranking names must be non-empty strings")
+        if isinstance(ranking, (str, bytes)) or not isinstance(ranking, Sequence):
+            raise TypeError(f"ranking {signal!r} must be a sequence of record IDs")
+
+        ids = list(ranking)
+        if any(not isinstance(record_id, str) or not record_id.strip() for record_id in ids):
+            raise ValueError(f"ranking {signal!r} contains an invalid record ID")
+        if len(ids) != len(set(ids)):
+            raise ValueError(f"ranking {signal!r} contains duplicate record IDs")
+        normalized[signal] = ids
+    return normalized
+
+
+def _record_map(
+    records: Iterable[Mapping[str, Any]],
+) -&gt; dict[str, dict[str, Any]]:
+    if (
+        isinstance(records, (str, bytes, Mapping))
+        or not isinstance(records, Iterable)
+    ):
+        raise TypeError("records must be an iterable of traceable records")
+
+    by_id: dict[str, dict[str, Any]] = {}
+    for position, record in enumerate(records):
+        if not isinstance(record, Mapping):
+            raise TypeError(f"record at position {position} must be a mapping")
+        copy = dict(record)
+        for field in ("id", "source", "text"):
+            value = copy.get(field)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(
+                    f"record at position {position} needs a non-empty {field}"
+                )
+        record_id = copy["id"]
+        if record_id in by_id:
+            raise ValueError(f"duplicate record id: {record_id}")
+        by_id[record_id] = copy
+    return by_id
+
+
+def reciprocal_rank_fusion(
+    rankings: Mapping[str, Sequence[str]],
+    *,
+    rank_constant: int = 60,
+) -&gt; list[dict[str, Any]]:
+    """Fuse ranked ID lists without comparing their raw scores.
+
+    Every occurrence contributes ``1 / (rank_constant + rank)`` where ``rank``
+    starts at one.  Ties retain the order in which an ID was first encountered:
+    signal order first, position inside a signal second.
+    """
+    _positive_integer(rank_constant, "rank_constant")
+    normalized = _normalize_rankings(rankings)
+
+    scores: dict[str, float] = {}
+    first_seen: dict[str, int] = {}
+    ranks: dict[str, dict[str, int]] = {}
+
+    for signal, ranking in normalized.items():
+        for rank, record_id in enumerate(ranking, start=1):
+            if record_id not in first_seen:
+                first_seen[record_id] = len(first_seen)
+            scores[record_id] = scores.get(record_id, 0.0) + (
+                1.0 / (rank_constant + rank)
+            )
+            ranks.setdefault(record_id, {})[signal] = rank
+
+    ordered_ids = sorted(
+        scores,
+        key=lambda record_id: (-scores[record_id], first_seen[record_id]),
+    )
+    return [
+        {
+            "id": record_id,
+            "rrf_score": round(scores[record_id], 6),
+            "matched_by": list(ranks[record_id]),
+            "ranks": dict(ranks[record_id]),
+        }
+        for record_id in ordered_ids
+    ]
+
+
+def hybrid_search(
+    rankings: Mapping[str, Sequence[str]],
+    records: Iterable[Mapping[str, Any]],
+    *,
+    top_k: int = 3,
+    rank_constant: int = 60,
+) -&gt; list[dict[str, Any]]:
+    """Return fused candidates together with their canonical records.
+
+    Candidate lists must contain only positive evidence produced by their
+    retrievers.  If every list is empty, RRF has nothing to promote and the
+    function returns ``[]``.
+    """
+    _positive_integer(top_k, "top_k")
+    normalized = _normalize_rankings(rankings)
+    if len(normalized) &lt; 2:
+        raise ValueError("hybrid search needs at least two rankings")
+
+    records_by_id = _record_map(records)
+    fused = reciprocal_rank_fusion(
+        normalized,
+        rank_constant=rank_constant,
+    )
+
+    unknown_ids = [item["id"] for item in fused if item["id"] not in records_by_id]
+    if unknown_ids:
+        raise ValueError(f"rankings contain unknown record id: {unknown_ids[0]}")
+
+    hits = []
+    for item in fused[:top_k]:
+        hits.append(
+            {
+                "record": dict(records_by_id[item["id"]]),
+                "rrf_score": item["rrf_score"],
+                "matched_by": list(item["matched_by"]),
+                "ranks": dict(item["ranks"]),
+            }
+        )
+    return hits
+
+
+def _new_stats() -&gt; dict[str, int]:
+    return {
+        "total": 0,
+        "passed": 0,
+        "answerable_total": 0,
+        "answerable_hits": 0,
+        "no_answer_total": 0,
+        "correct_abstentions": 0,
+    }
+
+
+def _finish_stats(stats: Mapping[str, int]) -&gt; dict[str, Any]:
+    total = stats["total"]
+    answerable_total = stats["answerable_total"]
+    no_answer_total = stats["no_answer_total"]
+    return {
+        "total": total,
+        "passed": stats["passed"],
+        "accuracy": round(stats["passed"] / total, 3) if total else 0.0,
+        "answerable": {
+            "total": answerable_total,
+            "hits": stats["answerable_hits"],
+            "hit_rate_at_k": (
+                round(stats["answerable_hits"] / answerable_total, 3)
+                if answerable_total
+                else 0.0
+            ),
+        },
+        "no_answer": {
+            "total": no_answer_total,
+            "correct_abstentions": stats["correct_abstentions"],
+            "accuracy": (
+                round(stats["correct_abstentions"] / no_answer_total, 3)
+                if no_answer_total
+                else 0.0
+            ),
+        },
+    }
+
+
+def evaluate(
+    cases: Iterable[Mapping[str, Any]],
+    records: Iterable[Mapping[str, Any]],
+    *,
+    top_k: int = 1,
+    rank_constant: int = 60,
+) -&gt; dict[str, Any]:
+    """Compare every retriever and their hybrid on exactly the same cases."""
+    _positive_integer(top_k, "top_k")
+    _positive_integer(rank_constant, "rank_constant")
+    records_by_id = _record_map(records)
+
+    if (
+        isinstance(cases, (str, bytes, Mapping))
+        or not isinstance(cases, Iterable)
+    ):
+        raise TypeError("cases must be an iterable of evaluation cases")
+    case_list = list(cases)
+    if not case_list:
+        raise ValueError("evaluation needs at least one case")
+
+    signal_order: tuple[str, ...] | None = None
+    raw_stats: dict[str, dict[str, int]] = {}
+    details = []
+
+    for position, case in enumerate(case_list):
+        if not isinstance(case, Mapping):
+            raise TypeError(f"case at position {position} must be a mapping")
+
+        case_id = case.get("id")
+        query = case.get("query")
+        expected_ids = case.get("expected_ids")
+        if not isinstance(case_id, str) or not case_id.strip():
+            raise ValueError(f"case at position {position} needs a non-empty id")
+        if not isinstance(query, str) or not query.strip():
+            raise ValueError(f"case {case_id!r} needs a non-empty query")
+        if (
+            isinstance(expected_ids, (str, bytes))
+            or not isinstance(expected_ids, Sequence)
+            or any(
+                not isinstance(record_id, str) or not record_id.strip()
+                for record_id in expected_ids
+            )
+        ):
+            raise ValueError(f"case {case_id!r} needs expected_ids as a list of IDs")
+        if len(expected_ids) != len(set(expected_ids)):
+            raise ValueError(f"case {case_id!r} contains duplicate expected IDs")
+        unknown_expected = [
+            record_id for record_id in expected_ids if record_id not in records_by_id
+        ]
+        if unknown_expected:
+            raise ValueError(
+                f"case {case_id!r} expects unknown record id: {unknown_expected[0]}"
+            )
+
+        normalized = _normalize_rankings(case.get("rankings"))
+        current_order = tuple(normalized)
+        if len(current_order) &lt; 2:
+            raise ValueError(f"case {case_id!r} needs at least two rankings")
+        if signal_order is None:
+            signal_order = current_order
+            raw_stats = {
+                variant: _new_stats()
+                for variant in (*signal_order, "hybrid")
+            }
+        elif current_order != signal_order:
+            raise ValueError(
+                "all cases must use the same ranking names in the same order"
+            )
+
+        hybrid_hits = hybrid_search(
+            normalized,
+            records_by_id.values(),
+            top_k=top_k,
+            rank_constant=rank_constant,
+        )
+        retrieved = {
+            signal: ranking[:top_k]
+            for signal, ranking in normalized.items()
+        }
+        retrieved["hybrid"] = [
+            hit["record"]["id"]
+            for hit in hybrid_hits
+        ]
+
+        expected = set(expected_ids)
+        passed_by_variant: dict[str, bool] = {}
+        for variant, retrieved_ids in retrieved.items():
+            stats = raw_stats[variant]
+            stats["total"] += 1
+            if expected:
+                passed = bool(expected &amp; set(retrieved_ids))
+                stats["answerable_total"] += 1
+                stats["answerable_hits"] += int(passed)
+            else:
+                passed = not retrieved_ids
+                stats["no_answer_total"] += 1
+                stats["correct_abstentions"] += int(passed)
+            stats["passed"] += int(passed)
+            passed_by_variant[variant] = passed
+
+        details.append(
+            {
+                "id": case_id,
+                "query": query,
+                "expected_ids": list(expected_ids),
+                "retrieved_ids": retrieved,
+                "passed": passed_by_variant,
+            }
+        )
+
+    return {
+        "top_k": top_k,
+        "rank_constant": rank_constant,
+        "variants": {
+            variant: _finish_stats(stats)
+            for variant, stats in raw_stats.items()
+        },
+        "cases": details,
+    }
+
+
+if __name__ == "__main__":
+    from sample_rankings import EVAL_CASES, SAMPLE_RECORDS
+
+    for demo_top_k in (1, 2):
+        report = evaluate(
+            EVAL_CASES,
+            SAMPLE_RECORDS,
+            top_k=demo_top_k,
+        )
+        summary = {
+            variant: data["passed"]
+            for variant, data in report["variants"].items()
+        }
+        print(f"\ntop_k={demo_top_k}: {json.dumps(summary, ensure_ascii=False)}")
+        for case in report["cases"]:
+            print(
+                f"  {case['id']}: "
+                f"{json.dumps(case['retrieved_ids'], ensure_ascii=False)}"
+            )
+</code></pre></details><h3>Артефакт</h3><details class="filebox" id="f-phases-03-text-and-documents-05-production-rag-outputs-production-rag-pipeline-md" open><summary><span class="fname">outputs/production-rag-pipeline.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: решение по retrieval-конфигурации и eval-отчёт
+
+Заполненный decision record для учебного корпуса 3.3–3.5. Значения получены из
+[`code/hybrid_retriever.py`](../code/hybrid_retriever.py) и
+[`code/sample_rankings.py`](../code/sample_rankings.py), а не назначены как универсальные
+пороги.
+
+**Статус:** `hybrid, top_k=2` выбран кандидатом для следующего интеграционного прогона.
+Это ещё не доказательство production-готовности.
+
+## Проверяемое изменение
+
+Baseline — два независимых способа получить положительных кандидатов:
+
+```text
+query ─┬─ lexical retriever ─► ranked record IDs ─┐
+       └─ dense retriever   ─► ranked record IDs ─┤
+                                                   ▼
+                                      RRF, rank_constant=60
+                                                   │
+                                                   ▼
+                                      top-k canonical records
+                                      + id/source/positions
+                                      + matched_by/ranks
+                                                   │
+                            ┌──────────────────────┴─────────────────────┐
+                            ▼                                            ▼
+                 insufficient_context                    optional pairwise reranker
+                                                                      │
+                                                                      ▼
+                                                            grounded generation
 ```
-документы → chunking (overlap, урок 3.2)
-          → индексация (vector + keyword)
-запрос    → vector ranking ─┐
-          → keyword ranking ─┤ RRF (слияние рангов)
-                             → rerank → top-k
-          → augment (контекст в промпт, требовать цитаты) → ответ
-          → eval (RAGAS): faithfulness, context precision/recall
+
+RRF здесь является **rank fusion**, а не pairwise reranker. Если оба retriever вернули
+пустые списки, fusion возвращает `[]` и генерация не запускается.
+
+## Данные и критерий
+
+- 4 traceable records из одного учебного документа;
+- 6 eval cases: 5 ответимых и 1 запрос вне корпуса;
+- один ожидаемый ID на каждый ответимый запрос;
+- lexical, dense и hybrid сравниваются на одинаковых cases и одинаковом `top_k`;
+- ответимый case проходит, если ожидаемый ID входит в top-k;
+- no-answer case проходит только при пустой выдаче;
+- ranking fixtures воспроизводят возможные успехи и ошибки, но не измеряют конкретную
+  embedding-модель.
+
+## Сводка
+
+| Вариант | Passed при top-1 | Passed при top-2 | Ответимые Hit@2 | No-answer accuracy |
+|---|---:|---:|---:|---:|
+| lexical | 4/6 | 4/6 | 3/5 | 1/1 |
+| dense | 4/6 | 5/6 | 4/5 | 1/1 |
+| hybrid, RRF | **5/6** | **6/6** | **5/5** | **1/1** |
+
+Увеличение `top_k` сравнивается отдельным прогоном. Нельзя приписывать разницу только
+RRF: больший top-k сам по себе повышает шанс оставить ожидаемый ID и одновременно
+увеличивает объём и возможный шум контекста.
+
+## Per-case разбор при top-1
+
+| Case | Ожидаемый ID | Lexical | Dense | Hybrid | Вывод |
+|---|---|---:|---:|---:|---|
+| `exact-launch` | `chunk-0000` | ✓ | ✗ | ✓ | Два сигнала вернули точный record на первое место |
+| `owner-paraphrase` | `chunk-0005` | ✗ | ✓ | ✓ | Hybrid сохранил dense-only перефразировку |
+| `safety-gate` | `chunk-0002` | ✓ | ✓ | ✓ | Сигналы согласны |
+| `pilot-metrics` | `chunk-0004` | ✓ | ✗ | ✓ | Lexical исправил dense-промах |
+| `outside-corpus` | `[]` | ✓ | ✓ | ✓ | Пустая выдача сохранилась |
+| `support-role` | `chunk-0005` | ✗ | ✓ | ✗ | Tie двух одиночных списков выбрал первый lexical ID |
+
+Aggregate hybrid лучше обоих top-1 baselines, но `support-role` показывает регрессию
+относительно dense. Она не скрывается общей цифрой `5/6`.
+
+## Почему выбран top-2
+
+При `top_k=2` hybrid оставляет оба конфликтующих кандидата в `support-role` и проходит
+все 6 учебных cases. Dense проходит 5/6, lexical — 4/6. Поэтому текущий кандидат:
+
+```yaml
+retrieval:
+  signals: [lexical, dense]
+  fusion: rrf
+  rank_constant: 60
+  top_k: 2
+  on_no_evidence: insufficient_context
 ```
 
-## Использование (код)
+Решение ограничено retrieval-этапом. Перед реальным rollout нужно проверить, что второй
+чанк не ухудшает генерацию, latency и стоимость. Если конфликтующие кандидаты часто
+загрязняют контекст, следующий эксперимент — pairwise reranker над объединённым пулом,
+а не скрытое изменение tie-break.
+
+## Воспроизведение
+
+```bash
+pytest code -q
+python code/hybrid_retriever.py
+```
+
+Программный доступ:
 
 ```python
-from hybrid_retriever import build_index, hybrid_search
-index = build_index(chunks)
-hits = hybrid_search("вопрос пользователя", index, top_k=5)
-# контекст = [h["doc"] for h in hits] → в промпт модели (mini_rag из 3.3)
+from hybrid_retriever import evaluate, hybrid_search
+from sample_rankings import EVAL_CASES, SAMPLE_RECORDS
+
+top_one = evaluate(EVAL_CASES, SAMPLE_RECORDS, top_k=1)
+top_two = evaluate(EVAL_CASES, SAMPLE_RECORDS, top_k=2)
+
+rankings = EVAL_CASES[0]["rankings"]
+evidence = hybrid_search(rankings, SAMPLE_RECORDS, top_k=2)
 ```
 
-## Шаблон eval-отчёта (RAGAS)
+В `evidence` каждый hit содержит неизменённый canonical record и отдельный fusion trace:
+`rrf_score`, `matched_by`, `ranks`.
 
-| Метрика | Что меряет | Значение | Порог |
-|---|---|---|---|
-| Faithfulness | ответ заземлён в контексте | 0.xx | ≥ 0.9 |
-| Answer relevancy | ответ по вопросу | 0.xx | ≥ 0.85 |
-| Context precision | релевантные чанки вверху | 0.xx | ≥ 0.8 |
-| Context recall | нужное попало в контекст | 0.xx | ≥ 0.8 |
+## Перенос на свой корпус
 
-## Правила
+1. Сохрани единый record contract: стабильные `id`, `source`, `text` и позиции.
+2. Получи реальные positive candidate IDs от lexical и dense retriever.
+3. Зафиксируй версии индексов и embedding model.
+4. Собери answerable, no-answer, пограничные и критические eval cases.
+5. Сравни lexical, dense и hybrid при одном `top_k`.
+6. Просмотри per-case gains и regressions до aggregate.
+7. Отдельно сравни `top_k`, latency, размер контекста и стоимость.
+8. Зафиксируй принятое решение, известные провалы и условие rollback.
 
-- **Гибрид &gt; один сигнал**: vector ловит смысл, keyword — точные термины; RRF сводит.
-- **Меряй ретривер и генератор отдельно** (RAGAS) — так видно, где ломается.
-- **Чанкинг с overlap** (3.2) и подсчёт бюджета (1.1) — основа.
-- На «глобальных» вопросах по большому корпусу — рассмотри **GraphRAG**.
-- Качество — в CI (порог на метрики), как evals (7.5).
-</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+Шаблон строки для нового случая:
+
+```yaml
+id: stable-case-id
+query: вопрос пользователя
+expected_ids: [document.md#chunk-0012]
+rankings:
+  lexical: [document.md#chunk-0012]
+  dense: [document.md#chunk-0007, document.md#chunk-0012]
+critical: true
+decision: pass | investigate | block
+```
+
+Поле `critical` и решение остаются частью человеческого decision record: учебная
+`evaluate()` не превращает цену ошибки в одну среднюю цифру.
+
+## Следующий слой: генерация
+
+После принятия retrieval-конфигурации добавь eval ответа:
+
+- faithfulness относительно найденного контекста;
+- response relevancy относительно запроса;
+- context precision/recall с явно указанными reference inputs;
+- примеры неподдержанных утверждений, а не только средние scores.
+
+Для LLM-based метрик зафиксируй evaluator model, prompt, версию библиотеки, число
+повторов, стоимость и дату запуска. Порог принимается относительно baseline и цены
+ошибки своего процесса, а не копируется из этого отчёта.
+
+## Почему это ещё не production-ready
+
+Учебный отчёт не проверяет:
+
+- репрезентативность большого реального корпуса;
+- качество конкретных lexical и dense моделей;
+- обновление индексов и совместимость версий;
+- права доступа к документам;
+- latency, throughput и стоимость;
+- monitoring, rollout и rollback;
+- устойчивость генерации и безопасность.
+
+Он доказывает более узкий, но необходимый результат: fusion работает воспроизводимо,
+не создаёт evidence из пустоты, сохраняет provenance и сравнивается с baseline без
+сокрытия регрессий.
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> 27 behavioral-тестов зелёные; пустые rankings дают <code>[]</code>; hits сохраняют record и provenance; отчёт показывает lexical/dense/hybrid, выигрыш и регрессию; артефакт содержит заполненное решение. ✅ <strong>Урок готов</strong></p></article>
     <div class="nav-prevnext" id="prevnext"><a href="../../lessons/vector-stores/"><small>← 3.4</small>Векторные хранилища</a><a href="../../lessons/skills-and-skill-md/" style="text-align:right"><small>4.1 →</small>Skills и SKILL.md</a></div>
   </section>
 
   <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
 
   <script>window.__BASE__="../../";</script>
-  <script src="../../data.js?v=b2c0ea71efb8"></script>
-  <script src="../../progress.js?v=b2c0ea71efb8"></script>
-  <script src="../../header.js?v=b2c0ea71efb8"></script>
-  <script src="../../app.js?v=b2c0ea71efb8"></script>
+  <script src="../../data.js?v=d06785bf6264"></script>
+  <script src="../../progress.js?v=d06785bf6264"></script>
+  <script src="../../header.js?v=d06785bf6264"></script>
+  <script src="../../app.js?v=d06785bf6264"></script>
 </body>
 </html>

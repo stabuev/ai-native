@@ -11,8 +11,8 @@
 
 **Опора:** чанки с `id`, `source` и позициями из 3.2; retrieval, cosine, top-k,
 положительный score и no-answer случаи из 3.3. · **Дальше:** в 3.5 сохранится тот же
-контракт записей и проверочных запросов, но качество retrieval будет улучшаться
-гибридным поиском и повторным ранжированием.
+контракт записей и проверочных запросов, а lexical, dense и hybrid retrieval будут
+сравниваться через RRF и один eval-набор.
 
 **Requires:** Python 3 и `pytest`. Объяснение, Build It и `doc-assistant` работают
 офлайн, без API-ключа, сети и клонирования репозитория. Для необязательного переноса на
@@ -556,7 +556,7 @@ python assistant.py add new_records.json store.json
 - Атомарные snapshots, блокировки, конкурентные writers, backups и recovery.
 - Настройка HNSW/IVF, quantization, распределённое хранение и сравнение vendors.
 - Универсальные значения `k` и `min_score`.
-- Hybrid retrieval, reranking и расширенная оценка — следующий урок 3.5.
+- Hybrid retrieval, RRF и сравнительная оценка — следующий урок 3.5.
 
 ## Проверь себя
 

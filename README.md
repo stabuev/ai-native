@@ -221,7 +221,7 @@ git. Дальше он копирует в неё только нужные ша
 | 3.2 | Длинные документы: от файла к проверяемому резюме | Трассируемое разбиение и ограниченное иерархическое сведение | Выбор direct context / summary / retrieval и проверка извлечения файла | Карточка обработки длинного документа | `phases/03-text-and-documents/02-long-context-and-files` |
 | 3.3 | Основы RAG: retrieval | TF-IDF retriever над трассируемыми чанками: поиск, пустая выдача и eval | Диагностика retrieval на размеченных запросах | Mini-RAG с пакетом доказательств | `phases/03-text-and-documents/03-rag-basics-retrieval` |
 | 3.4 | Векторные хранилища | Persistent vector store: записи с provenance, manifest совместимости и честная пустая выдача | Перенос контракта records/vectors/metadata в Chroma | Работающий baseline doc-assistant | `phases/03-text-and-documents/04-vector-stores` |
-| 3.5 | Production RAG | Гибридный ретривер (vector+keyword) + reranking с нуля | GraphRAG / managed retrieval + RAGAS-оценка | production-rag pipeline + eval-отчёт | `phases/03-text-and-documents/05-production-rag` |
+| 3.5 | Production RAG | RRF над lexical/dense rankings + сравнительный retrieval-eval | Подключение реальных retriever; optional reranker и Ragas | Retrieval decision record + заполненный eval-отчёт | `phases/03-text-and-documents/05-production-rag` |
 
 **Домашнее задание.** Собрать doc-assistant над собственным корпусом документов и проверить точность ответов.
 
