@@ -271,7 +271,7 @@ decision record 3.5. Если отдельная карточка неприме
 |---|---|---|---|---|---|
 | 4.1 | Skills и SKILL.md | Спроектировать и написать SKILL.md с нуля | Установка и поведенческая проверка в выбранном агенте | Переносимый skill + протокол проверок | `phases/04-skills-memory-projects/01-skills-and-skill-md` |
 | 4.2 | Память: короткая и длинная | Файловая память: запись, поиск, замена, срок жизни и удаление | Сравнение контекста, истории чата и памяти платформ | Изолированный модуль памяти + поведенческие проверки | `phases/04-skills-memory-projects/02-memory-short-and-long` |
-| 4.3 | Проекты и рабочие пространства | Сборка проекта: knowledge + system prompt | Custom GPTs / Claude Projects / Gemini Gems | Настроенный ассистент с базой знаний | `phases/04-skills-memory-projects/03-projects-and-workspaces` |
+| 4.3 | Проекты и рабочие пространства | Project blueprint: scope + instructions + реестр knowledge + приёмочные сценарии | Перенос в доступный Project / workspace / настроенного ассистента | Проверенный blueprint проекта + протокол приёмки | `phases/04-skills-memory-projects/03-projects-and-workspaces` |
 | 4.4 | Контекст-инжиниринг | Схема сборки и компакции контекста | Связка с RAG и со стоимостью | Политика управления контекстом и outputs/ | `phases/04-skills-memory-projects/04-context-engineering` |
 | 4.5 | Агентные платформы: OpenClaw / Hermes | Загрузка скилла (SKILL.md / agentskills.io) в локальный рантайм | OpenClaw / Hermes: скиллы + память + мульти-модель + MCP | Свой агент на self-hosted платформе | `phases/04-skills-memory-projects/05-agent-platforms-openclaw-hermes` |
 
