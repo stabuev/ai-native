@@ -9,7 +9,7 @@ import re
 
 
 def parse_skill(text):
-    """SKILL.md -> {name, description, body} (frontmatter без PyYAML, как в 4.1)."""
+    """SKILL.md -> {name, description, body}; frontmatter разбирается без PyYAML."""
     m = re.match(r"\s*---\s*\n(.*?)\n---\s*\n?(.*)", text, re.DOTALL)
     meta, body = {}, text.strip()
     if m:
@@ -41,7 +41,7 @@ class Runtime:
         return s["name"]
 
     def route(self, message):
-        """Выбрать скилл по пересечению слов сообщения и description (как в 4.1)."""
+        """Выбрать skill по учебному пересечению слов сообщения и description."""
         q = _w(message)
         best, best_score = None, 0
         for name, s in self.skills.items():

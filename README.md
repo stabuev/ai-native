@@ -269,7 +269,7 @@ decision record 3.5. Если отдельная карточка неприме
 
 | # | Урок | Build It | Use It | Ship It | Папка |
 |---|---|---|---|---|---|
-| 4.1 | Skills и SKILL.md | Написать SKILL.md с нуля | Установка и запуск в выбранном агенте | Кросс-платформенный skill | `phases/04-skills-memory-projects/01-skills-and-skill-md` |
+| 4.1 | Skills и SKILL.md | Спроектировать и написать SKILL.md с нуля | Установка и поведенческая проверка в выбранном агенте | Переносимый skill + протокол проверок | `phases/04-skills-memory-projects/01-skills-and-skill-md` |
 | 4.2 | Память: короткая и длинная | Файловое хранилище памяти с поиском и темпоральностью | Память платформы (ChatGPT Memory, session memory) | Модуль памяти для агента | `phases/04-skills-memory-projects/02-memory-short-and-long` |
 | 4.3 | Проекты и рабочие пространства | Сборка проекта: knowledge + system prompt | Custom GPTs / Claude Projects / Gemini Gems | Настроенный ассистент с базой знаний | `phases/04-skills-memory-projects/03-projects-and-workspaces` |
 | 4.4 | Контекст-инжиниринг | Схема сборки и компакции контекста | Связка с RAG и со стоимостью | Политика управления контекстом и outputs/ | `phases/04-skills-memory-projects/04-context-engineering` |
