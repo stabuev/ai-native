@@ -4,16 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>5.2 Code Interpreter — AI Native</title>
-  <meta name="description" content="Code Interpreter = модель пишет код, песочница его исполняет и возвращает результат.">
+  <meta name="description" content="Урок 5.2 курса AI Native: Code Interpreter. Практический материал с проверяемым результатом.">
   <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/code-interpreter/">
   <meta property="og:type" content="article">
   <meta property="og:title" content="5.2 Code Interpreter — AI Native">
-  <meta property="og:description" content="Code Interpreter = модель пишет код, песочница его исполняет и возвращает результат.">
+  <meta property="og:description" content="Урок 5.2 курса AI Native: Code Interpreter. Практический материал с проверяемым результатом.">
   <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/code-interpreter/">
   <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
   <meta name="twitter:card" content="summary_large_image">
   <script>(function(){try{var t=localStorage.getItem("theme")||"light";document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
-  <link rel="stylesheet" href="../../style.css?v=42ace9bd6238">
+  <link rel="stylesheet" href="../../style.css?v=b96ecbf8e51e">
   <!-- Yandex.Metrika counter -->
   <script type="text/javascript">
       (function(m,e,t,r,i,k,a){
@@ -31,145 +31,189 @@
   <section class="container" style="padding-top:24px">
     <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
     <div class="lessonbar" id="lessonbar"></div>
-    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 5.2 · Code Interpreter</h1><p><strong>Фаза 5 — Данные и аналитика</strong> · <strong>Результат фазы:</strong> Анализировать данные с ИИ, делать NL→SQL и автоотчёты с валидацией результатов.</p><p><strong>Requires (только для USE IT):</strong> платный API-ключ или ChatGPT/Claude с исполнением кода. BUILD IT работает офлайн, без ключей и без сети.</p><p><strong>В 5.1 ты проверил <code>AnalysisPlan</code> и исполнил его детерминированным кодом. Теперь модель сама предложит код — и нужно решить, где его запускать.</strong> Code Interpreter — это среда, где модель пишет код, а изолированная песочница его запускает и возвращает результат. Разберём механизм и, главное, <strong>где проходит граница безопасности</strong>.</p><blockquote><strong>MOTTO.</strong> Code Interpreter = модель пишет код, песочница его исполняет и возвращает результат.</blockquote><h2>PROBLEM</h2><p>LLM плохо считает «в уме»: арифметика на больших числах, статистика, точные агрегаты — всё это она угадывает и ошибается. Зато она отлично <strong>пишет код</strong>, который посчитает точно.</p><p>Code Interpreter замыкает цикл: модель генерирует Python → среда его исполняет → результат (или ошибка) возвращается модели, и она при необходимости себя исправляет. Но исполнять код, написанный моделью, в своём обычном процессе — <strong>опасно</strong>: один <code>import os</code> — и код ходит по твоей файловой системе. Поэтому ключевой вопрос не «как запустить», а «как запустить <strong>изолированно</strong>». Соберём учебную песочницу и честно увидим, где её границы.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Представь стажёра, который считает быстро и без ошибок, но которому ты <strong>не доверяешь ключи от офиса</strong>. Ты сажаешь его в переговорку без интернета и доступа к серверам, даёшь задачу и калькулятор, забираешь результат — и не пускаешь к общим файлам. Песочница (sandbox) — это такая переговорка для кода модели: исполнить дай, но к системе, сети и секретам не подпускай.</p><p>Настоящий Code Interpreter крутится в одноразовом контейнере без сети, который уничтожается после сессии. Наша учебная версия слабее, но показывает тот же принцип: <strong>что коду можно, а что нельзя</strong>.</p><h3>Как это работает</h3><pre><code>запрос → модель пишет код → [ sandbox: исполнить ] → результат/ошибка → модель
-                                  │ только разрешённые builtins
-                                  │ нет import / сети / файлов
-                                  ▼ ошибка → модель сама себя чинит (self-correction)</code></pre><p>Две линии защиты в нашей песочнице:</p><ul><li><strong>Статическая проверка (<code>unsafe_tokens</code>)</strong> — до запуска ищем в коде запрещённые конструкции (<code>import</code>, <code>os.</code>, <code>open(</code>, <code>__</code>, <code>eval(</code> …) и отклоняем такой код вовсе.</li><li><strong>Ограниченное окружение (<code>run_code</code>)</strong> — исполняем с урезанным списком <code>builtins</code> (только <code>len</code>, <code>sum</code>, <code>sorted</code>…), без доступа к опасным функциям. Результат код кладёт в переменную <code>result</code>.</li></ul><p>⚠️ Честная оговорка: это <strong>не настоящая изоляция</strong>. Ограниченные builtins и поиск подстрок обходятся изобретательным кодом. Это демонстрация идеи; для прода нужен реальный sandbox — контейнер, seccomp, отдельный процесс с лимитами CPU/памяти (безопасность исполнения — урок 6.5).</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Прогоним <code>run_code</code> на двух кусках кода — «хорошем» и «плохом».</p><p><strong>Код 1 (считает среднее):</strong> <code>result = sum(data) / len(data)</code>, <code>data = [10, 20, 30]</code>.</p><pre><code>1. unsafe_tokens(code) → []            запрещённого нет → пускаем дальше
-2. exec в окружении {builtins: SAFE, data: [10,20,30]}
-3. в local появилась переменная result = 60 / 3 = 20.0
-4. return 20.0</code></pre><p><strong>Код 2 (лезет в систему):</strong> <code>import os; result = os.listdir('.')</code>.</p><pre><code>1. unsafe_tokens(code) → ["import", "os."]   найдены запрещённые конструкции
-2. raise SandboxError — код НЕ исполняется вовсе</code></pre><p>Видно главное: «хороший» код доходит до <code>exec</code> и возвращает точное число, а «плохой» отсекается <strong>до</strong> исполнения статической проверкой. А если код «чистый», но забыл присвоить <code>result</code> (например <code>x = 5</code>), песочница тоже ругается — контракт «результат кладётся в <code>result</code>» обязателен.</p><h2>BUILD IT</h2><p><strong>Задание: собери учебную песочницу</strong> — статическую проверку + ограниченный исполнитель. Только стандартная библиотека, без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/5.2-code-interpreter/</code>), а файлы урока клади в подпапку <code>code/</code> (по соглашению курса). Нужен только <strong>Python 3</strong> (для теста ещё <code>pytest</code>).</blockquote><p>Создай файл <code>sandbox.py</code>: исключение <code>SandboxError</code>, словарь <code>SAFE_BUILTINS</code> (безопасные функции вроде <code>len</code>, <code>sum</code>, <code>min</code>, <code>max</code>, <code>sorted</code>, <code>range</code>…), кортеж <code>FORBIDDEN</code> (запрещённые подстроки: <code>import</code>, <code>__</code>, <code>open(</code>, <code>exec(</code>, <code>eval(</code>, <code>os.</code>, <code>sys.</code>, <code>subprocess</code>…) и две функции:</p><ul><li><strong><code>unsafe_tokens(code)</code></strong> — вернуть список запрещённых подстрок из <code>FORBIDDEN</code>, найденных в <code>code</code> (пустой список = код чист).</li><li><strong><code>run_code(code, data=None)</code></strong> — если <code>unsafe_tokens</code> непуст → <code>raise SandboxError</code>. Иначе исполнить <code>exec(code, {"__builtins__": SAFE_BUILTINS}, local)</code>, где в <code>local</code> положен <code>data</code> (если передан). После исполнения: если переменной <code>result</code> нет в <code>local</code> → <code>raise SandboxError</code>; иначе вернуть <code>local["result"]</code>.</li></ul><p><strong>Готово, когда</strong> все тесты в <code>test_sandbox.py</code> зелёные — они проверяют: разрешённый код считает (<code>sum(data)</code> = 6); <code>import</code> блокируется; <code>__</code>/<code>open(</code> ловятся; отсутствие <code>result</code> → ошибка; чистый код не содержит запрещённых токенов.</p><pre><code>pytest code -q        # красное → реализуй sandbox → зелёное
-python code/sandbox.py # демо: считает среднее; блокирует import os</code></pre><p><strong>Подсказка.</strong> <code>unsafe_tokens</code> — это <code>[t for t in FORBIDDEN if t in code]</code>. В <code>run_code</code> передавай <code>__builtins__</code> как <code>SAFE_BUILTINS</code>, чтобы отрезать доступ к опасным функциям. Контракт результата: код обязан присвоить <code>result</code>.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>Готовый Code Interpreter исполняет код в настоящей песочнице (мульти-провайдер):</p><ul><li><strong>ChatGPT</strong> — Advanced Data Analysis: загрузка файла → «построй регрессию и график» → выполнит pandas/matplotlib в изолированной среде без сети, инстанс уничтожается после сессии.</li><li><strong>OpenAI API</strong> — Code Interpreter tool в Responses / Assistants.</li><li><strong>Claude</strong> — <code>code_execution</code> server-tool: Python в песочнице Anthropic, в том числе над файлами из Files API.</li></ul><p>Везде один паттерн: модель пишет код → песочница исполняет → результат назад, с авто-исправлением ошибок. Разница с нашей учебной версией — настоящая изоляция (контейнер, нет сети, лимиты), а не поиск подстрок.</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Набор аналитических промптов → <a href="#f-phases-05-data-and-analytics-02-code-interpreter-outputs-analysis-prompts-md"><code>outputs/analysis-prompts.md</code></a></p><p>Промпты для Code Interpreter под типовые задачи (профилирование, агрегации, графики, проверка гипотез) с требованием <strong>показать код</strong> — чтобы результат можно было проверить. Дальше: запросы к БД на естественном языке (NL→SQL, 5.3).</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Считать учебную песочницу безопасной.</strong> Ограниченные builtins и поиск подстрок обходятся. Реальная изоляция — контейнер/seccomp/процесс с лимитами (6.5); наша версия только иллюстрирует идею.</li><li><strong>Исполнять код модели в своём процессе.</strong> Без изоляции один <code>import os</code> или <code>open(...)</code> даёт коду доступ к файлам и секретам. Код модели — всегда в песочнице.</li><li><strong>Просить результат без кода.</strong> Если модель выдала число, но не показала код — проверить нельзя. Всегда требуй показать исполняемый код (и желательно данные).</li><li><strong>Полагаться, что модель посчитает «в уме».</strong> Для арифметики/статистики пусть пишет и исполняет код — иначе получишь правдоподобную, но неверную цифру.</li><li><strong>Забыть про сеть и побочные эффекты.</strong> Прод-песочницы режут сеть специально; код, который «сходит в API» внутри интерпретатора, в изоляции упадёт — это норма, а не баг.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="5.2"></div><h2>Дополнительное чтение</h2><ul><li><a href="https://platform.openai.com/docs/guides/tools-code-interpreter" target="_blank" rel="noopener">OpenAI — Code Interpreter (API)</a> — инструмент исполнения кода.</li><li><a href="https://help.openai.com/en/articles/8437071-code-interpreter" target="_blank" rel="noopener">OpenAI — Data analysis with ChatGPT</a> — как устроена изоляция и работа с файлами.</li><li><a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/code-execution-tool" target="_blank" rel="noopener">Anthropic — Code execution tool</a> — Python в песочнице Claude.</li><li><a href="https://github.com/e2b-dev/E2B" target="_blank" rel="noopener">E2B</a> — open-source secure sandboxes для запуска AI-кода в облаке (реальный «sandbox-исполнитель»).</li><li><a href="https://github.com/OpenInterpreter/open-interpreter" target="_blank" rel="noopener">Open Interpreter</a> — локальный движок исполнения кода LLM: парсинг блоков, approval, exec (ChatGPT-CI у себя).</li><li><a href="https://github.com/google/gvisor" target="_blank" rel="noopener">gVisor (Google)</a> — application-kernel sandbox: как делается настоящая изоляция недоверенного кода (ровно оговорка урока → 6.5).</li><li><a href="https://github.com/pyodide/pyodide" target="_blank" rel="noopener">Pyodide</a> — CPython в WebAssembly: изолированный Python (браузер / WASM-песочница).</li><li><a href="https://medium.com/@Shrishml/making-our-own-code-interpreter-part-1-making-of-a-sandbox-382da3339eaa" target="_blank" rel="noopener">Shrish — Making our own code interpreter: making of a sandbox (Medium)</a> — сборка Docker + FastAPI-песочницы, прямо в духе Build It.</li><li><a href="https://embracethered.com/blog/posts/2024/lack-of-isolation-gpts-code-interpreter/" target="_blank" rel="noopener">Embrace The Red — Lack of Isolation in Code Interpreter GPT sessions</a> — почему изоляция критична: реальная уязвимость (мост к 6.5 и безопасности).</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Если делегируешь ИИ, реши, что отдаёшь; опиши задачу и критерии; проверь результат; сохрани ответственность за итог.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-05-data-and-analytics-02-code-interpreter-code-test-sandbox-py" open data-test="1"><summary><span class="fname">code/test_sandbox.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>import pytest
-from sandbox import run_code, unsafe_tokens, SandboxError
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 5.2 · Code Interpreter</h1><p><strong>Фаза 5 — Данные и аналитика</strong> · <strong>Результат фазы:</strong> анализировать данные с ИИ, превращать вопросы на естественном языке в SQL-запросы (NL→SQL) и делать автоотчёты с валидацией результатов.</p><p><strong>Результат урока:</strong> после урока студент сможет исполнить утверждённый <code>AnalysisPlan</code> из 5.1 в доступном Code Interpreter, отделить безопасность среды от корректности анализа и принять либо отклонить результат по входным данным, сгенерированному коду, журналу исполнения и проверкам.</p><p><strong>Опоры:</strong> в 5.1 ты зафиксировал источник, смысл строки, период, фильтры, метрику и ожидаемые проверки. · <strong>Дальше:</strong> в 5.3 вместо файла появится база данных, а вместе с ней — SQL, права доступа и семантический слой.</p><p><strong>Requires:</strong> для офлайн-практики не нужны Python, API-ключ и сеть. Для USE IT нужен доступ к любому AI-инструменту, который умеет принимать файл и исполнять код; доступность зависит от продукта, тарифа и настроек организации. Если такого инструмента нет, используй готовые журналы исполнения из урока.</p><blockquote><strong>Главная мысль.</strong> Изоляция защищает систему от кода. Проверка анализа защищает решение от неверного кода. Это две разные задачи.</blockquote><h2>Проблема: код успешно исполнился, но ответ всё равно неверен</h2><p>В 5.1 был утверждён план:</p><pre><code>Вопрос: какие регионы принесли больше оплаченной выручки в Q2?
+Источник: sales.csv.
+Grain: одна строка = один заказ.
+Фильтры: quarter = Q2, status = paid.
+Метрика: paid_revenue = SUM(amount), RUB.
+Разрез: region.
+Ожидаемо: прочитано 6 строк, использовано 4, общий итог 200.</code></pre><p>Теперь модель пишет Python:</p><pre><code>import pandas as pd
 
+df = pd.read_csv("sales.csv")
+selected = df.query("quarter == 'Q2'")
+result = selected.groupby("region")["amount"].sum()</code></pre><p>Код синтаксически корректен. Изолированная среда запускает его без ошибки и возвращает:</p><pre><code>Москва = 150
+Питер = 100
+Казань = 20
+Итого = 270</code></pre><p>Среда выполнила свою работу: код не получил лишнего доступа к компьютеру и завершился успешно. Но модель забыла фильтр <code>status == "paid"</code>, поэтому в Питер попал возврат <code>70</code>. <strong>Успешное исполнение не означает правильный анализ.</strong></p><p>Отсюда два независимых вопроса:</p><ol><li><strong>Можно ли безопасно исполнить этот код?</strong></li><li><strong>Соответствует ли код утверждённому плану и данным?</strong></li></ol><p>Code Interpreter помогает с первым вопросом. Ответственность за второй остаётся у человека.</p><h2>Центральная модель</h2><h3>Что такое Code Interpreter</h3><p><strong>Code Interpreter</strong> — это не отдельная модель и не способность LLM безошибочно считать «в уме». Это рабочий контур:</p><pre><code>утверждённый план
+        ↓
+модель предлагает код
+        ↓
+отдельная среда исполняет код
+        ↓
+возвращает результат, ошибку и созданные файлы
+        ↓
+человек проверяет код и доказательства</code></pre><p>В разных продуктах эта возможность может называться data analysis, Python tool или code execution. Название меняется, а роли остаются:</p><ul><li><strong>Модель</strong> переводит задачу в код и при необходимости предлагает исправление.</li><li><strong>Среда исполнения</strong> запускает код с заданными возможностями и ограничениями.</li><li><strong>Человек</strong> подтверждает смысл расчёта и принимает результат.</li></ul><h3>Sandbox и container обычными словами</h3><p><strong>Sandbox</strong>, или песочница, — среда, которая отделяет недоверенный код от основной системы. Код получает не весь компьютер, а только разрешённую рабочую область.</p><p><strong>Container</strong>, или контейнер, — один из способов предоставить такую отдельную область: собственные процессы, файлы, библиотеки и лимиты. Некоторые платформы используют контейнеры, другие описывают среду иначе. Для пользователя важен не бренд технологии, а проверяемая граница доступа.</p><p>Функция Python <code>exec(text)</code> исполняет переданный текст как код в текущем процессе. Ограничение доступных ей функций не создаёт отдельную защитную границу: код всё ещё может зависнуть, исчерпать память или воспользоваться переданным ему объектом. Поэтому в этом уроке мы <strong>не запускаем произвольный код модели локально</strong> и не собираем псевдо-sandbox.</p><h3>Capability: что среде разрешено</h3><p><strong>Capability</strong>, или возможность среды, — конкретное действие, которое она разрешает коду. Перед рабочим запуском нужно выяснить:</p><table><thead><tr><th>Граница</th><th>Что проверить</th></tr></thead><tbody><tr><td>Входные файлы</td><td>Какие файлы доступны и как подтверждается их версия?</td></tr><tr><td>Файловая область</td><td>Видит ли код только рабочую папку или другие файлы тоже?</td></tr><tr><td>Сеть</td><td>Может ли код обращаться к внешним сайтам и API?</td></tr><tr><td>Библиотеки</td><td>Какие пакеты уже установлены и можно ли добавлять новые?</td></tr><tr><td>Ресурсы</td><td>Есть ли ограничения времени, памяти, вычислительной мощности и размера файлов?</td></tr><tr><td>Состояние</td><td>Сохраняются ли переменные и созданные файлы между запусками?</td></tr><tr><td>Хранение</td><td>Как долго провайдер хранит входы, код и результаты?</td></tr><tr><td>Выходы</td><td>Можно ли увидеть код, ошибки, таблицы и созданные файлы?</td></tr></tbody></table><p>У этих вопросов нет универсальных ответов. Возможности различаются между продуктами и меняются со временем. Записывай только то, что подтверждено интерфейсом, настройками организации или актуальной документацией. Неизвестное помечай как <code>unknown</code>, а не угадывай.</p><h3>Execution trace: доказательства одного запуска</h3><p><strong>Execution trace</strong>, или журнал исполнения, — связанная запись того, что было запущено и что произошло:</p><pre><code>план и входы
++ сгенерированный код
++ среда и известные ограничения
++ статус, ошибки и исправления
++ результаты и созданные файлы
++ проверки и решение человека</code></pre><p>Один финальный ответ модели не является полным журналом. Если первая версия кода упала, а вторая сработала, полезно сохранить обе: ошибка показывает, что менялось и почему финальный результат отличается.</p><h2>Три уровня проверки</h2><h3>1. Безопасность исполнения</h3><p>Проверь, что код запускается не в основном процессе и получает только допустимые возможности. Это снижает риск доступа к локальным файлам, секретам, сети и ресурсам.</p><h3>2. Корректность анализа</h3><p>Сопоставь <code>AnalysisPlan</code> с кодом строка за строкой:</p><table><thead><tr><th>Поле плана</th><th>Что искать в коде и результате</th></tr></thead><tbody><tr><td>Источник</td><td>Открыт именно согласованный файл</td></tr><tr><td>Grain и row ID</td><td>Строки не задвоены и считаемая единица не изменилась</td></tr><tr><td>Период</td><td>Применён нужный период</td></tr><tr><td>Фильтры</td><td>Все условия включения и исключения присутствуют</td></tr><tr><td>Метрика</td><td>Использованы правильная колонка, агрегат и единица</td></tr><tr><td>Разрез</td><td>Группировка выполнена по нужной колонке</td></tr><tr><td>Проверки</td><td>Видны read / used / excluded, полный итог и сверка</td></tr></tbody></table><p>Показанный код делает расчёт проверяемым, но не проверяет себя автоматически. Код может быть аккуратным, воспроизводимым и неверным по смыслу.</p><h3>3. Допустимость данных</h3><p>Даже хороший sandbox не даёт разрешения загружать в него любые данные. До загрузки проверь правила организации, чувствительность колонок, одобренный продукт, настройки хранения и необходимость обезличивания. Неизвестная политика хранения — причина остановиться и уточнить, а не предположить удаление «после чата».</p><h2>Разбор двух журналов</h2><h3>Запуск A: технически успешный, аналитически неверный</h3><pre><code>input: sales.csv, 6 строк
+code filter: quarter == Q2
+execution status: success
+rows read / used / excluded: 6 / 5 / 1
+overall: 270 RUB</code></pre><p>Проверка:</p><ul><li>среда исполнила код без ошибки;</li><li>период Q2 применён;</li><li>фильтр <code>status=paid</code> отсутствует;</li><li>использовано 5 строк вместо ожидаемых 4;</li><li>итог <code>270</code> не совпадает с ожидаемой сверкой <code>200</code>.</li></ul><p><strong>Решение:</strong> <code>reject</code>. Безопасный запуск не компенсирует неверный фильтр.</p><h3>Запуск B: технически и аналитически согласованный</h3><pre><code>import pandas as pd
 
-def test_runs_allowed_code():
-    assert run_code("result = sum(data)", data=[1, 2, 3]) == 6
-    assert run_code("result = max(data) - min(data)", data=[5, 1, 9]) == 8
+df = pd.read_csv("sales.csv")
+selected = df.query("quarter == 'Q2' and status == 'paid'")
+groups = selected.groupby("region")["amount"].sum().sort_values(ascending=False)
+overall = selected["amount"].sum()</code></pre><pre><code>execution status: success
+rows read / used / excluded: 6 / 4 / 2
+groups: Москва 150, Питер 30, Казань 20
+overall: 200 RUB
+reconciliation: 150 + 30 + 20 = 200</code></pre><p><strong>Решение:</strong> <code>accept</code> для учебного вопроса, если <code>sales.csv</code> является согласованным источником и загрузка данных разрешена.</p><p>Сравнение показывает центральный механизм:</p><table><thead><tr><th>Свойство</th><th>Запуск A</th><th>Запуск B</th></tr></thead><tbody><tr><td>Код исполнился</td><td>Да</td><td>Да</td></tr><tr><td>Среда изолирована</td><td>По контракту среды</td><td>По контракту среды</td></tr><tr><td>Все фильтры плана применены</td><td>Нет</td><td>Да</td></tr><tr><td>Итог сошёлся</td><td>Нет</td><td>Да</td></tr><tr><td>Решение</td><td>Reject</td><td>Accept</td></tr></tbody></table><h2>ОФЛАЙН-ПРАКТИКА: принять или отклонить запуск</h2><p>Работай в созданной в фазе 0 папке <code>ai-native-work/course-work/phase-5/code-interpreter/</code>. Клонировать курс не нужно. Скопируй со страницы шаблон карточки исполнения и сначала самостоятельно оцени сценарий.</p><h3>Сценарий</h3><p>План требует источник <code>sales.csv</code>, фильтры Q2 + paid и итог <code>200</code>. Журнал сообщает:</p><pre><code>input file: sales-final-v2.csv
+rows read / used / excluded: 6 / 4 / 2
+code filters: quarter == Q2 and status == paid
+overall: 200 RUB
+execution status: success
+environment: отдельная среда; сеть запрещена; срок хранения unknown</code></pre><p>Ответь письменно:</p><ol><li>Какое решение принимаешь: <code>accept</code>, <code>reject</code> или <code>needs clarification</code>?</li><li>Какие доказательства уже достаточны?</li><li>Какой факт отсутствует?</li><li>Какое минимальное действие разблокирует решение?</li></ol><p>Сильный ответ — <code>needs clarification</code>: код и числа согласованы, но имя входного файла отличается от утверждённого источника, а связь версий не подтверждена. Нужно подтвердить происхождение <code>sales-final-v2.csv</code> или повторить запуск на согласованном файле. Неизвестный срок хранения отдельно блокирует загрузку рабочих чувствительных данных, но не мешает учебному синтетическому примеру.</p><h2>USE IT</h2><p>Используй синтетический <code>sales.csv</code> из 5.1. Не загружай рабочие данные только ради прохождения урока.</p><h3>Шаг 1. Передай утверждённый план</h3><pre><code>Исполни этот AnalysisPlan над загруженным sales.csv.
+Не меняй определение метрики и фильтры без явного согласования.
+Покажи сгенерированный код, строки read / used / excluded,
+полный результат по группам, общий итог и контрольную сверку.
+Если код упадёт и ты его исправишь, сохрани обе версии и объясни изменение.</code></pre><h3>Шаг 2. Зафиксируй среду</h3><p>Запиши продукт, режим и дату. По интерфейсу, настройкам организации или официальной документации установи файловую область, доступ к сети, состояние между запусками, лимиты и срок хранения. Если факт не найден, запиши <code>unknown</code>.</p><p>Не проси модель угадать политику собственного провайдера. Ответ модели о среде не заменяет документацию и настройки аккаунта.</p><h3>Шаг 3. Проверь код против плана</h3><p>Найди в коде источник, оба фильтра, <code>SUM(amount)</code>, группировку по <code>region</code> и общий итог. Затем сверь <code>6 / 4 / 2</code>, группы <code>150 / 30 / 20</code> и итог <code>200</code>.</p><h3>Шаг 4. Сохрани решение</h3><p>Заполни карточку исполнения. Если что-то не подтверждено, выбери <code>needs clarification</code> и назови одно следующее действие. Не переписывай неопределённость как уверенный вывод.</p><p>Если у тебя нет Code Interpreter, заполни карточку по запуску A или офлайн-сценарию. Результат урока — качественное решение по доказательствам, а не доступ к конкретному платному продукту.</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> карточка проверки исполнения → <a href="#f-phases-05-data-and-analytics-02-code-interpreter-outputs-execution-review-card-md"><code>outputs/execution-review-card.md</code></a></p><p>Карточка должна связать утверждённый план, конкретный вход, код, среду, журнал, проверки и решение <code>accept / reject / needs clarification</code>. Она готова, если другой человек может понять, что исполнялось, почему результат принят или отклонён и какой неизвестный факт ещё требует ответа.</p><h2>Реалистичные ошибки</h2><ul><li><strong>Считать зелёный статус доказательством правильности.</strong> <code>success</code> означает, что код завершился, но не подтверждает фильтры, метрику и источник.</li><li><strong>Назвать урезанный <code>exec</code> песочницей.</strong> Ограничение функций внутри основного процесса не создаёт изоляцию по процессам, файлам и ресурсам.</li><li><strong>Проверить код, но не вход.</strong> Правильный расчёт над другой версией файла отвечает на другой набор данных.</li><li><strong>Проверить только финальную версию.</strong> Скрытая ошибка и автоматическое исправление могут изменить метод; сохрани обе версии.</li><li><strong>Предположить отсутствие сети или мгновенное удаление данных.</strong> Возможности и хранение зависят от продукта и конфигурации; неизвестное остаётся неизвестным.</li><li><strong>Загрузить рабочие данные до проверки политики.</strong> Sandbox ограничивает код, но не отменяет правила доступа, хранения и передачи данных.</li><li><strong>Просить только число.</strong> Для приёмки нужны код, read / used / excluded, полный итог и сверка.</li><li><strong>Считать показанный код достаточным.</strong> Его ещё нужно сопоставить с утверждённым <code>AnalysisPlan</code>.</li></ul><h2>Что сознательно осталось за границей</h2><ul><li>Построение собственного sandbox и способы обхода изоляции.</li><li>Контейнеры, системные вызовы и низкоуровневые механизмы безопасности.</li><li>Сравнение провайдеров и нестабильные лимиты конкретных тарифов.</li><li>Регрессия, статистические тесты, z-score, IQR и другие новые аналитические методы.</li><li>Работа с производственными и чувствительными данными.</li><li>SQL, права базы данных и семантический слой: это следующий урок.</li><li>Подробная безопасность исполнения и доступов: это 6.5.</li></ul><h2>Переход в 5.3</h2><p>В 5.2 исполнителем была отдельная среда с файлами:</p><pre><code>AnalysisPlan → Python → файловая среда → execution trace</code></pre><p>В 5.3 исполнителем станет база данных:</p><pre><code>вопрос → SQL → соединение с БД → результат</code></pre><p>Появятся новые границы: какие таблицы видны, с какими правами выполняется запрос и кто определяет смысл «выручки». Карточка исполнения сохранит те же вопросы про вход, код, результат и принятие, а семантический слой зафиксирует метрики для всех запросов.</p><h2>ПРОВЕРЬ СЕБЯ</h2><p>Вопросы проверяют различие между изоляцией и корректностью, работу с неизвестными ограничениями и решение по журналу исполнения.</p><div class="quiz-section" data-lesson="5.2"></div><h2>Дополнительное чтение</h2><p>Это необязательные материалы: для завершения урока читать их не нужно. Выбери одну ветку по своей задаче, а не проходи весь список подряд.</p><h3>Если используешь готовый инструмент</h3><ul><li><a href="https://help.openai.com/en/articles/8437071-code-interpreter" target="_blank" rel="noopener">OpenAI — Data analysis with ChatGPT</a> — открой разделы <strong>Reviewing analysis details</strong>, <strong>Privacy and uploaded files</strong> и <strong>Constraints</strong>, чтобы сверить код, допущения, работу с файлами и ограничения среды ChatGPT.</li><li><a href="https://help.openai.com/ru-ru/articles/8983778-chat-and-file-retention-policies-in-chatgpt" target="_blank" rel="noopener">OpenAI — политика хранения чатов и файлов</a> — используй для полей «срок хранения» и «удаление» в карточке исполнения; обрати внимание, что правила зависят от типа чата, файла и рабочего пространства.</li><li><a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/code-execution-tool" target="_blank" rel="noopener">Anthropic — Code execution tool</a> — если работаешь через Claude API, сравни разделы <strong>How code execution works</strong>, <strong>Networking and security</strong>, <strong>Resource limits</strong>, <strong>Container reuse</strong> и <strong>Data retention</strong> с контрактом среды из урока.</li></ul><h3>Если строишь интеграцию</h3><ul><li><a href="https://developers.openai.com/api/docs/guides/tools-code-interpreter" target="_blank" rel="noopener">OpenAI — Code Interpreter API</a> — открой разделы о containers и files, чтобы понять, как приложение создаёт или переиспользует среду и передаёт ей входные данные.</li><li><a href="https://github.com/e2b-dev/E2B" target="_blank" rel="noopener">E2B</a> — инженерная ветка после урока: разделы <strong>What is E2B?</strong> и <strong>Run your first Sandbox</strong> показывают отдельный облачный исполнитель и его программный интерфейс; устанавливать или запускать E2B для 5.2 не требуется.</li></ul><h3>Если углубляешь проверяемость и безопасность</h3><ul><li><a href="https://book.the-turing-way.org/reproducible-research/reproducible-research/" target="_blank" rel="noopener">The Turing Way — Guide for Reproducible Research</a> — расширяет карточку исполнения до общей модели воспроизводимости: вместе сохраняются данные, инструменты, код и результаты.</li><li><a href="https://embracethered.com/blog/posts/2024/lack-of-isolation-gpts-code-interpreter/" target="_blank" rel="noopener">Embrace The Red — Lack of Isolation between Code Interpreter sessions of GPTs</a> — исторический разбор того, почему нельзя предполагать границы среды без проверки; описанная уязвимость была исправлена в мае 2024 года, поэтому материал нужен как кейс рассуждения, а не как описание текущего состояния продукта.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Артефакт встроен прямо здесь — открывать GitHub не нужно.</p><h3>Артефакт</h3><details class="filebox" id="f-phases-05-data-and-analytics-02-code-interpreter-outputs-execution-review-card-md" open><summary><span class="fname">outputs/execution-review-card.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: карточка проверки исполнения
 
+Карточка связывает утверждённый аналитический план с конкретным запуском. Она не доказывает безопасность платформы сама по себе: факты о среде должны опираться на интерфейс, настройки организации или актуальную документацию.
 
-def test_blocks_import():
-    with pytest.raises(SandboxError):
-        run_code("import os\nresult = 1")
+## 1. Решение и утверждённый план
 
+| Поле | Что зафиксировать |
+|---|---|
+| Решение | Какое действие поддерживает расчёт |
+| Вопрос | Какой описательный вопрос исполняется |
+| Версия плана | Где лежит согласованный `AnalysisPlan` и кто его подтвердил |
+| Ожидаемый результат | Read / used / excluded, группы, полный итог и сверка |
 
-def test_blocks_dunder_and_open():
-    assert unsafe_tokens("__import__('os')")
-    with pytest.raises(SandboxError):
-        run_code("result = open('/etc/passwd').read()")
+## 2. Входные данные
 
+| Поле | Значение |
+|---|---|
+| Имя и версия файла | |
+| Происхождение | Кто и откуда получил выгрузку |
+| Grain и row ID | |
+| Число строк | |
+| Чувствительность | Синтетические / внутренние / персональные / другое |
+| Разрешение на загрузку | Кто или какое правило разрешает использование инструмента |
 
-def test_requires_result_variable():
-    with pytest.raises(SandboxError):
-        run_code("x = 5")        # result не задан
+Если имя или версия не совпадают с планом, не исправляй запись задним числом. Подтверди связь версий либо повтори запуск.
 
+## 3. Среда исполнения
 
-def test_clean_code_has_no_unsafe_tokens():
-    assert unsafe_tokens("result = sorted(data)") == []
-</code></pre></details><h3>Эталонное решение</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-05-data-and-analytics-02-code-interpreter-code-sandbox-py"><summary><span class="fname">code/sandbox.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Code Interpreter: упрощённый sandbox-исполнитель — Build It для урока 5.2.
+| Поле | Подтверждённый факт и источник |
+|---|---|
+| Продукт, режим, дата | |
+| Отдельная среда исполнения | |
+| Доступная файловая область | |
+| Доступ к сети | |
+| Библиотеки | |
+| Лимиты времени и ресурсов | |
+| Сохранение состояния между запусками | |
+| Срок хранения и удаление | |
+| Неизвестные ограничения | |
 
-Без зависимостей. Модель пишет код — sandbox его исполняет и возвращает результат
-(так работает Code Interpreter / Advanced Data Analysis). Здесь УЧЕБНЫЙ песок:
-ограниченные builtins + статическая проверка опасных конструкций.
+Не найденный факт записывается как `unknown`. Ответ модели о собственном окружении не заменяет документацию или настройки аккаунта.
 
-ВНИМАНИЕ: это не настоящая изоляция, а демонстрация идеи. Для прода нужен реальный
-sandbox (контейнер, seccomp, отдельный процесс с лимитами) — см. урок 6.5.
-"""
+## 4. Код и журнал
 
-SAFE_BUILTINS = {
-    "len": len, "sum": sum, "min": min, "max": max, "sorted": sorted, "range": range,
-    "abs": abs, "round": round, "map": map, "filter": filter, "list": list,
-    "dict": dict, "set": set, "tuple": tuple, "enumerate": enumerate, "zip": zip,
-    "float": float, "int": int, "str": str, "bool": bool,
-}
+### Сгенерированный код
 
-FORBIDDEN = ("import", "__", "open(", "exec(", "eval(", "compile(", "input(",
-             "os.", "sys.", "subprocess", "globals(", "locals(", "getattr(")
-
-
-class SandboxError(Exception):
-    pass
-
-
-def unsafe_tokens(code):
-    """Список запрещённых конструкций, найденных в коде (пустой = чисто)."""
-    return [t for t in FORBIDDEN if t in code]
-
-
-def run_code(code, data=None):
-    """Исполнить код в ограниченном окружении. Результат — переменная `result`."""
-    bad = unsafe_tokens(code)
-    if bad:
-        raise SandboxError(f"запрещённые конструкции: {bad}")
-    env = {"__builtins__": SAFE_BUILTINS}
-    local = {"data": data} if data is not None else {}
-    exec(code, env, local)            # noqa: S102 — учебный sandbox, см. оговорку выше
-    if "result" not in local:
-        raise SandboxError("код не присвоил переменную result")
-    return local["result"]
-
-
-if __name__ == "__main__":
-    print(run_code("result = sum(data) / len(data)", data=[10, 20, 30]))   # среднее
-    try:
-        run_code("import os; result = os.listdir('.')")
-    except SandboxError as e:
-        print("Заблокировано:", e)
-</code></pre></details><h3>Артефакт</h3><details class="filebox" id="f-phases-05-data-and-analytics-02-code-interpreter-outputs-analysis-prompts-md" open><summary><span class="fname">outputs/analysis-prompts.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: набор аналитических промптов для Code Interpreter
-
-Промпты под типовые задачи. Везде проси **показать код** — это аудируемость и воспроизводимость. Учебная песочница — [`code/sandbox.py`](../code/sandbox.py).
-
-## Профилирование данных
-
-```
-Загрузи файл. Покажи: размер, типы колонок, доля пропусков по колонкам,
-5 примеров строк. Отметь подозрительные значения. Покажи код.
-```
-
-## Агрегации
-
-```
-Посчитай выручку (SUM по amount) по region, топ-10, и долю каждого.
-Проверь, что сумма по группам = общей. Покажи таблицу и код.
+```python
+# вставь точную версию кода
 ```
 
-## Графики
+### Исполнение
 
+| Поле | Значение |
+|---|---|
+| Статус | Success / error / timeout / другое |
+| Первая ошибка | |
+| Что изменилось после ошибки | |
+| Строк прочитано / использовано / исключено | |
+| Созданные файлы | |
+| Предупреждения | |
+
+Если модель исправляла код, приложи исходную и финальную версии.
+
+## 5. Сверка с `AnalysisPlan`
+
+- [ ] Открыт утверждённый источник.
+- [ ] Grain и row ID не изменились.
+- [ ] Период применён.
+- [ ] Все фильтры включения и исключения присутствуют.
+- [ ] Колонка, агрегат и единица метрики совпадают.
+- [ ] Группировка выполнена по утверждённому разрезу.
+- [ ] Read / used / excluded объяснены.
+- [ ] Полный итог сходится с группами.
+- [ ] Вывод не выходит за границу описательного вопроса.
+
+### Расхождения и неизвестные факты
+
+| Наблюдение | Почему важно | Следующее действие |
+|---|---|---|
+| | | |
+
+## 6. Решение по запуску
+
+Выбери одно:
+
+- `accept` — вход, код, результат и допустимость среды подтверждены для этого решения;
+- `reject` — найдено существенное расхождение;
+- `needs clarification` — для решения не хватает конкретного факта.
+
+**Вердикт:**
+
+**Доказательства:**
+
+**Остаточный риск:**
+
+**Одно следующее действие:**
+
+**Что удалить или сохранить после проверки:**
+
+## Заполненный учебный пример
+
+```text
+План: Q2 + paid, SUM(amount) по region, ожидаемый итог 200 RUB.
+Вход: sales.csv, синтетический, 6 строк.
+Код: применил только quarter == Q2.
+Статус: success.
+Read / used / excluded: 6 / 5 / 1.
+Итог: 270 RUB.
+Среда: отдельная; остальные ограничения для этого примера не влияют на решение.
+
+Вердикт: reject.
+Доказательство: отсутствует status == paid, использована лишняя строка возврата.
+Следующее действие: исправить фильтр, повторить запуск и получить 6 / 4 / 2 и 200 RUB.
 ```
-Построй линейный график выручки по месяцам и bar-chart топ-5 продуктов.
-Подпиши оси, добавь заголовки. Дай 3 вывода по графикам.
-```
 
-## Проверка гипотезы
+## Критерий готовности
 
-```
-Гипотеза: продажи в выходные выше будней. Проверь статистически
-(сравни средние, отметь значимость), без переусложнения. Покажи код и вывод.
-```
+Карточка готова, если другой человек без доступа к чату может:
 
-## Поиск аномалий
-
-```
-Найди выбросы в ряду daily_revenue (z-score или IQR). Перечисли даты-аномалии
-со значениями и отклонением. Покажи код.
-```
-
-## Правила
-
-- **Показывай код** (View Analysis / code execution) — без этого результат непроверяем.
-- **Один вопрос — один промпт** (декомпозиция, урок 2.3); сложное — цепочкой.
-- **Проверяй выводы** (урок 5.5): ИИ не знает происхождения данных.
-- Низкая температура для расчётов (урок 1.3) — нужна воспроизводимость.
-</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+1. назвать утверждённый вход и план;
+2. увидеть точный код и историю исправлений;
+3. отделить подтверждённые ограничения среды от неизвестных;
+4. воспроизвести проверки результата;
+5. объяснить решение `accept / reject / needs clarification`;
+6. выполнить указанное следующее действие.
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> студент отличает модель от среды исполнения; по журналу обнаруживает пропущенный фильтр и неподтверждённый источник; карточка связывает план, вход, код, ограничения, результат и решение; недоверенный код не запускается локально. ✅ <strong>Урок готов</strong></p></article>
     <div class="nav-prevnext" id="prevnext"><a href="../../lessons/ai-as-analyst/"><small>← 5.1</small>ИИ как аналитик</a><a href="../../lessons/nl-to-sql-semantic-layer/" style="text-align:right"><small>5.3 →</small>NL→SQL и семантический слой</a></div>
   </section>
 
   <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
 
   <script>window.__BASE__="../../";</script>
-  <script src="../../data.js?v=42ace9bd6238"></script>
-  <script src="../../progress.js?v=42ace9bd6238"></script>
-  <script src="../../header.js?v=42ace9bd6238"></script>
-  <script src="../../app.js?v=42ace9bd6238"></script>
+  <script src="../../data.js?v=b96ecbf8e51e"></script>
+  <script src="../../progress.js?v=b96ecbf8e51e"></script>
+  <script src="../../header.js?v=b96ecbf8e51e"></script>
+  <script src="../../app.js?v=b96ecbf8e51e"></script>
 </body>
 </html>
