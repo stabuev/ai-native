@@ -4,16 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>5.3 NL→SQL и семантический слой — AI Native</title>
-  <meta name="description" content="NL→SQL без семантического слоя — лотерея; метрики надо определить один раз и для всех.">
+  <meta name="description" content="Урок 5.3 курса AI Native: NL→SQL и семантический слой. Практический материал с проверяемым результатом.">
   <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/nl-to-sql-semantic-layer/">
   <meta property="og:type" content="article">
   <meta property="og:title" content="5.3 NL→SQL и семантический слой — AI Native">
-  <meta property="og:description" content="NL→SQL без семантического слоя — лотерея; метрики надо определить один раз и для всех.">
+  <meta property="og:description" content="Урок 5.3 курса AI Native: NL→SQL и семантический слой. Практический материал с проверяемым результатом.">
   <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/nl-to-sql-semantic-layer/">
   <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
   <meta name="twitter:card" content="summary_large_image">
   <script>(function(){try{var t=localStorage.getItem("theme")||"light";document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
-  <link rel="stylesheet" href="../../style.css?v=b96ecbf8e51e">
+  <link rel="stylesheet" href="../../style.css?v=c3ede7741528">
   <!-- Yandex.Metrika counter -->
   <script type="text/javascript">
       (function(m,e,t,r,i,k,a){
@@ -31,153 +31,625 @@
   <section class="container" style="padding-top:24px">
     <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
     <div class="lessonbar" id="lessonbar"></div>
-    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 5.3 · NL→SQL и семантический слой</h1><p><strong>Фаза 5 — Данные и аналитика</strong> · <strong>Результат фазы:</strong> Анализировать данные с ИИ, делать NL→SQL и автоотчёты с валидацией результатов.</p><p><strong>Requires (только для USE IT):</strong> платный API-ключ одного из провайдеров. BUILD IT работает офлайн, без ключей и без сети (sqlite входит в Python, ставить не нужно).</p><p><strong>В 5.2 ты отделил модель, сгенерированный код, среду исполнения и решение человека. Теперь исполнителем станет база данных.</strong> «Спроси базу на человеческом языке» (NL→SQL) звучит мечтой — но вместе с новым исполнителем появляются схема, права доступа и одна важная деталь: <strong>семантический слой</strong>.</p><blockquote><strong>MOTTO.</strong> NL→SQL без семантического слоя — лотерея; метрики надо определить один раз и для всех.</blockquote><h2>PROBLEM</h2><p>Просишь модель: «покажи выручку по регионам» — она пишет SQL. Завтра коллега просит то же — модель пишет <strong>другой</strong> SQL: один взял <code>SUM(amount)</code>, другой вычел возвраты, третий отфильтровал тестовые заказы. Три «выручки» — три разных числа. Кому верить?</p><p>Проблема не в модели, а в <strong>неоднозначности</strong>: что такое «выручка»? «активный пользователь»? «месяц» — календарный или скользящий? Пока определения метрик живут в голове у каждого, NL→SQL гадает заново на каждый вопрос. Лекарство — зафиксировать смысл <strong>один раз и для всех</strong> в семантическом слое, а модель пусть лишь сопоставляет вопрос с готовыми определениями.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Семантический слой — это <strong>глоссарий компании, превращённый в код</strong>. В нём раз и навсегда записано: «выручка» = <code>SUM(amount)</code>, «заказы» = <code>COUNT(*)</code>, «регион» = колонка <code>region</code>. Дальше никто не спорит, что считать выручкой — определение одно, проверенное, общее.</p><p>Роль модели при этом сужается и становится надёжной: она не изобретает SQL с нуля, а лишь <strong>узнаёт</strong> в вопросе, какую метрику и какой разрез ты имеешь в виду, и подставляет их из слоя. Меньше свободы у модели — меньше разнобоя в цифрах.</p><h3>Как это работает</h3><pre><code>вопрос → [семантический слой: метрики + измерения] → SQL → результат
-            выручка = SUM(amount)        регион = region
-            заказы  = COUNT(*)           месяц  = month
-                         │
-   1. найти МЕТРИКУ по триггеру в вопросе  → её SQL-выражение
-   2. найти ИЗМЕРЕНИЕ (разрез) → колонка для GROUP BY (опционально)
-   3. собрать SELECT из проверенных кусков → исполнить в БД</code></pre><ul><li><code>SEMANTIC</code> — словарь смысла: метрики (триггер-слово → SQL) и измерения (триггер → колонка).</li><li><code>nl_to_sql(question)</code> — найти в вопросе метрику и (опционально) измерение, собрать <code>SELECT</code> (+<code>GROUP BY</code>, если есть разрез).</li><li><code>run_sql(sql, rows)</code> — исполнить запрос на in-memory sqlite (стандартная библиотека).</li></ul><p>Важная деталь: триггеры метрик — это <strong>стемы</strong> (<code>выручк</code>, <code>заказ</code>), а не целые слова. Иначе «выручка», «выручки», «выручке» не совпадут — морфология русского ломает наивный матч по точному слову. И порядок метрик важен: более специфичную (<code>средний чек</code> → AVG) проверяем <strong>до</strong> общей (<code>выручк</code> → SUM), иначе она перехватит совпадение.</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Соберём SQL для вопроса «выручка по регионам». Семантический слой:</p><pre><code>metrics:    "средний чек" → AVG(amount)   "выручк" → SUM(amount)   "заказ" → COUNT(*)
-dimensions: "регион" → region             "месяц" → month
-table:      sales</code></pre><p>Шаги <code>nl_to_sql</code>:</p><pre><code>1. метрика: "средний чек" в вопросе? нет → "выручк"? ДА → SUM(amount)
-2. измерение: "регион" в вопросе? ДА → колонка region
-3. собрать: SELECT region, SUM(amount) FROM sales GROUP BY region</code></pre><p>Исполняем на данных и получаем по регионам: <code>Москва → 150, Питер → 100, Казань → 20</code>. Заметь: вопрос можно перефразировать («сколько выручки в разрезе регионов») — пока в нём есть стем <code>выручк</code> и <code>регион</code>, SQL соберётся <strong>тот же</strong>. Это и есть консистентность: смысл «выручки» задан слоем, а не настроением формулировки. А «какая погода завтра» не содержит ни одной метрики → <code>nl_to_sql</code> честно поднимет ошибку, а не сочинит SQL.</p><h2>BUILD IT</h2><p><strong>Задание: собери NL→SQL поверх семантического слоя</strong> + исполнение на sqlite. Только стандартная библиотека (<code>sqlite3</code>), без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/5.3-nl-to-sql/</code>), а файлы урока клади в подпапку <code>code/</code> (по соглашению курса). Нужен только <strong>Python 3</strong> (для теста ещё <code>pytest</code>).</blockquote><p>Создай файл <code>nl_to_sql.py</code>:</p><ul><li><strong><code>SEMANTIC</code></strong> — словарь: <code>table</code> (имя таблицы), <code>metrics</code> (триггер-стем → SQL-выражение; более специфичные выше: <code>средний чек</code>→<code>AVG(amount)</code>, <code>выручк</code>→<code>SUM(amount)</code>, <code>заказ</code>→<code>COUNT(*)</code>), <code>dimensions</code> (триггер → колонка: <code>регион</code>→<code>region</code>, <code>месяц</code>→<code>month</code>).</li><li><strong><code>nl_to_sql(question, semantic=SEMANTIC)</code></strong> — привести вопрос к нижнему регистру; найти первую метрику, чей триггер есть в вопросе (нет — <code>raise ValueError</code>); найти измерение (опционально). Если есть разрез — вернуть <code>SELECT {col}, {metric} FROM {table} GROUP BY {col}</code>, иначе <code>SELECT {metric} FROM {table}</code>.</li><li><strong><code>run_sql(sql, rows)</code></strong> — создать in-memory sqlite с таблицей <code>sales(region TEXT, month TEXT, amount REAL)</code>, вставить <code>rows</code>, выполнить <code>sql</code>, вернуть результат.</li></ul><p><strong>Готово, когда</strong> все тесты в <code>test_nl_to_sql.py</code> зелёные — они проверяют: метрика + разрез дают <code>GROUP BY</code>; метрика без разреза — без него; <code>средний чек</code> → AVG; неизвестная метрика → <code>ValueError</code>; <code>run_sql</code> реально считает (Москва = 150, Питер = 100).</p><pre><code>pytest code -q          # красное → реализуй три части → зелёное
-python code/nl_to_sql.py # демо: выручка по регионам, сколько заказов, средний чек</code></pre><p><strong>Подсказка.</strong> Поиск метрики: <code>next((sql for name, sql in semantic["metrics"].items() if name in q), None)</code> — порядок в словаре сохраняется, потому специфичные ставь выше. Триггеры держи стемами (<code>выручк</code>), чтобы ловить все формы слова.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>В реальности естественный язык разбирает LLM — но <strong>семантический слой остаётся</strong> и держит смысл (мульти-провайдер):</p><pre><code>schema = "Таблица sales(region, month, amount). Метрики: выручка=SUM(amount)."
-sql = Anthropic().messages.create(model="claude-sonnet-4-6", max_tokens=200,
-    messages=[{"role": "user", "content": f"{schema}\nSQL для: выручка по месяцам"}]
-).content[0].text
-# OpenAI / Gemini — аналогично; затем выполнить sql в своей БД и сверить</code></pre><ul><li>Дай модели <strong>схему + определения метрик</strong> — тогда она собирает SQL из твоих кусков, а не выдумывает.</li><li>Лучше — готовые слои: <strong>dbt Semantic Layer</strong> определяет метрики централизованно, а инструменты (Genie / Spotter, урок 5.4) дают NL→SQL поверх них.</li></ul><p>⚠️ Всегда <strong>показывай и проверяй</strong> сгенерированный SQL перед прогоном на проде: модель может тихо подставить не ту колонку или забыть фильтр.</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Семантический слой проекта → <a href="#f-phases-05-data-and-analytics-03-nl-to-sql-semantic-layer-outputs-semantic-layer-md"><code>outputs/semantic-layer.md</code></a></p><p>Шаблон описания метрик и измерений (имя · определение · SQL · синонимы-триггеры) под свой проект — фундамент надёжного NL→SQL и BI-агентов (5.4). Один раз описал смысл — переиспользуешь во всех запросах.</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>NL→SQL без семантического слоя.</strong> Тогда «выручка» каждый раз новая, и цифры расходятся. Зафиксируй определения метрик один раз — это главное лекарство.</li><li><strong>Триггеры целыми словами вместо стемов.</strong> <code>выручка</code> ≠ <code>выручки</code> ≠ <code>выручке</code>. Морфология ломает точный матч — храни триггеры стемами (<code>выручк</code>).</li><li><strong>Неправильный порядок метрик.</strong> Общий триггер (<code>выручк</code>) перехватит специфичный (<code>средний чек</code>), если стоит выше. Специфичные — раньше.</li><li><strong>Гнать сгенерированный SQL на прод без проверки.</strong> Модель может подставить не ту колонку или потерять фильтр. Показывай SQL и сверяй результат (5.5).</li><li><strong>Считать NL→SQL решённой задачей.</strong> Это сложно (бенчмарк Spider): сложные джойны, вложенность, диалекты. Семантический слой снимает неоднозначность смысла, но не отменяет проверку.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="5.3"></div><h2>Дополнительное чтение</h2><ul><li><a href="https://docs.getdbt.com/docs/use-dbt-semantic-layer/dbt-sl" target="_blank" rel="noopener">dbt — Semantic Layer</a> — определять метрики централизованно.</li><li><a href="https://docs.getdbt.com/docs/build/metrics-overview" target="_blank" rel="noopener">dbt — Creating metrics</a> — типы метрик и их описание.</li><li><a href="https://arxiv.org/abs/1809.08887" target="_blank" rel="noopener">Yu et al., 2018 — Spider (text-to-SQL)</a> — бенчмарк и сложность NL→SQL.</li><li><a href="https://arxiv.org/abs/2305.03111" target="_blank" rel="noopener">Li et al., 2023 — BIRD benchmark</a> — современный text-to-SQL бенчмарк (наследник Spider): грязные БД, 12.7k пар, ChatGPT ~40% против 93% у человека.</li><li><a href="https://github.com/Canner/WrenAI" target="_blank" rel="noopener">WrenAI</a> — open-source GenBI / text-to-SQL движок с context-слоем (22+ источника данных).</li><li><a href="https://cube.dev/" target="_blank" rel="noopener">Cube</a> — универсальный семантический слой: метрики один раз → BI, приложения, AI (альтернатива dbt).</li><li><a href="https://www.uber.com/en/blog/query-gpt/" target="_blank" rel="noopener">Uber — QueryGPT</a> — продакшн NL→SQL: мульти-агент, «workspaces», −70% времени (140k часов/мес).</li><li><a href="https://erincon01.medium.com/building-modern-text-to-sql-systems-with-genai-lessons-from-linkedin-uber-and-open-source-69c829fa16cf" target="_blank" rel="noopener">Eladio Rincón — Building Modern Text-to-SQL Systems (Medium)</a> — уроки LinkedIn / Uber / open-source.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Если делегируешь ИИ, реши, что отдаёшь; опиши задачу и критерии; проверь результат; сохрани ответственность за итог.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-05-data-and-analytics-03-nl-to-sql-semantic-layer-code-test-nl-to-sql-py" open data-test="1"><summary><span class="fname">code/test_nl_to_sql.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>import pytest
-from nl_to_sql import nl_to_sql, run_sql, DEMO_ROWS
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 5.3 · NL→SQL и семантический слой</h1><p><strong>Фаза 5 — Данные и аналитика</strong> · <strong>Результат фазы:</strong> анализировать данные с ИИ, превращать вопросы на естественном языке в SQL-запросы и делать автоотчёты с валидацией результатов.</p><p><strong>Результат урока:</strong> после урока студент сможет преобразовать аналитический вопрос в проверяемое структурированное намерение (<code>intent</code>), получить из согласованных бизнес-определений запрос только для чтения (<code>SELECT</code>) с отдельно переданными значениями, исполнить его на учебной БД и принять либо отклонить результат по intent, SQL, параметрам и сверке с <code>AnalysisPlan</code>.</p><p><strong>Опоры:</strong> в 5.1 ты зафиксировал grain, фильтры, метрику и ожидаемый итог; в 5.2 отделил модель, код, исполнителя и решение человека. · <strong>Дальше:</strong> в 5.4 один проверяемый запрос превратится в последовательность шагов BI-расследования.</p><p><strong>Requires:</strong> для обязательной практики нужны только Python 3 и его стандартная библиотека <code>sqlite3</code>; API-ключ, сеть, установленный <code>pytest</code> и клонирование курса не нужны. Для USE IT подойдёт любой доступный AI-инструмент, но при его отсутствии можно использовать готовые intents из урока.</p><blockquote><strong>Главная мысль.</strong> Модель переводит вопрос в ограниченный intent. Проверенный код переводит intent в SQL. База исполняет SQL в режиме только для чтения. Человек сверяет смысл и результат. Ни один слой не заменяет остальные.</blockquote><h2>Новая проблема: тот же расчёт, другой исполнитель</h2><p>В 5.1–5.2 мы отвечали на вопрос:</p><blockquote>Какие регионы принесли больше оплаченной выручки в Q2?</blockquote><p>И работали с шестью заказами:</p><table><thead><tr><th>order_id</th><th>quarter</th><th>region</th><th>status</th><th>amount</th></tr></thead><tbody><tr><td>o-1</td><td>Q2</td><td>Москва</td><td>paid</td><td>100</td></tr><tr><td>o-2</td><td>Q2</td><td>Москва</td><td>paid</td><td>50</td></tr><tr><td>o-3</td><td>Q2</td><td>Питер</td><td>paid</td><td>30</td></tr><tr><td>o-4</td><td>Q2</td><td>Питер</td><td>refunded</td><td>70</td></tr><tr><td>o-5</td><td>Q2</td><td>Казань</td><td>paid</td><td>20</td></tr><tr><td>o-6</td><td>Q1</td><td>Москва</td><td>paid</td><td>999</td></tr></tbody></table><p>Утверждённый <code>AnalysisPlan</code> требует:</p><pre><code>Источник: sales.
+Grain: одна строка = один заказ.
+Период: quarter = Q2.
+Метрика: paid_revenue = SUM(amount), RUB.
+Обязательный фильтр метрики: status = paid.
+Разрез: region.
+Ожидаемо: Москва=150, Питер=30, Казань=20; полный итог=200.</code></pre><p>Теперь данные лежат не в переданном модели CSV, а в базе данных. Модель больше не должна сама загружать файл и считать строки: она предлагает запрос, а база выполняет его.</p><p>Появляется знакомый по 5.2 риск:</p><pre><code>SELECT region, SUM(amount)
+FROM sales
+WHERE quarter = 'Q2'
+GROUP BY region</code></pre><p>Этот запрос корректен как программа и успешно исполнится. Но он забыл <code>status = 'paid'</code>, поэтому вернёт Питер <code>100</code> и полный итог <code>270</code>. <strong>Работающий SQL не равен правильному анализу.</strong></p><h2>База данных и SQL обычными словами</h2><h3>База, таблица, строка и колонка</h3><p><strong>База данных</strong> хранит данные и исполняет запросы к ним. В учебной базе есть одна <strong>таблица</strong> <code>sales</code>, похожая на лист электронной таблицы:</p><ul><li>строка — один заказ;</li><li>колонка — одно свойство заказа, например <code>region</code> или <code>status</code>;</li><li>имя таблицы и набор колонок образуют минимальную <strong>схему</strong>, то есть описание доступной структуры.</li></ul><p>Схема отвечает на вопрос «какие данные технически существуют», но не определяет бизнес-смысл. Колонка <code>amount</code> ещё не говорит, считать ли возвраты выручкой.</p><h3>Что такое SQL</h3><p><strong>SQL</strong> — язык запросов к базе данных. В этом уроке нужен только один безопасный для чтения тип запроса — <code>SELECT</code>.</p><pre><code>SELECT region, SUM(amount) AS paid_revenue
+FROM sales
+WHERE quarter = ? AND status = ?
+GROUP BY region
+ORDER BY region</code></pre><p>Прочитаем его сверху вниз:</p><table><thead><tr><th>Часть</th><th>Обычными словами</th></tr></thead><tbody><tr><td><code>SELECT region, SUM(amount)</code></td><td>вернуть регион и сумму <code>amount</code></td></tr><tr><td><code>AS paid_revenue</code></td><td>назвать вычисленную колонку <code>paid_revenue</code></td></tr><tr><td><code>FROM sales</code></td><td>читать таблицу <code>sales</code></td></tr><tr><td><code>WHERE ...</code></td><td>оставить только строки, прошедшие фильтры</td></tr><tr><td><code>GROUP BY region</code></td><td>собрать отдельную сумму для каждого региона</td></tr><tr><td><code>ORDER BY region</code></td><td>вернуть группы в стабильном порядке</td></tr></tbody></table><p>Знаки <code>?</code> — места для <strong>параметров</strong>. Текст SQL и значения передаются базе отдельно:</p><pre><code>SQL:    ... WHERE quarter = ? AND status = ?
+params: ("Q2", "paid")</code></pre><p>Так значение остаётся данными и не может дописать свою SQL-команду. Имена таблиц, колонок и выражения нельзя параметризовать тем же способом, поэтому они должны приходить только из проверенного списка.</p><h2>Почему одного промпта со схемой недостаточно</h2><p>Схема позволяет модели увидеть, что в <code>sales</code> существуют <code>quarter</code>, <code>region</code>, <code>status</code> и <code>amount</code>. Но схема не отвечает:</p><ul><li>означает ли «выручка» все заказы или только оплаченные;</li><li>в какой валюте измеряется <code>amount</code>;</li><li>можно ли группировать по региону;</li><li>какой период обязателен;</li><li>кто согласовал определение;</li><li>как проверить изменение определения.</li></ul><p>Если каждый раз писать модели «придумай SQL», она снова принимает эти решения. Даже одинаково звучащие вопросы могут получить разные фильтры.</p><p>Нужен дополнительный договор о смысле — <strong>семантический контракт</strong>.</p><h2>Минимальный семантический контракт</h2><p>Промышленные semantic layers могут описывать связи между таблицами, временные измерения, права и много типов метрик. В этом уроке строится только необходимый минимум:</p><pre><code>SEMANTIC = {
+    "version": "1.0",
+    "owner": "course-team",
+    "table": "sales",
+    "grain": "одна строка = один заказ",
+    "metrics": {
+        "paid_revenue": {
+            "expression": "SUM(amount)",
+            "unit": "RUB",
+            "required_filters": {"status": "paid"},
+        }
+    },
+    "dimensions": {
+        "region": {"column": "region"},
+        "quarter": {"column": "quarter"},
+    },
+    "filters": {
+        "quarter": {"column": "quarter"},
+        "status": {"column": "status"},
+    },
+}</code></pre><p><strong>ID</strong> — устойчивое техническое имя объекта в контракте. Например, <code>paid_revenue</code> является Metric ID, а <code>region</code> — Dimension ID. Пользователь может формулировать вопрос разными словами, но модель должна выбрать одно из известных IDs либо запросить уточнение.</p><h3>Метрика — не просто колонка</h3><p><strong>Метрика</strong> — согласованный способ получить число. Для <code>paid_revenue</code> нужны сразу три части:</p><pre><code>агрегат: SUM
+колонка: amount
+обязательный фильтр: status = paid</code></pre><p>Если оставить только <code>SUM(amount)</code>, смысл изменится. Поэтому обязательный фильтр хранится рядом с выражением метрики и добавляется компилятором автоматически.</p><h3>Измерение — допустимый разрез</h3><p><strong>Измерение</strong> отвечает на вопрос «по чему разбить число». <code>region</code> позволяет получить отдельную выручку по каждому региону, а <code>quarter</code> — по каждому кварталу.</p><p>Наличие колонки в таблице не означает, что модель автоматически получает право использовать её как измерение. Список разрешённых измерений является частью контракта.</p><h3>Единое — не значит вечное</h3><p>Семантический слой не высечен в камне. Определения меняются, поэтому им нужны область применения, владелец и версия.</p><p>Если компания различает валовую, оплаченную и чистую выручку, нужно создать три явно названные метрики. Общее слово «выручка» остаётся неоднозначным и требует уточнения.</p><h2>Intent: промежуточный договор с моделью</h2><p><strong>Intent</strong>, или намерение запроса, — структурированная запись того, как понят пользовательский вопрос:</p><pre><code>{
+  "metric": "paid_revenue",
+  "dimensions": ["region"],
+  "filters": {
+    "quarter": "Q2"
+  }
+}</code></pre><p>Intent нужен, чтобы не прятать смысл внутри длинной SQL-строки:</p><ul><li>человек видит выбранную метрику;</li><li>компилятор проверяет IDs по контракту;</li><li>обязательный <code>status = paid</code> не зависит от памяти модели;</li><li>неизвестное измерение приводит к ошибке;</li><li>один intent можно скомпилировать под нужный SQL-диалект позже.</li></ul><p>В этом уроке человек или LLM предлагает intent. Детерминированный код проверяет и компилирует его. Мы сознательно не строим собственный NLP-парсер по подстрокам: русская морфология — отдельная задача и не должна определять надёжность аналитики.</p><h2>Полный путь от вопроса до решения</h2><pre><code>вопрос
+  ↓
+модель или человек предлагает intent
+  ↓
+контракт проверяет metric / dimensions / filters
+  ↓
+компилятор добавляет обязательные фильтры и создаёт SQL + params
+  ↓
+read-only исполнитель запускает SELECT
+  ↓
+человек сверяет SQL, параметры, группы и полный итог
+  ↓
+accept / reject / needs clarification</code></pre><p>Разберём каждую границу.</p><h3>1. Модель предлагает, но не исполняет</h3><p>Для ясного вопроса ожидаем:</p><pre><code>Вопрос: оплаченная выручка по регионам в Q2
+Intent: paid_revenue × region; quarter=Q2</code></pre><p>Для вопроса «выручка по регионам» надёжный ответ может быть <code>needs clarification</code>: не указаны вид выручки и период.</p><h3>2. Компилятор проверяет IDs</h3><p><code>compile_query(intent)</code> разрешает только:</p><ul><li>существующую метрику;</li><li>существующие измерения;</li><li>существующие фильтры;</li><li>простые значения фильтров;</li><li>поля intent из известного контракта.</li></ul><p>Если модель предлагает <code>dimensions=["manager"]</code>, компилятор не ищет похожую колонку и не удаляет разрез молча. Он останавливается.</p><h3>3. Компилятор добавляет смысл метрики</h3><p>Intent содержит период <code>Q2</code>, но не повторяет <code>status=paid</code>: этот фильтр уже принадлежит <code>paid_revenue</code>.</p><pre><code>requested filters: quarter=Q2
+required filters:  status=paid
+effective filters: quarter=Q2 AND status=paid</code></pre><p>Если intent явно требует <code>status=refunded</code> для <code>paid_revenue</code>, это не альтернативная формулировка, а конфликт смысла. Запрос отклоняется.</p><h3>4. Значения становятся параметрами</h3><p>Компилятор возвращает:</p><pre><code>sql:
+SELECT region, SUM(amount) AS paid_revenue
+FROM sales
+WHERE quarter = ? AND status = ?
+GROUP BY region
+ORDER BY region
+
+params:
+("Q2", "paid")</code></pre><p>Строка вроде <code>Q2' OR 1=1 --</code> останется одним значением параметра. Она не превратится в продолжение запроса.</p><h3>5. Исполнитель получает минимальные полномочия</h3><p>Учебный <code>run_read_only()</code>:</p><ol><li>создаёт временную SQLite только с синтетическими данными;</li><li>загружает шесть известных строк;</li><li>включает <code>PRAGMA query_only = ON</code>;</li><li>разрешает один <code>SELECT</code>;</li><li>возвращает именованные строки результата.</li></ol><p>Это демонстрация принципа <strong>минимальных полномочий</strong>: исполнитель получает только те возможности, которые нужны задаче. В рабочей БД <code>query_only</code> из учебной SQLite не заменяет отдельную read-only роль, разрешённые схемы, timeout, row limit, cost limit и журнал доступа.</p><h3>6. Человек сверяет результат</h3><p>Исполнение возвращает:</p><pre><code>Казань  → 20
+Москва  → 150
+Питер   → 30</code></pre><p>До запуска из 5.1–5.2 уже известен ожидаемый полный итог:</p><pre><code>20 + 150 + 30 = 200 RUB</code></pre><p><code>reconcile_total()</code> подтверждает:</p><pre><code>{
+  "expected_total": 200.0,
+  "actual_total": 200.0,
+  "matches": true
+}</code></pre><p>Совпадение не доказывает всё автоматически. Для решения <code>accept</code> также нужны правильный источник, версия semantic contract, параметры и допустимые права исполнителя.</p><h2>Три решения вместо слепого запуска</h2><table><thead><tr><th>Ситуация</th><th>Решение</th><th>Следующий шаг</th></tr></thead><tbody><tr><td>Intent, контракт, SQL, параметры и сверка согласованы</td><td><code>accept</code></td><td>Сохранить доказательства запуска</td></tr><tr><td>Пропущен обязательный фильтр или итог не сходится</td><td><code>reject</code></td><td>Исправить причину и повторить</td></tr><tr><td>Неясна метрика, период или неизвестно измерение</td><td><code>needs clarification</code></td><td>Задать один конкретный вопрос</td></tr></tbody></table><p><code>needs clarification</code> — не ошибка процесса. Это корректный результат, когда бизнес-вопрос ещё нельзя однозначно превратить в запрос.</p><h2>BUILD IT</h2><p><strong>Задание:</strong> собери минимальный semantic contract, intent→SQL-компилятор, read-only исполнитель и сверку полного итога. Код работает офлайн и использует только стандартную библиотеку.</p><p>Работай в созданной в фазе 0 личной папке:</p><pre><code>ai-native-work/
+└── course-work/
+    └── phase-5/
+        └── nl-to-sql/
+            └── code/
+                ├── nl_to_sql.py
+                └── test_nl_to_sql.py</code></pre><p>Клонировать репозиторий курса не нужно. Скопируй со страницы <code>test_nl_to_sql.py</code> как исполняемое ТЗ и собери <code>nl_to_sql.py</code> по описанному контракту. Если застрянешь, раскрой встроенное эталонное решение.</p><h3>Перед реализацией</h3><p>Не запускай тесты сразу. Сначала письменно предскажи:</p><ol><li>Какой фильтр должен появиться, хотя его нет в intent?</li><li>Какие параметры получит SQLite?</li><li>Почему возврат <code>70</code> не попадёт в Питер?</li><li>Каким будет полный итог?</li><li>Что должно произойти с <code>dimensions=["manager"]</code>?</li></ol><p>Ожидаемая модель: <code>status=paid</code>; параметры <code>("Q2", "paid")</code>; возврат исключён фильтром; итог <code>200</code>; неизвестное измерение отклонено.</p><h3>Реализуй три функции и демонстрацию</h3><ul><li><code>compile_query(intent, semantic)</code> проверяет структуру, разрешённые IDs и конфликт обязательных фильтров, затем возвращает SQL и params.</li><li><code>run_read_only(compiled, rows)</code> исполняет один <code>SELECT</code> на учебной SQLite в режиме <code>query_only</code>.</li><li><code>reconcile_total(compiled, result, expected_total)</code> складывает группы и сравнивает их с ожидаемым итогом.</li><li>Демонстрация в <code>__main__</code> показывает intent, SQL, params, результат и сверку.</li></ul><h3>Проверь поведение</h3><p>Из каталога <code>nl-to-sql/</code> запусти:</p><pre><code>python3 -m unittest discover -s code -p 'test_*.py' -v
+python3 code/nl_to_sql.py</code></pre><p>Десять тестов проверяют:</p><ul><li>автоматическое добавление <code>status=paid</code>;</li><li>точный результат <code>150 / 30 / 20</code> и итог <code>200</code>;</li><li>запрет переопределить обязательный фильтр;</li><li>отказ для неизвестных метрики, измерения и фильтра;</li><li>отказ принимать объект вместо строкового ID измерения;</li><li>отделение подозрительного значения от SQL-текста;</li><li>отказ исполнять <code>UPDATE</code>;</li><li>правильный общий итог без группировки.</li></ul><p>После зелёного прогона объясни своими словами, почему тест на <code>UPDATE</code> и параметризацию не делает этот учебный модуль полноценной защитой производственной базы.</p><h2>USE IT</h2><p>Используй любой доступный AI-инструмент только для перевода естественного языка в intent. Загружать рабочие данные и давать модели доступ к БД для этой практики не нужно.</p><h3>Шаг 1. Передай контракт, а не данные</h3><pre><code>Ты переводишь аналитический вопрос в intent, но не пишешь и не исполняешь SQL.
+
+Разрешено:
+- metrics: paid_revenue, paid_orders;
+- dimensions: region, quarter;
+- filters: quarter, status;
+- paid_revenue и paid_orders всегда требуют status=paid.
+
+Если метрика, период или измерение неоднозначны либо отсутствуют в контракте,
+верни status="needs_clarification" и один конкретный question.
+
+Иначе верни только JSON:
+{
+  "status": "ready",
+  "intent": {
+    "metric": "...",
+    "dimensions": ["..."],
+    "filters": {"...": "..."}
+  }
+}</code></pre><h3>Шаг 2. Проверь три вопроса</h3><ol><li>«Покажи оплаченную выручку по регионам в Q2».</li><li>«Покажи выручку по регионам».</li><li>«Покажи оплаченную выручку по менеджерам в Q2».</li></ol><p>Сильный процесс:</p><ul><li>для первого возвращает <code>ready</code> и допустимый intent;</li><li>для второго уточняет вид выручки и период;</li><li>для третьего не выдумывает <code>manager</code>, а сообщает, что измерение отсутствует.</li></ul><h3>Шаг 3. Компилируй локально</h3><p>Передай в <code>compile_query()</code> только intent со статусом <code>ready</code>. Если инструмент вернул сырой SQL, не исполняй его: сначала восстанови и проверь metric, dimensions и filters либо повтори запрос к модели.</p><h3>Шаг 4. Заполни доказательства</h3><p>Сохрани:</p><pre><code>исходный вопрос
+ответ модели
+принятый intent
+версию semantic contract
+SQL и params
+результат
+ожидаемый и фактический итог
+решение accept / reject / needs clarification</code></pre><p>Если AI-инструмента нет, используй готовый intent из разбора и два негативных случая из артефакта. Результат урока — проверяемая граница между языком и БД, а не доступ к конкретному провайдеру.</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> минимальный семантический контракт → <a href="#f-phases-05-data-and-analytics-03-nl-to-sql-semantic-layer-outputs-semantic-layer-md"><code>outputs/semantic-layer.md</code></a></p><p>Адаптируй шаблон под одну безопасную рабочую область либо оставь синтетический пример:</p><ul><li>зафиксируй источник, grain и row ID;</li><li>опиши metric IDs, единицы, выражения и обязательные фильтры;</li><li>перечисли разрешённые измерения и фильтры;</li><li>добавь владельца и версию;</li><li>задай политику неоднозначности;</li><li>сохрани хотя бы один положительный и два негативных проверочных случая;</li><li>укажи границы read-only исполнения.</li></ul><p>Артефакт готов, если другой человек может без чата объяснить смысл метрики, воспроизвести контрольный запрос и понять, какие вопросы нельзя исполнять без уточнения.</p><h2>Реалистичные ошибки</h2><ul><li><strong>Считать метрикой одно SQL-выражение.</strong> <code>SUM(amount)</code> без <code>status=paid</code> считает другой набор строк.</li><li><strong>Позволить модели вернуть произвольный SQL и сразу его исполнить.</strong> Между языком и БД должна быть проверяемая граница.</li><li><strong>Вставлять значения в SQL через форматирование строк.</strong> Значения должны передаваться параметрами.</li><li><strong>Разрешить любую колонку из схемы.</strong> Технически существующая колонка ещё не является согласованным измерением.</li><li><strong>Молча выбрать метрику для слова «выручка».</strong> Несколько допустимых определений требуют уточнения.</li><li><strong>Считать semantic contract вечным.</strong> Определениям нужны владелец, область и версия.</li><li><strong>Считать совпавший итог достаточным.</strong> Ещё проверяются источник, параметры, версия контракта и полномочия исполнителя.</li><li><strong>Назвать SQLite <code>query_only</code> полной защитой.</strong> Это учебная иллюстрация; производственная БД применяет собственные роли и лимиты.</li><li><strong>Проверить только счастливый путь.</strong> Надёжность видна по отказу для неизвестных и конфликтующих intents.</li></ul><h2>Что сознательно осталось за границей</h2><ul><li>Полный курс SQL: соединения таблиц, оконные функции, вложенные запросы и оптимизация.</li><li>Самостоятельное распознавание русского естественного языка.</li><li>Производственный SQL-парсер и доказательство безопасности произвольного запроса.</li><li>Настройка dbt Semantic Layer, Cube или другого конкретного продукта.</li><li>Диалекты конкретных БД и автоматическое переписывание SQL между ними.</li><li>Аутентификация, сетевые политики и администрирование производственной БД.</li><li>Оценивание качества NL→SQL на Spider, BIRD и других бенчмарках.</li><li>Многошаговое расследование и выбор следующего запроса: это 5.4.</li><li>Полная валидация аналитических результатов и аномалий: это 5.5.</li></ul><h2>Переход в 5.4</h2><p>В 5.3 один вопрос прошёл путь:</p><pre><code>question → intent → semantic contract → SQL → result → review</code></pre><p>В 5.4 BI-агент будет повторять этот цикл:</p><pre><code>общий вопрос
+→ выбрать следующий разрешённый intent
+→ исполнить
+→ изучить результат
+→ выбрать следующий intent</code></pre><p>Semantic contract остаётся границей каждого шага: агент может выбирать согласованные metric IDs и dimensions, но не должен заново изобретать смысл выручки. Артефакт этого урока становится входом для сценария BI-расследования.</p><h2>ПРОВЕРЬ СЕБЯ</h2><p>Вопросы проверяют обязательные фильтры метрик, отказ от неизвестных измерений, параметризацию, минимальные полномочия, сверку результата и корректную работу с неоднозначностью.</p><div class="quiz-section" data-lesson="5.3"></div><h2>Дополнительное чтение</h2><p>Это факультативная часть: читать весь список не требуется. Выберите маршрут по тому, что хотите углубить после урока.</p><h3>Механика текущего примера</h3><ul><li><a href="https://docs.python.org/3/library/sqlite3.html#how-to-use-placeholders-to-bind-values-in-sql-queries" target="_blank" rel="noopener">Python <code>sqlite3</code> — How to use placeholders to bind values</a> — откройте раздел с <code>?</code>-плейсхолдерами, чтобы закрепить, почему SQL-шаблон и значения передаются в <code>execute()</code> раздельно.</li><li><a href="https://www.sqlite.org/pragma.html#pragma_query_only" target="_blank" rel="noopener">SQLite — <code>PRAGMA query_only</code></a> — уточняет границу учебного read-only режима: какие операции он блокирует и почему это ещё не полноценная изоляция промышленной базы.</li></ul><h3>Семантический контракт и готовые инструменты</h3><ul><li><a href="https://docs.getdbt.com/docs/use-dbt-semantic-layer/dbt-sl" target="_blank" rel="noopener">dbt — Semantic Layer</a> — начните с идеи централизованного определения метрик для разных потребителей.</li><li><a href="https://docs.getdbt.com/docs/build/semantic-models" target="_blank" rel="noopener">dbt — Semantic models</a> — сопоставьте учебные <code>metric</code>, <code>dimension</code> и grain с сущностями и измерениями реального семантического слоя.</li><li><a href="https://docs.getdbt.com/docs/build/metrics-overview" target="_blank" rel="noopener">dbt — Creating metrics</a> — посмотрите типы метрик и фильтры, если хотите расширить учебный <code>paid_revenue</code> более сложными определениями.</li><li><a href="https://docs.cube.dev/docs/data-modeling/overview" target="_blank" rel="noopener">Cube — Getting started with data modeling</a> — альтернативный инструментальный маршрут: таблица превращается в переиспользуемые меры и измерения для BI и AI.</li></ul><h3>Исследовательские ограничения NL→SQL</h3><ul><li><a href="https://arxiv.org/abs/1809.08887" target="_blank" rel="noopener">Yu et al., 2018 — Spider</a> — первичная статья о проверке text-to-SQL на новых схемах и предметных областях.</li><li><a href="https://arxiv.org/abs/2305.03111" target="_blank" rel="noopener">Li et al., 2023 — BIRD</a> и <a href="https://bird-bench.github.io/" target="_blank" rel="noopener">страница проекта</a> — углубление в влияние значений внутри базы, внешних знаний и эффективности SQL; цифры из статьи рассматривайте как исторический срез, а не текущий рейтинг моделей.</li></ul><h3>Промышленные архитектуры</h3><ul><li><a href="https://www.uber.com/us/en/blog/query-gpt/" target="_blank" rel="noopener">Uber — QueryGPT</a> — прочитайте разделы про intent, workspaces, участие человека и evaluation: они показывают, почему одной генерации SQL недостаточно.</li><li><a href="https://www.linkedin.com/blog/engineering/ai/practical-text-to-sql-for-data-analytics" target="_blank" rel="noopener">LinkedIn Engineering — Practical Text-to-SQL for Data Analytics</a> — другой производственный разбор: поиск сертифицированных данных, ранжирование контекста и собственный набор проверочных вопросов.</li><li><a href="https://github.com/Canner/WrenAI#what-wrenai-is" target="_blank" rel="noopener">WrenAI — What WrenAI is</a> — открытая реализация более широкого GenBI-подхода с версионируемым контекстом, управляемым SQL и проверками до исполнения.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Если делегируешь ИИ, реши, что отдаёшь; опиши задачу и критерии; проверь результат; сохрани ответственность за итог.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-05-data-and-analytics-03-nl-to-sql-semantic-layer-code-test-nl-to-sql-py" open data-test="1"><summary><span class="fname">code/test_nl_to_sql.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>import unittest
+
+from nl_to_sql import (
+    DEMO_ROWS,
+    compile_query,
+    reconcile_total,
+    run_read_only,
+)
 
 
-def test_metric_with_dimension_makes_group_by():
-    assert nl_to_sql("выручка по регионам") == \
-        "SELECT region, SUM(amount) FROM sales GROUP BY region"
+class IntentToSqlTests(unittest.TestCase):
+    def test_paid_revenue_adds_required_status_filter(self):
+        compiled = compile_query(
+            {
+                "metric": "paid_revenue",
+                "dimensions": ["region"],
+                "filters": {"quarter": "Q2"},
+            }
+        )
+
+        self.assertEqual(
+            compiled["sql"],
+            "SELECT region, SUM(amount) AS paid_revenue FROM sales "
+            "WHERE quarter = ? AND status = ? "
+            "GROUP BY region ORDER BY region",
+        )
+        self.assertEqual(compiled["params"], ("Q2", "paid"))
+        self.assertEqual(compiled["semantic_version"], "1.0")
+        self.assertEqual(
+            compiled["filters"],
+            {"status": "paid", "quarter": "Q2"},
+        )
+
+    def test_execution_matches_the_verified_5_1_and_5_2_result(self):
+        compiled = compile_query(
+            {
+                "metric": "paid_revenue",
+                "dimensions": ["region"],
+                "filters": {"quarter": "Q2"},
+            }
+        )
+        result = run_read_only(compiled, DEMO_ROWS)
+
+        self.assertEqual(
+            result,
+            [
+                {"region": "Казань", "paid_revenue": 20.0},
+                {"region": "Москва", "paid_revenue": 150.0},
+                {"region": "Питер", "paid_revenue": 30.0},
+            ],
+        )
+        self.assertEqual(
+            reconcile_total(compiled, result, expected_total=200),
+            {
+                "metric": "paid_revenue",
+                "expected_total": 200.0,
+                "actual_total": 200.0,
+                "matches": True,
+            },
+        )
+
+    def test_metric_required_filter_cannot_be_overridden(self):
+        with self.assertRaisesRegex(ValueError, "требует status='paid'"):
+            compile_query(
+                {
+                    "metric": "paid_revenue",
+                    "dimensions": ["region"],
+                    "filters": {"quarter": "Q2", "status": "refunded"},
+                }
+            )
+
+    def test_unknown_metric_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "неизвестная метрика"):
+            compile_query(
+                {
+                    "metric": "revenue",
+                    "dimensions": ["region"],
+                    "filters": {"quarter": "Q2"},
+                }
+            )
+
+    def test_unknown_dimension_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "неизвестное измерение"):
+            compile_query(
+                {
+                    "metric": "paid_revenue",
+                    "dimensions": ["manager"],
+                    "filters": {"quarter": "Q2"},
+                }
+            )
+
+    def test_dimension_ids_must_be_strings(self):
+        with self.assertRaisesRegex(ValueError, "строковым ID"):
+            compile_query(
+                {
+                    "metric": "paid_revenue",
+                    "dimensions": [{"column": "region"}],
+                    "filters": {"quarter": "Q2"},
+                }
+            )
+
+    def test_unknown_filter_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "неизвестный фильтр"):
+            compile_query(
+                {
+                    "metric": "paid_revenue",
+                    "dimensions": ["region"],
+                    "filters": {"year": 2026},
+                }
+            )
+
+    def test_filter_value_is_a_parameter_not_sql_text(self):
+        suspicious_value = "Q2' OR 1=1 --"
+        compiled = compile_query(
+            {
+                "metric": "paid_revenue",
+                "dimensions": ["region"],
+                "filters": {"quarter": suspicious_value},
+            }
+        )
+
+        self.assertNotIn(suspicious_value, compiled["sql"])
+        self.assertIn(suspicious_value, compiled["params"])
+        self.assertEqual(run_read_only(compiled, DEMO_ROWS), [])
+
+    def test_runner_rejects_non_select_statement(self):
+        with self.assertRaisesRegex(ValueError, "разрешён только один SELECT"):
+            run_read_only(
+                {"sql": "UPDATE sales SET amount = 0", "params": ()},
+                DEMO_ROWS,
+            )
+
+    def test_total_without_dimension_is_still_200(self):
+        compiled = compile_query(
+            {
+                "metric": "paid_revenue",
+                "dimensions": [],
+                "filters": {"quarter": "Q2"},
+            }
+        )
+
+        self.assertEqual(
+            run_read_only(compiled, DEMO_ROWS),
+            [{"paid_revenue": 200.0}],
+        )
 
 
-def test_metric_without_dimension():
-    assert nl_to_sql("сколько всего заказов") == "SELECT COUNT(*) FROM sales"
+if __name__ == "__main__":
+    unittest.main()
+</code></pre></details><h3>Эталонное решение</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-05-data-and-analytics-03-nl-to-sql-semantic-layer-code-nl-to-sql-py"><summary><span class="fname">code/nl_to_sql.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Минимальный semantic contract и детерминированный intent→SQL-компилятор.
 
-
-def test_avg_metric():
-    assert nl_to_sql("какой средний чек по месяцам") == \
-        "SELECT month, AVG(amount) FROM sales GROUP BY month"
-
-
-def test_unknown_metric_raises():
-    with pytest.raises(ValueError):
-        nl_to_sql("какая погода завтра")
-
-
-def test_run_sql_executes_aggregation():
-    sql = nl_to_sql("выручка по регионам")
-    result = dict(run_sql(sql, DEMO_ROWS))
-    assert result["Москва"] == 150
-    assert result["Питер"] == 100
-</code></pre></details><h3>Эталонное решение</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-05-data-and-analytics-03-nl-to-sql-semantic-layer-code-nl-to-sql-py"><summary><span class="fname">code/nl_to_sql.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""NL→SQL + семантический слой — Build It для урока 5.3.
-
-Без внешних зависимостей (sqlite3 из stdlib). Семантический слой описывает метрики
-и измерения в терминах бизнеса; наивный NL→SQL по ключевым словам собирает запрос
-и исполняет его на sqlite. В USE IT разбор естественного языка делает LLM, но
-семантический слой (определения метрик) остаётся — он гарантирует единый смысл.
+Естественный язык здесь намеренно не разбирается самодельными правилами. Модель или
+человек предлагают структурированный intent, а этот модуль проверяет его по разрешённым
+метрикам, измерениям и фильтрам, компилирует SQL и исполняет его на учебной SQLite.
 """
+
+from __future__ import annotations
+
 import sqlite3
+from collections.abc import Mapping, Sequence
+from typing import Any
+
 
 SEMANTIC = {
+    "version": "1.0",
+    "owner": "course-team",
     "table": "sales",
-    "metrics": {                        # ключ — стем-триггер (подстрока в вопросе)
-        "средний чек": "AVG(amount)",   # порядок важен: более специфичные — выше
-        "выручк": "SUM(amount)",
-        "заказ": "COUNT(*)",
+    "grain": "одна строка = один заказ",
+    "metrics": {
+        "paid_revenue": {
+            "label": "Оплаченная выручка",
+            "expression": "SUM(amount)",
+            "unit": "RUB",
+            "required_filters": {"status": "paid"},
+        },
+        "paid_orders": {
+            "label": "Число оплаченных заказов",
+            "expression": "COUNT(*)",
+            "unit": "orders",
+            "required_filters": {"status": "paid"},
+        },
     },
-    "dimensions": {"регион": "region", "месяц": "month"},
+    "dimensions": {
+        "region": {"label": "Регион", "column": "region"},
+        "quarter": {"label": "Квартал", "column": "quarter"},
+    },
+    "filters": {
+        "quarter": {"column": "quarter"},
+        "status": {"column": "status"},
+    },
 }
 
 
-def nl_to_sql(question, semantic=SEMANTIC):
-    """Собрать SQL по вопросу: найти метрику и (опц.) измерение для GROUP BY."""
-    q = question.lower()
-    metric_sql = next((sql for name, sql in semantic["metrics"].items() if name in q), None)
-    if metric_sql is None:
-        raise ValueError("не нашёл метрику в вопросе")
-    dim_col = next((col for name, col in semantic["dimensions"].items() if name in q), None)
-    table = semantic["table"]
-    if dim_col:
-        return f"SELECT {dim_col}, {metric_sql} FROM {table} GROUP BY {dim_col}"
-    return f"SELECT {metric_sql} FROM {table}"
-
-
-def run_sql(sql, rows):
-    """Создать in-memory таблицу sales(region, month, amount) и выполнить SQL."""
-    con = sqlite3.connect(":memory:")
-    con.execute("CREATE TABLE sales (region TEXT, month TEXT, amount REAL)")
-    con.executemany("INSERT INTO sales VALUES (?,?,?)", rows)
-    result = con.execute(sql).fetchall()
-    con.close()
-    return result
-
-
 DEMO_ROWS = [
-    ("Москва", "jan", 100), ("Москва", "feb", 50),
-    ("Питер", "jan", 30), ("Питер", "feb", 70), ("Казань", "jan", 20),
+    ("o-1", "Q2", "Москва", "paid", 100.0),
+    ("o-2", "Q2", "Москва", "paid", 50.0),
+    ("o-3", "Q2", "Питер", "paid", 30.0),
+    ("o-4", "Q2", "Питер", "refunded", 70.0),
+    ("o-5", "Q2", "Казань", "paid", 20.0),
+    ("o-6", "Q1", "Москва", "paid", 999.0),
 ]
 
+
+def compile_query(
+    intent: Mapping[str, Any],
+    semantic: Mapping[str, Any] = SEMANTIC,
+) -&gt; dict[str, Any]:
+    """Проверить intent и собрать SELECT с параметрами.
+
+    Ожидаемая форма:
+    {
+        "metric": "paid_revenue",
+        "dimensions": ["region"],
+        "filters": {"quarter": "Q2"},
+    }
+    """
+
+    if not isinstance(intent, Mapping):
+        raise ValueError("intent должен быть объектом")
+
+    allowed_fields = {"metric", "dimensions", "filters"}
+    unknown_fields = set(intent) - allowed_fields
+    if unknown_fields:
+        names = ", ".join(sorted(unknown_fields))
+        raise ValueError(f"неизвестные поля intent: {names}")
+
+    metric_id = intent.get("metric")
+    metric_spec = semantic["metrics"].get(metric_id)
+    if metric_spec is None:
+        raise ValueError(f"неизвестная метрика: {metric_id!r}")
+
+    dimension_ids = intent.get("dimensions", [])
+    if (
+        not isinstance(dimension_ids, Sequence)
+        or isinstance(dimension_ids, (str, bytes))
+    ):
+        raise ValueError("dimensions должен быть списком")
+    if any(not isinstance(dimension_id, str) for dimension_id in dimension_ids):
+        raise ValueError("каждое измерение должно быть строковым ID")
+    if len(set(dimension_ids)) != len(dimension_ids):
+        raise ValueError("dimensions не должен содержать повторы")
+
+    dimension_columns = []
+    for dimension_id in dimension_ids:
+        dimension_spec = semantic["dimensions"].get(dimension_id)
+        if dimension_spec is None:
+            raise ValueError(f"неизвестное измерение: {dimension_id!r}")
+        dimension_columns.append(dimension_spec["column"])
+
+    requested_filters = intent.get("filters", {})
+    if not isinstance(requested_filters, Mapping):
+        raise ValueError("filters должен быть объектом")
+
+    effective_filters = dict(metric_spec.get("required_filters", {}))
+    for filter_id, value in requested_filters.items():
+        if filter_id not in semantic["filters"]:
+            raise ValueError(f"неизвестный фильтр: {filter_id!r}")
+        if filter_id in effective_filters and effective_filters[filter_id] != value:
+            required = effective_filters[filter_id]
+            raise ValueError(
+                f"метрика {metric_id!r} требует {filter_id}={required!r}"
+            )
+        if not isinstance(value, (str, int, float)):
+            raise ValueError(f"неподдерживаемое значение фильтра: {filter_id!r}")
+        effective_filters[filter_id] = value
+
+    select_parts = [
+        *dimension_columns,
+        f'{metric_spec["expression"]} AS {metric_id}',
+    ]
+    sql = f'SELECT {", ".join(select_parts)} FROM {semantic["table"]}'
+
+    clauses = []
+    params = []
+    for filter_id, filter_spec in semantic["filters"].items():
+        if filter_id in effective_filters:
+            clauses.append(f'{filter_spec["column"]} = ?')
+            params.append(effective_filters[filter_id])
+    if clauses:
+        sql += " WHERE " + " AND ".join(clauses)
+    if dimension_columns:
+        joined = ", ".join(dimension_columns)
+        sql += f" GROUP BY {joined} ORDER BY {joined}"
+
+    return {
+        "sql": sql,
+        "params": tuple(params),
+        "metric": metric_id,
+        "dimensions": list(dimension_ids),
+        "filters": effective_filters,
+        "unit": metric_spec["unit"],
+        "semantic_version": semantic["version"],
+    }
+
+
+def run_read_only(
+    compiled: Mapping[str, Any],
+    rows: Sequence[tuple[Any, ...]] = DEMO_ROWS,
+) -&gt; list[dict[str, Any]]:
+    """Исполнить один SELECT на учебной SQLite и вернуть именованные строки."""
+
+    sql = str(compiled.get("sql", "")).strip()
+    if not sql.upper().startswith("SELECT ") or ";" in sql:
+        raise ValueError("разрешён только один SELECT без точки с запятой")
+
+    connection = sqlite3.connect(":memory:")
+    try:
+        connection.execute(
+            """
+            CREATE TABLE sales (
+                order_id TEXT PRIMARY KEY,
+                quarter TEXT NOT NULL,
+                region TEXT NOT NULL,
+                status TEXT NOT NULL,
+                amount REAL NOT NULL
+            )
+            """
+        )
+        connection.executemany(
+            "INSERT INTO sales VALUES (?, ?, ?, ?, ?)",
+            rows,
+        )
+        connection.execute("PRAGMA query_only = ON")
+        cursor = connection.execute(sql, tuple(compiled.get("params", ())))
+        columns = [item[0] for item in cursor.description]
+        return [dict(zip(columns, row, strict=True)) for row in cursor.fetchall()]
+    finally:
+        connection.close()
+
+
+def reconcile_total(
+    compiled: Mapping[str, Any],
+    result: Sequence[Mapping[str, Any]],
+    expected_total: float,
+) -&gt; dict[str, Any]:
+    """Сверить сумму групп с заранее ожидаемым полным итогом."""
+
+    metric_id = compiled["metric"]
+    actual_total = sum(float(row[metric_id]) for row in result)
+    return {
+        "metric": metric_id,
+        "expected_total": float(expected_total),
+        "actual_total": actual_total,
+        "matches": abs(actual_total - float(expected_total)) &lt; 1e-9,
+    }
+
+
 if __name__ == "__main__":
-    for q in ["выручка по регионам", "сколько заказов", "средний чек"]:
-        sql = nl_to_sql(q)
-        print(f"{q!r}\n  SQL: {sql}\n  -&gt;  {run_sql(sql, DEMO_ROWS)}")
-</code></pre></details><h3>Артефакт</h3><details class="filebox" id="f-phases-05-data-and-analytics-03-nl-to-sql-semantic-layer-outputs-semantic-layer-md" open><summary><span class="fname">outputs/semantic-layer.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: семантический слой проекта
+    demo_intent = {
+        "metric": "paid_revenue",
+        "dimensions": ["region"],
+        "filters": {"quarter": "Q2"},
+    }
+    demo_query = compile_query(demo_intent)
+    demo_result = run_read_only(demo_query)
+    demo_check = reconcile_total(demo_query, demo_result, expected_total=200)
 
-Единые определения метрик и измерений — чтобы «выручка» везде значила одно. Прототип NL→SQL — [`code/nl_to_sql.py`](../code/nl_to_sql.py).
+    print("intent:", demo_intent)
+    print("semantic_version:", demo_query["semantic_version"])
+    print("sql:", demo_query["sql"])
+    print("params:", demo_query["params"])
+    print("result:", demo_result)
+    print("reconciliation:", demo_check)
+</code></pre></details><h3>Артефакт</h3><details class="filebox" id="f-phases-05-data-and-analytics-03-nl-to-sql-semantic-layer-outputs-semantic-layer-md" open><summary><span class="fname">outputs/semantic-layer.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: минимальный семантический контракт
 
-## Таблица(ы)
+Этот контракт связывает бизнес-вопрос с разрешёнными метриками, измерениями, фильтрами и проверочными примерами. Это учебный переносимый формат, а не конфигурация конкретного промышленного продукта.
 
+## 1. Паспорт
+
+| Поле | Значение |
+|---|---|
+| Область | Учебный анализ заказов |
+| Статус | Approved for synthetic dataset |
+| Версия | `1.0` |
+| Владелец определения | Указать роль или человека |
+| Дата проверки | Указать дату |
+| Потребители | Intent→SQL-компилятор 5.3; сценарий BI-расследования 5.4 |
+
+Изменение определения метрики создаёт новую версию контракта. «Единое определение» означает согласованное определение для указанной области и версии, а не неизменность навсегда.
+
+## 2. Источник и grain
+
+| Поле | Значение |
+|---|---|
+| Таблица | `sales` |
+| Grain | Одна строка = один заказ |
+| Row ID | `order_id` |
+| Колонки | `order_id`, `quarter`, `region`, `status`, `amount` |
+| Валюта | RUB |
+| Допустимые статусы в синтетических данных | `paid`, `refunded` |
+| Ограничение | Только синтетические данные урока |
+
+```sql
+CREATE TABLE sales (
+    order_id TEXT PRIMARY KEY,
+    quarter TEXT NOT NULL,
+    region TEXT NOT NULL,
+    status TEXT NOT NULL,
+    amount REAL NOT NULL
+)
 ```
-sales(region TEXT, month TEXT, product TEXT, amount REAL, returned REAL)
+
+## 3. Метрики
+
+| Metric ID | Понятное имя | Определение | SQL-выражение | Обязательные фильтры | Единица |
+|---|---|---|---|---|---|
+| `paid_revenue` | Оплаченная выручка | Сумма `amount` только для оплаченных заказов | `SUM(amount)` | `status = paid` | RUB |
+| `paid_orders` | Число оплаченных заказов | Число строк только с оплаченными заказами | `COUNT(*)` | `status = paid` | orders |
+
+Общее слово «выручка» без контекста не назначается `paid_revenue` автоматически. Если в рабочей области существуют валовая, оплаченная и чистая выручка, вопрос требует уточнения.
+
+## 4. Измерения и фильтры
+
+| Dimension ID | Понятное имя | Колонка | Можно группировать | Можно фильтровать |
+|---|---|---|---|---|
+| `region` | Регион | `region` | Да | Нет в учебном компиляторе |
+| `quarter` | Квартал | `quarter` | Да | Да |
+
+| Filter ID | Колонка | Допустимый тип | Пример |
+|---|---|---|---|
+| `quarter` | `quarter` | Строка | `Q2` |
+| `status` | `status` | Строка | `paid` |
+
+Имена таблиц, колонок и SQL-выражения берутся только из проверенного контракта. Пользовательские значения фильтров передаются параметрами, а не вставляются в SQL-строку.
+
+## 5. Контракт intent
+
+```json
+{
+  "metric": "paid_revenue",
+  "dimensions": ["region"],
+  "filters": {
+    "quarter": "Q2"
+  }
+}
 ```
 
-## Метрики
+- `metric` — один существующий Metric ID.
+- `dimensions` — только разрешённые Dimension ID.
+- `filters` — только разрешённые Filter ID и значения.
+- Обязательные фильтры метрики добавляет компилятор; конфликт с ними отклоняется.
+- Неизвестные поля, метрики, измерения и фильтры не угадываются.
 
-| Метрика | Определение (SQL) | Синонимы-триггеры |
+## 6. Политика неоднозначности
+
+| Вопрос | Решение | Почему |
 |---|---|---|
-| Выручка | `SUM(amount)` | выручк, оборот, продаж |
-| Чистая выручка | `SUM(amount - returned)` | чистая выручк, net |
-| Заказы | `COUNT(*)` | заказ, число продаж |
-| Средний чек | `AVG(amount)` | средний чек, avg |
+| «Оплаченная выручка по регионам в Q2» | Компилировать `paid_revenue × region`, `quarter=Q2` | Метрика, разрез и период однозначны |
+| «Выручка по регионам» | `needs clarification` | Не указано, какая именно выручка и за какой период |
+| «Выручка по менеджерам» | `needs clarification` | Измерения `manager` нет в контракте |
+| «Возвраты по регионам» | `needs clarification` | Метрика возвратов не определена |
 
-## Измерения
+Новую метрику или колонку сначала добавляет и проверяет владелец контракта. Модель не расширяет слой по собственной инициативе.
 
-| Измерение | Колонка | Синонимы |
+## 7. Контракт исполнения
+
+| Граница | Учебное правило | Что проверить перед переносом |
 |---|---|---|
-| Регион | `region` | регион, город |
-| Месяц | `month` | месяц, period |
-| Продукт | `product` | продукт, товар, sku |
+| Запрос | Один `SELECT` без нескольких выражений | Разрешённые типы запросов и SQL-диалект |
+| Источник | Только синтетическая таблица `sales` | Разрешённые схемы, представления и версии |
+| Значения | Параметры `?`, отдельно от текста SQL | Способ параметризации драйвера БД |
+| Права | SQLite `PRAGMA query_only = ON` после загрузки fixture | Отдельная read-only роль БД |
+| Ресурсы | Шесть учебных строк | Timeout, row limit и cost limit |
+| Доказательства | Intent, SQL, params, результат, сверка | Query ID, план запроса и журнал доступа |
 
-## Как использовать
+Учебная SQLite показывает принцип минимальных полномочий, но не является моделью производственной безопасности. Для рабочей БД нужны её собственные роли, политики и ограничения.
 
-```python
-from nl_to_sql import nl_to_sql, run_sql
-sql = nl_to_sql("чистая выручка по регионам")   # → SELECT region, SUM(amount-returned) ...
-rows = run_sql(sql, data)
+## 8. Проверочные случаи
+
+### Основной случай
+
+```text
+Вопрос: оплаченная выручка по регионам в Q2.
+Intent: metric=paid_revenue; dimensions=[region]; filters={quarter: Q2}.
+Обязательный фильтр контракта: status=paid.
+Ожидаемый SQL: SELECT + WHERE quarter=? AND status=? + GROUP BY region.
+Ожидаемые параметры: Q2, paid.
+Ожидаемые группы: Москва=150, Питер=30, Казань=20.
+Ожидаемый полный итог: 200 RUB.
+Решение: accept, если источник, версия контракта и права подтверждены.
 ```
 
-## Правила
+### Негативные случаи
 
-- **Определи метрику один раз** — все инструменты (NL→SQL, BI-агенты, дашборды) берут отсюда.
-- **Спорные метрики уточняй** (выручка с возвратами или без?) — здесь это видно явно.
-- **Синонимы-триггеры** покрывают разные формулировки вопроса (учти морфологию — бери стемы).
-- В проде это `dbt Semantic Layer` / Cube; принцип тот же — единый контракт смысла.
-- Сгенерированный SQL **всегда показывай и проверяй** (урок 5.5).
-</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+- `metric=revenue` → отклонить как неизвестную метрику.
+- `dimensions=[manager]` → запросить уточнение или согласованное расширение контракта.
+- `status=refunded` для `paid_revenue` → отклонить конфликт с обязательным фильтром.
+- SQL `UPDATE ...` → не исполнять.
+- Группы не сходятся с полным итогом `200` → отклонить результат и диагностировать расхождение.
+
+## 9. Приёмка и передача
+
+Контракт готов к передаче, если другой человек может:
+
+1. назвать grain и доступные поля источника;
+2. объяснить смысл, единицу и обязательные фильтры каждой метрики;
+3. отличить Metric ID от произвольной пользовательской формулировки;
+4. получить SQL только из разрешённых частей;
+5. воспроизвести положительный и негативные случаи;
+6. понять, какой вопрос требует уточнения;
+7. назвать владельца, версию и границы доступа.
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> десять <code>unittest</code> проходят без внешних пакетов; студент объясняет question / intent / contract / SQL / executor / review; <code>paid_revenue</code> всегда включает <code>status=paid</code>; SQL использует параметры и учебный read-only режим; контрольный запрос воспроизводит группы <code>150 / 30 / 20</code> и итог <code>200</code>; неизвестный или неоднозначный intent не исполняется; артефакт фиксирует владельца, версию, метрики, измерения, политику уточнения и проверочные случаи. ✅ <strong>Урок готов</strong></p></article>
     <div class="nav-prevnext" id="prevnext"><a href="../../lessons/code-interpreter/"><small>← 5.2</small>Code Interpreter</a><a href="../../lessons/bi-agents/" style="text-align:right"><small>5.4 →</small>BI-агенты</a></div>
   </section>
 
   <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
 
   <script>window.__BASE__="../../";</script>
-  <script src="../../data.js?v=b96ecbf8e51e"></script>
-  <script src="../../progress.js?v=b96ecbf8e51e"></script>
-  <script src="../../header.js?v=b96ecbf8e51e"></script>
-  <script src="../../app.js?v=b96ecbf8e51e"></script>
+  <script src="../../data.js?v=c3ede7741528"></script>
+  <script src="../../progress.js?v=c3ede7741528"></script>
+  <script src="../../header.js?v=c3ede7741528"></script>
+  <script src="../../app.js?v=c3ede7741528"></script>
 </body>
 </html>
