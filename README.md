@@ -291,7 +291,7 @@ decision record 3.5. Если отдельная карточка неприме
 
 | # | Урок | Build It | Use It | Ship It | Папка |
 |---|---|---|---|---|---|
-| 5.1 | ИИ как аналитик | Pandas-анализ под управлением промпта | Загрузка CSV/Excel в ChatGPT и Claude | Шаблон аналитического запроса | `phases/05-data-and-analytics/01-ai-as-analyst` |
+| 5.1 | ИИ как аналитик | Проверяемый `AnalysisPlan` и детерминированный исполнитель групповой агрегации | Планирование и исполнение анализа CSV в доступном AI-инструменте | Проверяемый аналитический brief | `phases/05-data-and-analytics/01-ai-as-analyst` |
 | 5.2 | Code Interpreter | Свой sandbox-исполнитель кода (упрощённый) | Code Interpreter: расчёты и графики | Набор аналитических промптов | `phases/05-data-and-analytics/02-code-interpreter` |
 | 5.3 | NL→SQL и семантический слой | NL→SQL прототип + определения метрик | Запросы к БД на естественном языке | Семантический слой проекта | `phases/05-data-and-analytics/03-nl-to-sql-semantic-layer` |
 | 5.4 | BI-агенты | Агент, выбирающий шаги анализа | Genie / Spotter / Hex (обзор и практика) | Сценарий BI-расследования | `phases/05-data-and-analytics/04-bi-agents` |

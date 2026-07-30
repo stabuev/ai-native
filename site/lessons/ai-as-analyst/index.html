@@ -4,16 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>5.1 ИИ как аналитик — AI Native</title>
-  <meta name="description" content="Аналитика — это план: что сгруппировать, что посчитать, как агрегировать; ИИ строит план, код его исполняет.">
+  <meta name="description" content="Урок 5.1 курса AI Native: ИИ как аналитик. Практический материал с проверяемым результатом.">
   <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/ai-as-analyst/">
   <meta property="og:type" content="article">
   <meta property="og:title" content="5.1 ИИ как аналитик — AI Native">
-  <meta property="og:description" content="Аналитика — это план: что сгруппировать, что посчитать, как агрегировать; ИИ строит план, код его исполняет.">
+  <meta property="og:description" content="Урок 5.1 курса AI Native: ИИ как аналитик. Практический материал с проверяемым результатом.">
   <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/ai-as-analyst/">
   <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
   <meta name="twitter:card" content="summary_large_image">
   <script>(function(){try{var t=localStorage.getItem("theme")||"light";document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
-  <link rel="stylesheet" href="../../style.css?v=6137d04f0cc6">
+  <link rel="stylesheet" href="../../style.css?v=42ace9bd6238">
   <!-- Yandex.Metrika counter -->
   <script type="text/javascript">
       (function(m,e,t,r,i,k,a){
@@ -31,162 +31,589 @@
   <section class="container" style="padding-top:24px">
     <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
     <div class="lessonbar" id="lessonbar"></div>
-    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 5.1 · ИИ как аналитик</h1><p><strong>Фаза 5 — Данные и аналитика</strong> · <strong>Результат фазы:</strong> Анализировать данные с ИИ, делать NL→SQL и автоотчёты с валидацией результатов.</p><p><strong>Requires (только для USE IT):</strong> платный API-ключ или аккаунт ChatGPT/Claude с загрузкой файлов. BUILD IT работает офлайн, без ключей и без сети.</p><p><strong>Это вход в Фазу 5 — данные.</strong> Дальше будут Code Interpreter, NL→SQL, BI-агенты и автоотчёты. Но в основе всего лежит одна простая идея, которую мы разберём здесь до винтика: ИИ-аналитик не «понимает» таблицу магически — он строит <strong>план</strong> и исполняет его кодом.</p><p>Из Фазы 4 перенеси не предметный сюжет про возвраты, а дисциплину проекта: назови границы аналитического вопроса, источник данных, определение метрики и проверочные случаи до запуска. Если собственный процесс Фазы 4 уже связан с аналитикой, продолжай тот же project и его dossier; иначе начни новый узкий процесс, сохранив те же правила scope, provenance и приёмки. Новый агентный runtime для этого не нужен.</p><blockquote><strong>MOTTO.</strong> Аналитика — это план: что сгруппировать, что посчитать, как агрегировать; ИИ строит план, код его исполняет.</blockquote><h2>PROBLEM</h2><p>«Посмотри данные и скажи, что интересного» — звучит как магия. Кажется, будто модель смотрит на таблицу и «видит» инсайт. Это не так — и пока механика выглядит магией, ты не можешь ни проверить ответ, ни понять, почему он иногда неверный.</p><p>На деле ИИ-аналитик делает буквально следующее: превращает твой вопрос в <strong>план</strong> (по чему сгруппировать, какую колонку считать, каким агрегатом) и <strong>исполняет его кодом</strong> (pandas / Code Interpreter), а не «угадывает» цифры из головы. Соберём этот механизм на голой стандартной библиотеке — и магии не останется.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Любой аналитический вопрос раскладывается на три кубика:</p><ul><li><strong>разрез (group_by)</strong> — по чему режем: по региону, по продукту, по дню;</li><li><strong>метрика (value)</strong> — что именно меряем: сумму чего, среднее чего;</li><li><strong>агрегат (agg)</strong> — как сворачиваем группу в одно число: <code>sum</code>, <code>mean</code>, <code>count</code>.</li></ul><p>«Выручка по регионам» = разрез <code>region</code> + метрика <code>amount</code> + агрегат <code>sum</code>. «Средний чек по продукту» = разрез <code>product</code> + метрика <code>amount</code> + агрегат <code>mean</code>. Вопрос на человеческом языке — это и есть план из трёх кубиков; работа ИИ — собрать план, работа кода — его исполнить.</p><h3>Как это работает</h3><p>Механизм называется <strong>split-apply-combine</strong> — три шага:</p><pre><code>вопрос → план(group_by, value, agg) → исполнение → результат
-                                          │
-   split    разложить строки по группам (по group_by)
-   apply    в каждой группе применить агрегат к value (sum/mean/count)
-   combine  собрать {группа: число} и при желании взять топ-N</code></pre><ul><li><code>load_csv(text)</code> — прочитать таблицу в список словарей (строки).</li><li><code>aggregate(rows, group_by, value, agg)</code> — сгруппировать строки и свернуть каждую группу в число.</li><li><code>top_n(d, n)</code> — отсортировать результат по убыванию и взять верх.</li></ul><p>Ровно это делает pandas (<code>df.groupby(...).sum()</code>), и ровно это собирает под капотом ChatGPT/Claude, когда ты грузишь CSV и спрашиваешь «топ-5 регионов по выручке». Мы делаем то же руками, чтобы видеть каждый шаг.</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Возьмём таблицу продаж и вопрос «выручка по регионам, топ-2» (план: <code>group_by=region</code>, <code>value=amount</code>, <code>agg=sum</code>):</p><pre><code>region  amount
-Москва  100
-Москва   50
-Питер    30
-Питер    70
-Казань   20</code></pre><p><strong>split</strong> — раскладываем строки по <code>region</code>:</p><pre><code>Москва → [100, 50]
-Питер  → [30, 70]
-Казань → [20]</code></pre><p><strong>apply</strong> — в каждой группе берём <code>sum</code> колонки <code>amount</code>:</p><pre><code>Москва → 100 + 50 = 150
-Питер  → 30 + 70  = 100
-Казань → 20</code></pre><p><strong>combine</strong> — собираем <code>{Москва: 150, Питер: 100, Казань: 20}</code> и берём <code>top_n(2)</code> → <code>[(Москва, 150), (Питер, 100)]</code>.</p><p>Теперь <strong>поменяем один кубик</strong> — <code>agg=sum</code> на <code>agg=mean</code> — на тех же данных и том же <code>split</code>:</p><pre><code>apply (mean):  Москва → (100+50)/2 = 75    Питер → (30+70)/2 = 50    Казань → 20/1 = 20
-combine:       {Москва: 75, Питер: 50, Казань: 20}</code></pre><p>Данные и группировка те же, а ответ другой: «выручка» (sum 150/100/20) превратилась в «средний чек» (mean 75/50/20), а <code>agg=count</code> дал бы число продаж (2/2/1). Вот почему план важнее данных: один и тот же <code>split</code> отвечает на разные вопросы — решает выбор агрегата.</p><h2>BUILD IT</h2><p><strong>Задание: собери мини-аналитику</strong> — <code>load_csv</code> + <code>aggregate</code> + <code>top_n</code>, по принципу split-apply-combine. Только стандартная библиотека (<code>csv</code>, <code>io</code>, <code>statistics</code>), без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в созданной в фазе 0 папке <code>ai-native-work</code>, а файлы урока клади в <code>course-work/phase-5/ai-analyst/code/</code>. Клонировать курс не нужно. Нужен только <strong>Python 3</strong> (для теста ещё <code>pytest</code>).</blockquote><p>Создай файл <code>analyze.py</code> с тремя функциями:</p><ul><li><strong><code>load_csv(text)</code></strong> — распарсить CSV-текст в список словарей (строка таблицы = словарь <code>{колонка: значение}</code>). Подсказка: <code>csv.DictReader(io.StringIO(text.strip()))</code>.</li><li><strong><code>aggregate(rows, group_by, value, agg="sum")</code></strong> — сгруппировать <code>rows</code> по колонке <code>group_by</code>; в каждой группе свернуть колонку <code>value</code>: <code>sum</code> или <code>mean</code> числовых значений, либо <code>count</code> строк. Верни словарь <code>{группа: число}</code>. Нечисловые/пустые значения в <code>value</code> при sum/mean пропускай.</li><li><strong><code>top_n(d, n=3)</code></strong> — вернуть список из <code>n</code> пар <code>(ключ, значение)</code> по убыванию значения.</li></ul><p><strong>Готово, когда</strong> все тесты в <code>test_analyze.py</code> зелёные — они проверяют: парсинг строк; <code>sum</code> по региону (Москва = 150, Питер = 100); <code>count</code> и <code>mean</code>; <code>top_n</code> сортирует по убыванию (первый — Москва, 150).</p><pre><code>pytest code -q        # красное → реализуй три функции → зелёное
-python code/analyze.py # демо: выручка по регионам, топ-2, средний чек по продукту</code></pre><p><strong>Подсказка.</strong> Группировка: <code>groups.setdefault(r.get(group_by), []).append(r)</code>. Числа защити хелпером <code>_num(v)</code> через <code>try/except float(...)</code>. <code>top_n</code> — <code>sorted(d.items(), key=lambda kv: kv[1], reverse=True)[:n]</code>.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>Тот же план исполняет pandas — и ровно это делает ИИ-аналитик при загрузке файла (мульти-провайдер):</p><pre><code>import pandas as pd
-df = pd.read_csv("sales.csv")
-df.groupby("region")["amount"].sum().sort_values(ascending=False)   # = aggregate + top_n</code></pre><ul><li><strong>ChatGPT</strong> — загрузи CSV/Excel и спроси «выручка по регионам, топ-5»: он напишет и выполнит pandas-код в Code Interpreter и построит график.</li><li><strong>Claude</strong> — загрузка файла в чат или Project + тот же запрос; через API — code execution tool.</li></ul><p>Принцип один: естественный вопрос → план (group_by / value / agg) → исполнение кодом. Ты по-прежнему отвечаешь за то, чтобы план соответствовал вопросу.</p><p>⚠️ ИИ не знает происхождения данных и твоих допущений (что считать «выручкой», включать ли возвраты). Результат всегда <strong>проверяй</strong> — этому посвящён урок 5.5.</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Шаблон аналитического запроса → <a href="#f-phases-05-data-and-analytics-01-ai-as-analyst-outputs-analysis-request-template-md"><code>outputs/analysis-request-template.md</code></a></p><p>Структура запроса к ИИ-аналитику (данные · вопрос · метрика · разрез · формат · проверка) — чтобы ответы были воспроизводимы и проверяемы, а не «как поняла модель». Дальше: исполнение кода в песочнице (5.2), NL→SQL (5.3), валидация и автоотчёты (5.5).</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Считать, что ИИ «видит» инсайт в таблице.</strong> Он строит план и исполняет код. Нет плана — нет воспроизводимости; проси его показать код/логику, а не только число.</li><li><strong>Не задать определения метрики.</strong> «Выручка» с возвратами или без? «Активные» за какой период? Без явных допущений модель подставит свои — и цифра поедет.</li><li><strong>Путать агрегаты.</strong> <code>sum</code> ≠ <code>mean</code> ≠ <code>count</code>. «Сколько продали» — это <code>sum</code> суммы или <code>count</code> сделок? Уточни кубик <code>agg</code>, иначе ответишь не на тот вопрос.</li><li><strong>Доверять числу без проверки источника.</strong> ИИ не знает, откуда данные и насколько чисты. Сверяй с источником и здравым смыслом (5.5).</li><li><strong>Грузить гигантский файл целиком в чат.</strong> Окно конечно (4.4); для больших данных — выборка, агрегаты заранее или SQL (5.3), а не сырой дамп.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="5.1"></div><h2>Дополнительное чтение</h2><ul><li><a href="https://pandas.pydata.org/docs/getting_started/index.html" target="_blank" rel="noopener">pandas — Getting started</a> — стандартный инструмент анализа данных (<code>groupby</code>).</li><li><a href="https://help.openai.com/en/articles/8437071-code-interpreter" target="_blank" rel="noopener">OpenAI — Data analysis / Code Interpreter</a> — анализ загруженных файлов кодом.</li><li><a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/code-execution-tool" target="_blank" rel="noopener">Anthropic — Code execution tool</a> — анализ данных кодом через API.</li><li><a href="https://wesmckinney.com/book/" target="_blank" rel="noopener">Wes McKinney — Python for Data Analysis (3e, бесплатно онлайн)</a> — «библия» pandas от автора библиотеки.</li><li><a href="https://github.com/sinaptik-ai/pandas-ai" target="_blank" rel="noopener">PandasAI</a> — естественный язык поверх dataframe: «pandas под управлением промпта» (v3.0.0, 2025).</li><li><a href="https://support.claude.com/en/articles/12650343-use-claude-for-excel" target="_blank" rel="noopener">Anthropic — Use Claude for Excel</a> — свежая интеграция: читать, править и создавать таблицы прямо в Excel (CSV/Excel в Claude).</li><li><a href="https://towardsdatascience.com/my-first-exploratory-data-analysis-with-chatgpt-7f100005efdc/" target="_blank" rel="noopener">TDS — My First Exploratory Data Analysis with ChatGPT</a> — практический разбор EDA через чат (Medium).</li><li><a href="https://arxiv.org/abs/2506.23719" target="_blank" rel="noopener">DABstep (Adyen × Hugging Face, 2025)</a> — бенчмарк агентов-аналитиков на 450+ реальных задачах: лучшие модели решают лишь ~15% сложных — числовой аргумент, почему результат ИИ-аналитика надо проверять (5.5).</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Если делегируешь ИИ, реши, что отдаёшь; опиши задачу и критерии; проверь результат; сохрани ответственность за итог.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-05-data-and-analytics-01-ai-as-analyst-code-test-analyze-py" open data-test="1"><summary><span class="fname">code/test_analyze.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from analyze import load_csv, aggregate, top_n, CSV_DEMO
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 5.1 · ИИ как аналитик</h1><p><strong>Фаза 5 — Данные и аналитика</strong> · <strong>Результат фазы:</strong> анализировать данные с ИИ, превращать вопросы на естественном языке в SQL-запросы (NL→SQL) и делать автоотчёты с валидацией результатов.</p><p><strong>Результат урока:</strong> после урока студент сможет превратить простой описательный бизнес-вопрос в проверяемый аналитический план: зафиксировать источник, смысл одной строки, период, фильтры, определение метрики, разрез, способ расчёта и проверку; исполнить этот план над табличной выгрузкой и обнаружить расхождение между правдоподобным числом и корректным расчётом.</p><p><strong>Опоры:</strong> в 2.4 ты отделял постоянный контракт от динамического входа, в 2.5 проверял результат на заранее заданных случаях, а в Фазе 4 фиксировал scope, provenance и приёмку проекта. · <strong>Дальше:</strong> в 5.2 модель начнёт писать код по такому плану, а изолированная среда — исполнять его.</p><p><strong>Requires:</strong> Python 3 и <code>pytest</code> для офлайн-практики. Для USE IT нужен только доступ к выбранному AI-инструменту, который умеет работать с загруженным CSV и исполнять код; конкретный провайдер, платный API и новая агентная среда выполнения не обязательны.</p><blockquote><strong>Главная мысль.</strong> Код точно считает то, что ему поручили. Поэтому сначала проверяем смысл расчёта, затем исполняем и сверяем результат.</blockquote><h2>Проблема: правильная арифметика может отвечать не на тот вопрос</h2><p>Команда спрашивает:</p><blockquote>Какие регионы принесли больше выручки во втором квартале?</blockquote><p>В файле лежат шесть строк:</p><table><thead><tr><th>order_id</th><th>quarter</th><th>region</th><th>status</th><th>amount</th></tr></thead><tbody><tr><td>o-1</td><td>Q2</td><td>Москва</td><td>paid</td><td>100</td></tr><tr><td>o-2</td><td>Q2</td><td>Москва</td><td>paid</td><td>50</td></tr><tr><td>o-3</td><td>Q2</td><td>Питер</td><td>paid</td><td>30</td></tr><tr><td>o-4</td><td>Q2</td><td>Питер</td><td>refunded</td><td>70</td></tr><tr><td>o-5</td><td>Q2</td><td>Казань</td><td>paid</td><td>20</td></tr><tr><td>o-6</td><td>Q1</td><td>Москва</td><td>paid</td><td>999</td></tr></tbody></table><p>Можно написать безошибочный <code>groupby</code> и получить Москву <code>1149</code>, Питер <code>100</code>, Казань <code>20</code>. Арифметика верна для всех строк файла, но ответ неверен для поставленного вопроса: в Москву попал Q1, а в Питер — возврат.</p><p>До расчёта остаются решения:</p><ol><li>«Выручка» означает все созданные заказы или только оплаченные?</li><li>Возвраты вычитаются, исключаются или учитываются отдельной отрицательной строкой?</li><li>Период определяется колонкой <code>quarter</code> или датой оплаты?</li><li>Одна строка — заказ, товарная позиция или платёж?</li><li>Нужен полный результат или только top-N — N групп с наибольшим значением, — и куда попадёт остаток?</li></ol><p>ИИ может предложить ответы, но не знает внутреннее определение метрики и не получает право придумать его за владельца процесса. Поэтому первый результат работы ИИ-аналитика — не число и не график, а <strong>проверяемый план расчёта</strong>.</p><h2>Центральная модель</h2><h3>Таблица, строка, колонка и grain</h3><p><strong>CSV</strong> — текстовый табличный формат: первая строка обычно содержит названия колонок, остальные — данные. После чтения учебным кодом одна строка представлена словарём:</p><pre><code>{
+    "order_id": "o-1",
+    "quarter": "Q2",
+    "region": "Москва",
+    "status": "paid",
+    "amount": "100",
+}</code></pre><ul><li><strong>Строка</strong> — одна единица наблюдения.</li><li><strong>Колонка</strong> — одно свойство этой единицы: регион, статус или сумма.</li><li><strong>Grain</strong>, или гранулярность, — точное значение одной строки: один заказ, одна позиция заказа, один платёж или один пользователь за день.</li><li><strong>Row ID</strong> — колонка, по которой можно отличить одну единицу наблюдения от другой.</li></ul><p>Grain нужно назвать до <code>COUNT</code>. Если один заказ занимает три строки товаров, <code>COUNT(*) = 3</code> означает три позиции, а не три заказа. Дубли одного <code>order_id</code> могут быть ошибкой выгрузки или признаком другого grain — это нужно выяснить, а не молча сложить.</p><h3>Колонка ещё не является метрикой</h3><p>Колонка <code>amount</code> хранит значения. <strong>Метрика</strong> задаёт смысл итогового числа:</p><pre><code>название
++ источник и период
++ фильтры включения и исключения
++ формула агрегации
++ единица результата</code></pre><p>Для учебного вопроса договоримся:</p><pre><code>paid_revenue =
+SUM(amount)
+WHERE quarter = Q2
+  AND status = paid
+единица = RUB</code></pre><p>Это одно из возможных бизнес-определений. В реальной компании возвраты могут представляться иначе. Важно не угадать «универсально правильную» формулу, а получить подтверждённое определение владельца метрики.</p><h3>Семь частей простого аналитического плана</h3><p>В этом уроке рассматриваем только <strong>описательные вопросы с групповой агрегацией</strong>: сколько, в среднем и как распределено по группам. Такой план содержит:</p><table><thead><tr><th>Часть</th><th>Контрольный вопрос</th></tr></thead><tbody><tr><td>Вопрос и граница</td><td>Какое описательное число нужно и чего оно не доказывает?</td></tr><tr><td>Данные и grain</td><td>Откуда строки и что означает одна строка?</td></tr><tr><td>Период и фильтры</td><td>Какие строки должны участвовать?</td></tr><tr><td>Метрика</td><td>Как называются формула и единица результата?</td></tr><tr><td>Разрез</td><td>По какой колонке сравниваются группы?</td></tr><tr><td>Агрегат</td><td><code>sum</code>, <code>mean</code> или явно определённый <code>count_rows</code>?</td></tr><tr><td>Проверка</td><td>Как заметить потерю строк, дубль, неверный тип или несходящийся итог?</td></tr></tbody></table><p>Вопрос «почему продажи упали?» уже не является простой агрегацией. Группировки могут показать, <strong>где</strong> наблюдается снижение, но не доказывают его причину. Прогноз и причинный вывод также находятся за границей урока.</p><h3>Модель предлагает, код исполняет, человек принимает</h3><p>Структурированную запись такого плана дальше называем <strong><code>AnalysisPlan</code></strong>. Разделим три роли:</p><pre><code>человек задаёт вопрос и бизнес-границы
+                ↓
+модель предлагает AnalysisPlan
+                ↓
+человек проверяет grain, метрику и фильтры
+                ↓
+код детерминированно исполняет утверждённый план:
+одинаковый вход даёт одинаковый результат
+                ↓
+человек сверяет строки, итоги и границу вывода</code></pre><p>Модель не обязана сама исполнять Python. В продукте она может передать код отдельному инструменту. Эту границу разберём в 5.2. Здесь важно другое: даже идеально исполненный код не исправит неверное определение метрики.</p><h3>Где работает split-apply-combine</h3><p>После фильтрации групповой расчёт проходит три шага:</p><pre><code>split    → разделить выбранные строки по region
+apply    → посчитать SUM(amount) внутри каждой группы
+combine  → собрать полный результат и только затем выделить top-N</code></pre><p><code>split-apply-combine</code> объясняет механизм групповой агрегации, но не заменяет весь аналитический план: он ничего не решает про grain, период, возвраты и проверку данных.</p><h2>Разбор одного плана</h2><h3>Шаг 1. Фиксируем вопрос и определение</h3><pre><code>Вопрос: какие регионы принесли больше оплаченной выручки в Q2?
+Grain: одна строка = один заказ.
+Row ID: order_id.
+Период: quarter = Q2.
+Фильтр: status = paid.
+Метрика: paid_revenue = SUM(amount), RUB.
+Разрез: region.
+Формат: top-2, остальные отдельно, полный итог.</code></pre><h3>Шаг 2. Записываем исполняемый план</h3><pre><code>PLAN = {
+    "question": "Какие регионы принесли больше оплаченной выручки в Q2?",
+    "source": "sales.csv",
+    "grain": "одна строка = один заказ",
+    "row_id": "order_id",
+    "period": "Q2",
+    "filters": {"quarter": "Q2", "status": "paid"},
+    "metric": {
+        "name": "paid_revenue",
+        "column": "amount",
+        "aggregation": "sum",
+        "unit": "RUB",
+    },
+    "group_by": "region",
+    "top_n": 2,
+}</code></pre><p>Это не результат автоматического разбора свободного текста. План может предложить человек или ИИ, но до исполнения каждое поле должно быть проверено. <code>question</code>, <code>source</code>, <code>grain</code> и <code>period</code> сохраняют проверяемый смысл расчёта; <code>filters</code>, <code>metric</code>, <code>group_by</code> и <code>top_n</code> непосредственно управляют учебным исполнителем. Поэтому, например, текстовое поле <code>period="Q2"</code> не заменяет машинный фильтр <code>quarter="Q2"</code>.</p><h3>Шаг 3. Проверяем контракт до расчёта</h3><p>Исполнитель сначала убеждается, что:</p><ul><li>обязательные поля плана заполнены;</li><li><code>sum</code> входит в разрешённый набор агрегатов;</li><li><code>order_id</code>, <code>quarter</code>, <code>status</code>, <code>amount</code> и <code>region</code> существуют;</li><li><code>order_id</code> заполнены и уникальны;</li><li><code>top_n</code> — положительное целое число.</li></ul><p>Неизвестный <code>median</code>, отсутствующая колонка или повторяющийся ID останавливают расчёт. Молчаливая замена ошибки на <code>sum</code>, <code>None</code> или ноль создала бы убедительный ложный ответ.</p><h3>Шаг 4. Фильтруем до группировки</h3><pre><code>прочитано: 6 строк
+исключено:
+  o-4 — status=refunded
+  o-6 — quarter=Q1
+использовано: 4 строки</code></pre><p>После фильтра остаются суммы <code>100</code>, <code>50</code>, <code>30</code>, <code>20</code>. Если <code>amount</code> содержит <code>unknown</code>, исполнитель останавливается и называет строку: отсутствующее число не равно нулю.</p><h3>Шаг 5. Выполняем split-apply-combine</h3><pre><code>split:
+  Москва → [100, 50]
+  Питер  → [30]
+  Казань → [20]
+
+apply SUM:
+  Москва → 150
+  Питер  → 30
+  Казань → 20
+
+combine:
+  общий итог → 200</code></pre><h3>Шаг 6. Не выдаём top-N за полный результат</h3><pre><code>top-2 = Москва 150 + Питер 30 = 180
+other = Казань 20
+overall = 200
+
+180 + 20 = 200</code></pre><p>Проверять нужно все группы до обрезки. Сумма только top-2 не обязана равняться общему итогу. Такую контрольную сверку частей с общим итогом называют <strong>reconciliation check</strong>, или сверкой согласованности.</p><p>Для <code>mean</code> действует другое правило. Средние групп нельзя просто сложить: группа из двух заказов должна иметь больший вес, чем группа из одного. Поэтому исполнитель сверяет взвешенное среднее групп с общим средним.</p><h2>BUILD IT</h2><p><strong>Задание:</strong> собери проверяемый исполнитель <code>AnalysisPlan</code>. Он не понимает естественный язык и не вызывает модель: принимает уже проверенный словарь, валидирует его и выполняет одну групповую агрегацию над CSV. Используй только стандартную библиотеку.</p><blockquote><strong>Перед запуском.</strong> Работай в созданной в фазе 0 папке <code>ai-native-work</code>, а файлы урока клади в <code>course-work/phase-5/ai-analyst/code/</code>. Клонировать курс не нужно. Со страницы сначала скопируй <code>test_analyze.py</code>, затем создай собственный <code>analyze.py</code>.</blockquote><p>Реализуй:</p><ul><li><strong><code>PlanError</code></strong> — ошибка, при которой расчёт нельзя продолжать убедительно.</li><li><strong><code>load_csv(text)</code></strong> — читает непустой CSV с заголовком в список словарей.</li><li><strong><code>validate_plan(rows, plan)</code></strong> — проверяет поля плана, допустимый агрегат, нужные колонки, положительный <code>top_n</code> и уникальность <code>row_id</code>.</li><li><strong><code>execute_plan(rows, plan)</code></strong> — применяет точные фильтры, блокирует пустой результат и нечисловые значения, считает группы, общий итог, top-N, остаток и контрольную сверку итогов.</li></ul><p>До реализации предскажи:</p><ol><li>Сколько строк останется после фильтров Q2 + paid?</li><li>Почему возврат <code>70</code> не должен попасть в результат?</li><li>Почему <code>aggregation="median"</code> должен завершиться ошибкой, а не суммой?</li><li>Почему top-2 равен <code>180</code>, а общий итог — <code>200</code>?</li><li>Чем отсутствие числового значения отличается от суммы <code>0</code>?</li></ol><p><strong>Готово, когда</strong> восемь тестов подтверждают:</p><ul><li>CSV сохраняет строки и колонки;</li><li>период и статус фильтруются до группировки;</li><li><code>sum</code> даёт полный результат <code>Москва=150</code>, <code>Питер=30</code>, <code>Казань=20</code>;</li><li><code>count_rows</code> считает четыре выбранных заказа; в его поле <code>column</code> укажи уникальный <code>order_id</code>, чтобы явно назвать считаемую единицу;</li><li>top-2 сохраняет <code>other=20</code> и сходится с общим итогом <code>200</code>;</li><li><code>mean</code> проверяется с весами;</li><li>неизвестный агрегат и нечисловая метрика блокируют расчёт;</li><li>дубли <code>row_id</code> нарушают заявленный grain и блокируют расчёт;</li><li>отсутствующая колонка и пустой результат фильтра не превращаются в ответ.</li></ul><pre><code>pytest code -q
+python code/analyze.py</code></pre><p>После зелёных тестов объясни без кода:</p><ul><li>какие две строки были исключены и почему;</li><li>чем <code>amount</code> отличается от метрики <code>paid_revenue</code>;</li><li>почему техническая исполнимость плана ещё не означает, что бизнес-определение подтверждено.</li></ul><h3>4D в аналитической задаче</h3><ul><li><strong>Delegation:</strong> отдай ИИ предложение плана и написание кода, но не решение о смысле метрики и допустимости данных.</li><li><strong>Description:</strong> зафиксируй grain, период, фильтры, формулу, единицу, разрез, формат и проверки.</li><li><strong>Discernment:</strong> сравни предложенный план с бизнес-вопросом, а результат — со строками, полным итогом и граничными случаями.</li><li><strong>Diligence:</strong> проверь разрешённость данных, сохрани код и план, назови роль ИИ и не отправляй вывод без самостоятельной приёмки.</li></ul><h2>USE IT</h2><p>Примени тот же порядок в доступном инструменте с загрузкой файлов и исполнением кода. Не начинай с просьбы «найди инсайты».</p><h3>1. Сначала запроси план без расчёта</h3><pre><code>Не считай результат и не пиши код.
+По описанию вопроса и колонок предложи AnalysisPlan:
+источник, grain, row_id, период, фильтры, метрику с формулой и единицей,
+group_by, top_n и проверки.
+Отдельно перечисли решения, которые нельзя вывести из данных.</code></pre><h3>2. Проверь план</h3><p>Уточни у владельца метрики:</p><ul><li>что означает одна строка;</li><li>какие статусы и периоды входят;</li><li>как учитываются возвраты;</li><li>в какой единице измеряется результат;</li><li>какое решение будет принято по числу.</li></ul><p>Если ответа нет, оставь открытый вопрос. Не разрешай модели выбирать удобную формулу молча.</p><h3>3. Только затем разреши исполнение</h3><pre><code>Исполни утверждённый план над загруженным CSV.
+Покажи код, строки read / used / excluded, полный результат по группам,
+top-N и other, общий итог и контрольную сверку.
+Не делай причинных выводов.</code></pre><p>Pandas — библиотека Python для работы с таблицами. После утверждения плана код может выглядеть так:</p><pre><code>selected = df.query("quarter == 'Q2' and status == 'paid'")
+groups = selected.groupby("region")["amount"].sum().sort_values(ascending=False)</code></pre><p>Эти две строки не доказывают, что фильтры выбраны правильно. Сверь выданный код с планом, результаты — с ожидаемыми <code>150 / 30 / 20</code>, а общий итог — с <code>200</code>.</p><p>Перед загрузкой рабочих данных проверь правила организации, чувствительные колонки и внешние пути данных из 4.5. Для освоения урока достаточно синтетического CSV.</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> проверяемый аналитический brief — краткий паспорт смысла и исполнения расчёта → <a href="#f-phases-05-data-and-analytics-01-ai-as-analyst-outputs-analysis-request-template-md"><code>outputs/analysis-request-template.md</code></a></p><p>В нём должны быть:</p><ul><li>решение и граница описательного вопроса;</li><li>источник, период, grain, row ID и ограничения данных;</li><li>полное определение метрики, фильтров, разреза и единицы;</li><li>исполняемый <code>AnalysisPlan</code>;</li><li>строки read / used / excluded;</li><li>полный результат, top-N, other и общий итог;</li><li>проверки типов, дублей и сверки согласованности;</li><li>явно названные выводы, которых расчёт не доказывает.</li></ul><p>Артефакт готов, если другой человек может воспроизвести расчёт, объяснить каждое исключение и отличить бизнес-определение от арифметики.</p><h2>Реалистичные ошибки</h2><ul><li><strong>Начать с «посмотри, что интересного».</strong> Модель сама выберет вопрос, метрику и критерий интересности; сначала задай решение и границу.</li><li><strong>Назвать колонку метрикой.</strong> <code>amount</code> не объясняет период, статусы, формулу и единицу; запиши полное определение.</li><li><strong>Не определить grain.</strong> <code>COUNT(*)</code> может посчитать позиции вместо заказов, а дубль — дважды увеличить сумму.</li><li><strong>Фильтровать после агрегации.</strong> Неподходящие строки уже изменили итог; сначала выбери строки, затем группируй.</li><li><strong>Превратить отсутствие значения в ноль.</strong> Ноль — наблюдение, а пропуск или повреждённый тип — проблема данных.</li><li><strong>Неизвестный агрегат молча заменить на <code>sum</code>.</strong> Правдоподобное число скрывает ошибку плана; останови расчёт.</li><li><strong>Сложить средние групп.</strong> Среднее требует весов; сумма средних не является общим средним.</li><li><strong>Сверять только top-N.</strong> Обрезанный список не равен полному распределению; покажи <code>other</code> и общий итог.</li><li><strong>Сделать причинный вывод из группировки.</strong> Разница между регионами является наблюдением, а не объяснением причины.</li><li><strong>Считать показанный код гарантией качества.</strong> Код делает расчёт аудируемым, но не подтверждает определение метрики и происхождение данных.</li></ul><h2>Что сознательно осталось за границей</h2><ul><li>Свободный разведочный анализ данных и автоматический поиск «интересных» наблюдений.</li><li>Графики, корреляции, статистические тесты и регрессия.</li><li>Причинные выводы и прогнозирование.</li><li>Очистка произвольных грязных наборов данных.</li><li>Безопасное исполнение кода модели: это 5.2.</li><li>SQL и централизованные определения метрик: это 5.3.</li><li>Автоматизированная проверка аномалий и отчётов: это 5.5.</li></ul><h2>Переход в 5.2</h2><p>Теперь у тебя есть две отдельные сущности:</p><pre><code>проверенный AnalysisPlan
+→ детерминированный исполнитель</code></pre><p>В USE IT модель также предложила код. Следующий вопрос — почему этот код нельзя безопасно запускать прямо в основном процессе и какая среда должна вернуть результат или ошибку, не открывая доступ к файлам и секретам. Это граница Code Interpreter в 5.2.</p><h2>ПРОВЕРЬ СЕБЯ</h2><p>Вопросы проверяют решения о grain, метрике, фильтрах, исполнении и сверке результата, а не запоминание названий функций.</p><div class="quiz-section" data-lesson="5.1"></div><h2>Дополнительное чтение</h2><p>Это факультативные ветки: читать весь список не нужно. Выбери механику pandas, практику в конкретном AI-инструменте или материалы о проверке и ограничениях.</p><h3>Механика группировки</h3><ul><li><a href="https://pandas.pydata.org/docs/getting_started/intro_tutorials/06_calculate_statistics.html" target="_blank" rel="noopener">pandas — How to calculate summary statistics</a> — открой разделы <strong>Aggregating statistics grouped by category</strong> и <strong>Count number of records by category</strong>: они показывают <code>groupby</code>, split-apply-combine и важное различие между подсчётом строк и непустых значений.</li><li><a href="https://wesmckinney.com/book/data-aggregation" target="_blank" rel="noopener">Wes McKinney — Data Aggregation and Group Operations</a> — углубление после практики: разделы 10.1–10.2 объясняют модель группировки и агрегации, а пример с weighted average помогает понять проверку среднего с весами.</li></ul><h3>Практика в AI-инструменте</h3><ul><li><a href="https://help.openai.com/en/articles/8437071-code-interpreter" target="_blank" rel="noopener">OpenAI — Data analysis with ChatGPT</a> — смотри <strong>Preparing spreadsheets</strong>, <strong>Reviewing analysis details</strong> и <strong>Constraints</strong>: как подготовить таблицу, увидеть код и проверить допущения, а не принять готовый ответ на доверии.</li><li><a href="https://support.claude.com/en/articles/12650343-use-claude-for-excel" target="_blank" rel="noopener">Anthropic — Use Claude for Excel</a> — отдельная ветка для <code>.xlsx</code> и <code>.xlsm</code>: обрати внимание на ссылки к ячейкам, подсветку изменений и требование проверить результат перед сохранением или отправкой.</li></ul><h3>Проверка и ограничения</h3><ul><li><a href="https://developers.google.com/machine-learning/guides/good-data-analysis" target="_blank" rel="noopener">Google — Good Data Analysis</a> — начни с <strong>Acknowledge and count your filtering</strong>, <strong>Ratios should have clear numerator and denominators</strong> и <strong>Separate Validation, Description, and Evaluation</strong>: это расширяет brief до реального анализа.</li><li><a href="https://arxiv.org/abs/2309.10947" target="_blank" rel="noopener">Gu et al. — How Do Analysts Understand and Verify AI-Assisted Data Analyses?</a> — прочитай введение, пример ошибки с неверной единицей подсчёта и выводы: исследование показывает, почему для проверки нужны одновременно процедура, код и промежуточные данные.</li><li><a href="https://arxiv.org/abs/2506.23719" target="_blank" rel="noopener">DABstep — Data Agent Benchmark for Multi-step Reasoning</a> — исследовательский горизонт, а не инструкция: в abstract и разборе ошибок показаны 450+ реалистичных задач и точность лучшего агента лишь 14,55% на самых сложных из них.</li></ul><h3>Переход к 5.2</h3><ul><li><a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/code-execution-tool" target="_blank" rel="noopener">Anthropic — Code execution tool</a> — если интересно, как план превращается в исполняемый код через API, прочитай введение и <strong>Quick start</strong>; устройство sandbox и его границы разберём в следующем уроке.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Если делегируешь ИИ, реши, что отдаёшь; опиши задачу и критерии; проверь результат; сохрани ответственность за итог.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-05-data-and-analytics-01-ai-as-analyst-code-test-analyze-py" open data-test="1"><summary><span class="fname">code/test_analyze.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from copy import deepcopy
+
+import pytest
+
+from analyze import (
+    CSV_DEMO,
+    DEMO_PLAN,
+    PlanError,
+    execute_plan,
+    load_csv,
+)
+
 
 ROWS = load_csv(CSV_DEMO)
 
 
-def test_load_csv_parses_rows():
-    assert len(ROWS) == 5
-    assert ROWS[0]["region"] == "Москва" and ROWS[0]["amount"] == "100"
+def test_load_csv_preserves_rows_and_declared_columns():
+    assert len(ROWS) == 6
+    assert ROWS[0]["order_id"] == "o-1"
+    assert ROWS[0]["amount"] == "100"
 
 
-def test_aggregate_sum_by_region():
-    by_region = aggregate(ROWS, "region", "amount", "sum")
-    assert by_region["Москва"] == 150
-    assert by_region["Питер"] == 100
+def test_sum_and_count_plans_filter_period_and_status_before_grouping():
+    result = execute_plan(ROWS, DEMO_PLAN)
+
+    assert result["rows_read"] == 6
+    assert result["rows_used"] == 4
+    assert result["rows_excluded"] == 2
+    assert result["groups"] == [
+        {"group": "Москва", "value": 150.0, "rows": 2},
+        {"group": "Питер", "value": 30.0, "rows": 1},
+        {"group": "Казань", "value": 20.0, "rows": 1},
+    ]
+    assert result["overall"] == 200.0
+
+    count_plan = deepcopy(DEMO_PLAN)
+    count_plan["metric"] = {
+        "name": "paid_orders",
+        "column": "order_id",
+        "aggregation": "count_rows",
+        "unit": "orders",
+    }
+    count_result = execute_plan(ROWS, count_plan)
+    assert count_result["overall"] == 4
+    assert count_result["groups"][0] == {
+        "group": "Москва",
+        "value": 2,
+        "rows": 2,
+    }
+    assert count_result["checks"]["reconciled"] is True
 
 
-def test_aggregate_count_and_mean():
-    assert aggregate(ROWS, "region", "amount", "count")["Москва"] == 2
-    by_product_mean = aggregate(ROWS, "product", "amount", "mean")
-    assert by_product_mean["A"] == (100 + 30 + 20) / 3
+def test_top_n_keeps_other_value_and_reconciles_against_full_result():
+    result = execute_plan(ROWS, DEMO_PLAN)
+
+    assert [item["group"] for item in result["top"]] == ["Москва", "Питер"]
+    assert sum(item["value"] for item in result["top"]) == 180.0
+    assert result["other_value"] == 20.0
+    assert result["checks"]["reconciled"] is True
 
 
-def test_top_n_orders_desc():
-    by_region = aggregate(ROWS, "region", "amount", "sum")
-    top = top_n(by_region, 2)
-    assert top[0] == ("Москва", 150)
-    assert len(top) == 2
-</code></pre></details><h3>Эталонное решение</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-05-data-and-analytics-01-ai-as-analyst-code-analyze-py"><summary><span class="fname">code/analyze.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""ИИ как аналитик: мини-аналитика на stdlib под планом — Build It для урока 5.1.
+def test_mean_uses_weighted_reconciliation_not_sum_of_group_means():
+    plan = deepcopy(DEMO_PLAN)
+    plan["metric"] = {
+        "name": "average_paid_order",
+        "column": "amount",
+        "aggregation": "mean",
+        "unit": "RUB/order",
+    }
 
-Без внешних зависимостей. Промпт превращается в план анализа (что сгруппировать,
-какую метрику, как агрегировать), а тулкит его исполняет — как делает ИИ-аналитик,
-только мы видим механизм. В USE IT тот же план исполняет pandas / Code Interpreter.
+    result = execute_plan(ROWS, plan)
+
+    assert result["groups"][0] == {
+        "group": "Москва",
+        "value": 75.0,
+        "rows": 2,
+    }
+    assert result["overall"] == 50.0
+    assert result["other_value"] is None
+    assert result["checks"]["reconciled"] is True
+
+
+def test_unknown_aggregation_is_rejected_instead_of_becoming_sum():
+    plan = deepcopy(DEMO_PLAN)
+    plan["metric"]["aggregation"] = "median"
+
+    with pytest.raises(PlanError, match="aggregation"):
+        execute_plan(ROWS, plan)
+
+
+def test_non_numeric_metric_value_is_visible_instead_of_becoming_zero():
+    broken_rows = deepcopy(ROWS)
+    broken_rows[0]["amount"] = "unknown"
+
+    with pytest.raises(PlanError, match="non-numeric"):
+        execute_plan(broken_rows, DEMO_PLAN)
+
+
+def test_duplicate_row_id_blocks_a_broken_grain():
+    duplicated = [*deepcopy(ROWS), deepcopy(ROWS[0])]
+
+    with pytest.raises(PlanError, match="duplicate row ids"):
+        execute_plan(duplicated, DEMO_PLAN)
+
+
+def test_missing_column_or_empty_filter_result_blocks_execution():
+    missing_column_plan = deepcopy(DEMO_PLAN)
+    missing_column_plan["group_by"] = "city"
+    with pytest.raises(PlanError, match="columns missing"):
+        execute_plan(ROWS, missing_column_plan)
+
+    empty_plan = deepcopy(DEMO_PLAN)
+    empty_plan["filters"]["quarter"] = "Q9"
+    with pytest.raises(PlanError, match="no rows match"):
+        execute_plan(ROWS, empty_plan)
+</code></pre></details><h3>Эталонное решение</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-05-data-and-analytics-01-ai-as-analyst-code-analyze-py"><summary><span class="fname">code/analyze.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Проверяемый исполнитель простого аналитического плана для урока 5.1.
+
+Модуль не понимает естественный язык и не изображает ИИ. Человек или модель сначала
+предлагает AnalysisPlan, человек проверяет определения, а этот код детерминированно
+валидирует и исполняет простую групповую агрегацию над CSV.
 """
+
 import csv
 import io
-from statistics import mean
+from math import isclose
+
+
+ALLOWED_AGGREGATIONS = {"sum", "mean", "count_rows"}
+REQUIRED_PLAN_FIELDS = {
+    "question",
+    "source",
+    "grain",
+    "row_id",
+    "period",
+    "filters",
+    "metric",
+    "group_by",
+    "top_n",
+}
+
+
+class PlanError(ValueError):
+    """План или данные не позволяют получить проверяемый результат."""
 
 
 def load_csv(text):
-    """CSV-текст -&gt; список словарей (строки таблицы)."""
-    return list(csv.DictReader(io.StringIO(text.strip())))
+    """Прочитать непустой CSV-текст в список строк-словарей."""
+    reader = csv.DictReader(io.StringIO(text.strip()))
+    if not reader.fieldnames:
+        raise PlanError("CSV must contain a header")
+    rows = list(reader)
+    if not rows:
+        raise PlanError("CSV must contain at least one data row")
+    return rows
 
 
-def _num(v):
+def validate_plan(rows, plan):
+    """Проверить контракт плана, колонки и заявленный grain до расчёта."""
+    if not isinstance(plan, dict):
+        raise PlanError("plan must be a mapping")
+    missing_fields = sorted(REQUIRED_PLAN_FIELDS - set(plan))
+    if missing_fields:
+        raise PlanError(f"plan fields missing: {', '.join(missing_fields)}")
+
+    for field in ("question", "source", "grain", "row_id", "period", "group_by"):
+        value = plan[field]
+        if not isinstance(value, str) or not value.strip():
+            raise PlanError(f"plan.{field} must be a non-empty string")
+
+    filters = plan["filters"]
+    if not isinstance(filters, dict):
+        raise PlanError("plan.filters must be a mapping")
+
+    metric = plan["metric"]
+    if not isinstance(metric, dict):
+        raise PlanError("plan.metric must be a mapping")
+    for field in ("name", "column", "aggregation", "unit"):
+        value = metric.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise PlanError(f"plan.metric.{field} must be a non-empty string")
+    if metric["aggregation"] not in ALLOWED_AGGREGATIONS:
+        raise PlanError(
+            "plan.metric.aggregation must be one of "
+            + ", ".join(sorted(ALLOWED_AGGREGATIONS))
+        )
+
+    top_n = plan["top_n"]
+    if not isinstance(top_n, int) or isinstance(top_n, bool) or top_n &lt;= 0:
+        raise PlanError("plan.top_n must be a positive integer")
+
+    columns = set(rows[0])
+    required_columns = {
+        plan["row_id"],
+        plan["group_by"],
+        *filters.keys(),
+        metric["column"],
+    }
+    missing_columns = sorted(required_columns - columns)
+    if missing_columns:
+        raise PlanError(f"data columns missing: {', '.join(missing_columns)}")
+
+    row_ids = [row.get(plan["row_id"]) for row in rows]
+    if any(row_id in (None, "") for row_id in row_ids):
+        raise PlanError("row_id contains an empty value")
+    if len(row_ids) != len(set(row_ids)):
+        raise PlanError("duplicate row ids violate the declared grain")
+
+
+def _number(value, *, row_id, column):
     try:
-        return float(v)
-    except (TypeError, ValueError):
-        return None
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise PlanError(
+            f"row {row_id} contains a non-numeric value in {column}"
+        ) from exc
 
 
-def aggregate(rows, group_by, value, agg="sum"):
-    """Сгруппировать rows по group_by и агрегировать value (sum/mean/count)."""
+def execute_plan(rows, plan):
+    """Исполнить проверенную групповую агрегацию и вернуть расчёт с проверками."""
+    validate_plan(rows, plan)
+
+    filters = plan["filters"]
+    selected = [
+        row
+        for row in rows
+        if all(row.get(column) == expected for column, expected in filters.items())
+    ]
+    if not selected:
+        raise PlanError("no rows match the declared filters")
+
+    metric = plan["metric"]
+    aggregation = metric["aggregation"]
+    metric_column = metric["column"]
+    row_id_column = plan["row_id"]
+    group_column = plan["group_by"]
     groups = {}
-    for r in rows:
-        groups.setdefault(r.get(group_by), []).append(r)
-    out = {}
-    for key, items in groups.items():
-        nums = [n for n in (_num(i.get(value)) for i in items) if n is not None]
-        if agg == "count":
-            out[key] = len(items)
-        elif agg == "mean":
-            out[key] = mean(nums) if nums else 0.0
-        else:  # sum
-            out[key] = sum(nums)
-    return out
+
+    for row in selected:
+        group = row.get(group_column)
+        if group in (None, ""):
+            raise PlanError(f"row {row[row_id_column]} has an empty group")
+        bucket = groups.setdefault(group, {"rows": 0, "values": []})
+        bucket["rows"] += 1
+        if aggregation != "count_rows":
+            bucket["values"].append(
+                _number(
+                    row.get(metric_column),
+                    row_id=row[row_id_column],
+                    column=metric_column,
+                )
+            )
+
+    group_results = []
+    all_values = []
+    for group, bucket in groups.items():
+        values = bucket["values"]
+        if aggregation == "count_rows":
+            value = bucket["rows"]
+        elif aggregation == "sum":
+            value = sum(values)
+            all_values.extend(values)
+        else:
+            value = sum(values) / len(values)
+            all_values.extend(values)
+        group_results.append(
+            {"group": group, "value": value, "rows": bucket["rows"]}
+        )
+
+    group_results.sort(key=lambda item: (-item["value"], str(item["group"])))
+    top = group_results[: plan["top_n"]]
+
+    if aggregation == "count_rows":
+        overall = len(selected)
+        reconciled = sum(item["value"] for item in group_results) == overall
+        other_value = overall - sum(item["value"] for item in top)
+        reconciliation_rule = "sum of all group counts equals selected row count"
+    elif aggregation == "sum":
+        overall = sum(all_values)
+        reconciled = isclose(
+            sum(item["value"] for item in group_results),
+            overall,
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        )
+        other_value = overall - sum(item["value"] for item in top)
+        reconciliation_rule = "sum of all group values equals overall sum"
+    else:
+        overall = sum(all_values) / len(all_values)
+        weighted = sum(item["value"] * item["rows"] for item in group_results)
+        reconciled = isclose(
+            weighted / len(selected),
+            overall,
+            rel_tol=1e-12,
+            abs_tol=1e-12,
+        )
+        other_value = None
+        reconciliation_rule = "weighted group mean equals overall mean"
+
+    return {
+        "question": plan["question"],
+        "metric": metric["name"],
+        "unit": metric["unit"],
+        "rows_read": len(rows),
+        "rows_used": len(selected),
+        "rows_excluded": len(rows) - len(selected),
+        "groups": group_results,
+        "top": top,
+        "overall": overall,
+        "other_value": other_value,
+        "checks": {
+            "row_ids_unique": True,
+            "required_values_valid": True,
+            "reconciled": reconciled,
+            "reconciliation_rule": reconciliation_rule,
+        },
+    }
 
 
-def top_n(d, n=3):
-    """Топ-n пар (ключ, значение) по убыванию значения."""
-    return sorted(d.items(), key=lambda kv: kv[1], reverse=True)[:n]
-
-
-CSV_DEMO = """region,product,amount
-Москва,A,100
-Москва,B,50
-Питер,A,30
-Питер,B,70
-Казань,A,20
+CSV_DEMO = """order_id,quarter,region,status,amount
+o-1,Q2,Москва,paid,100
+o-2,Q2,Москва,paid,50
+o-3,Q2,Питер,paid,30
+o-4,Q2,Питер,refunded,70
+o-5,Q2,Казань,paid,20
+o-6,Q1,Москва,paid,999
 """
 
+DEMO_PLAN = {
+    "question": "Какие регионы принесли больше оплаченной выручки в Q2?",
+    "source": "sales.csv",
+    "grain": "одна строка = один заказ",
+    "row_id": "order_id",
+    "period": "Q2",
+    "filters": {"quarter": "Q2", "status": "paid"},
+    "metric": {
+        "name": "paid_revenue",
+        "column": "amount",
+        "aggregation": "sum",
+        "unit": "RUB",
+    },
+    "group_by": "region",
+    "top_n": 2,
+}
+
+
 if __name__ == "__main__":
-    rows = load_csv(CSV_DEMO)
-    by_region = aggregate(rows, "region", "amount", "sum")
-    print("Выручка по регионам:", by_region)
-    print("Топ-2 региона:", top_n(by_region, 2))
-    print("Средний чек по продукту:", aggregate(rows, "product", "amount", "mean"))
-</code></pre></details><h3>Артефакт</h3><details class="filebox" id="f-phases-05-data-and-analytics-01-ai-as-analyst-outputs-analysis-request-template-md" open><summary><span class="fname">outputs/analysis-request-template.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: шаблон аналитического запроса
+    report = execute_plan(load_csv(CSV_DEMO), DEMO_PLAN)
+    print("Строк прочитано / использовано:", report["rows_read"], "/", report["rows_used"])
+    print("Все группы:", report["groups"])
+    print("Топ-2:", report["top"], "Остальные:", report["other_value"])
+    print("Общий итог:", report["overall"])
+    print("Проверки:", report["checks"])
+</code></pre></details><h3>Артефакт</h3><details class="filebox" id="f-phases-05-data-and-analytics-01-ai-as-analyst-outputs-analysis-request-template-md" open><summary><span class="fname">outputs/analysis-request-template.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: проверяемый аналитический brief
 
-Структурированный запрос к ИИ-аналитику — чтобы ответы были воспроизводимы и проверяемы. Механика плана — [`code/analyze.py`](../code/analyze.py).
+Этот brief — краткий паспорт смысла и исполнения расчёта — фиксирует договорённости до того, как ИИ напишет код. Скопируй шаблон в свою
+папку, замени учебный пример собственным вопросом и приложи исполненный план с
+проверками. Механика офлайн-исполнителя — [`code/analyze.py`](../code/analyze.py).
 
-## Шаблон
+## 1. Решение и граница вопроса
 
+| Поле | Что зафиксировать |
+|---|---|
+| Решение | Какое действие будет принято по результату |
+| Описательный вопрос | Какое число или сравнение нужно получить |
+| Не исследуем | Причины, прогнозы и другие выводы, которых этот расчёт не доказывает |
+| Владелец определения | Кто подтверждает смысл метрики и фильтров |
+
+Если вопрос звучит как «почему продажи упали?» или «что произойдёт дальше?», простой
+групповая агрегация может подготовить наблюдения, но не доказать причину и не дать
+надёжный прогноз.
+
+## 2. Контракт данных
+
+| Поле | Что зафиксировать |
+|---|---|
+| Источник | Имя файла, таблицы или системы |
+| Период | Какие даты или периоды входят |
+| Grain | Что означает одна строка |
+| Row ID | Какая колонка отличает одну единицу наблюдения |
+| Нужные колонки и типы | Название, смысл, ожидаемый тип |
+| Известные ограничения | Пропуски, дубли, неполная выгрузка, часовой пояс, валюта |
+
+Grain проверяется до агрегации. Если одна строка означает позицию заказа, `COUNT(*)`
+считает позиции, а не уникальные заказы.
+
+## 3. Определение метрики
+
+| Поле | Что зафиксировать |
+|---|---|
+| Название | Понятное бизнес-имя |
+| Формула | Например `SUM(amount)` |
+| Фильтры | Какие строки включаются и исключаются |
+| Разрез | По какой колонке сравниваются группы |
+| Единица | Рубли, заказы, проценты, минуты |
+| Top-N | Сколько лидеров показать и как показать остаток |
+
+Колонка `amount` сама по себе не является метрикой. Метрика появляется, когда определены
+формула, фильтры, период и единица результата.
+
+## 4. План исполнения
+
+```python
+PLAN = {
+    "question": "...",
+    "source": "...",
+    "grain": "...",
+    "row_id": "...",
+    "period": "...",
+    "filters": {"column": "expected value"},
+    "metric": {
+        "name": "...",
+        "column": "...",  # для count_rows укажи row_id считаемой единицы
+        "aggregation": "sum | mean | count_rows",
+        "unit": "...",
+    },
+    "group_by": "...",
+    "top_n": 5,
+}
 ```
-# Данные
-{что за таблица, какие колонки и типы, источник, период}
 
-# Вопрос
-{бизнес-вопрос одним предложением}
+ИИ может предложить этот план, но владелец вопроса проверяет его до исполнения. Не проси
+модель угадывать неизвестное определение метрики.
 
-# Метрика
-{что считаем: SUM(amount) = выручка, COUNT(*) = заказы, AVG = средний чек}
+## 5. Проверки результата
 
-# Разрез
-{по чему группируем: регион / месяц / продукт; и фильтры}
+- [ ] Прочитанное число строк совпадает с выгрузкой.
+- [ ] Видно, сколько строк использовано и исключено фильтрами.
+- [ ] Row ID заполнен и уникален согласно заявленному grain.
+- [ ] Нужные колонки существуют, а значения метрики имеют ожидаемый тип.
+- [ ] Для `sum` и `count_rows` итог всех групп сходится с общим итогом.
+- [ ] Для `mean` среднее групп проверяется с весами, а не простым сложением.
+- [ ] Top-N не выдаётся за полный итог: остаток показан отдельно.
+- [ ] Вывод не выходит за границу описательного вопроса.
 
-# Формат ответа
-{таблица топ-N / график / число + вывод одним абзацем}
+## Заполненный учебный пример
 
-# Проверка
-{покажи код/SQL; проверь, что строки не потеряны и суммы сходятся}
+### Вопрос
+
+Какие регионы принесли больше оплаченной выручки в Q2?
+
+### Контракт
+
+| Поле | Значение |
+|---|---|
+| Источник | `sales.csv` |
+| Grain | Одна строка = один заказ |
+| Row ID | `order_id` |
+| Период | `quarter = Q2` |
+| Метрика | `paid_revenue = SUM(amount)` |
+| Фильтры | `quarter = Q2`, `status = paid`; возвраты и другие периоды исключаются |
+| Разрез | `region` |
+| Единица | RUB |
+| Формат | Top-2 региона, остальные отдельно, полный итог и проверки |
+
+### План
+
+```python
+PLAN = {
+    "question": "Какие регионы принесли больше оплаченной выручки в Q2?",
+    "source": "sales.csv",
+    "grain": "одна строка = один заказ",
+    "row_id": "order_id",
+    "period": "Q2",
+    "filters": {"quarter": "Q2", "status": "paid"},
+    "metric": {
+        "name": "paid_revenue",
+        "column": "amount",
+        "aggregation": "sum",
+        "unit": "RUB",
+    },
+    "group_by": "region",
+    "top_n": 2,
+}
 ```
 
-## Пример
+### Ожидаемый результат
 
+| Показатель | Значение |
+|---|---:|
+| Строк прочитано | 6 |
+| Строк использовано | 4 |
+| Москва | 150 |
+| Питер | 30 |
+| Остальные регионы | 20 |
+| Общая оплаченная выручка Q2 | 200 |
+
+Проверка выполняется по всем группам до обрезки top-2:
+
+```text
+150 + 30 + 20 = 200
+top-2 = 180
+other = 20
+180 + 20 = 200
 ```
-# Данные: sales(region, product, amount) за Q2
-# Вопрос: какие регионы дают основную выручку?
-# Метрика: выручка = SUM(amount)
-# Разрез: по region, топ-5
-# Формат: таблица регион→выручка + доля от总
-# Проверка: сумма по регионам = общей выручке
-```
 
-## Правила
-
-- **Метрику определяй явно** — иначе ИИ выберет свою (семантический слой, урок 5.3).
-- **Проси показать код/SQL** — это аудируемость (Code Interpreter, урок 5.2).
-- **Всегда добавляй «Проверку»** — суммы, пропуски, аномалии (урок 5.5).
-- Считай токены на больших данных (урок 1.1) и сэмплируй, если таблица огромна.
-</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+Этот расчёт показывает распределение оплаченной выручки по регионам. Он не доказывает,
+почему один регион сильнее другого и сохранится ли результат в следующем квартале.
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> восемь тестов зелёные; собственный brief фиксирует grain, период, фильтры и определение метрики; AnalysisPlan воспроизводится над CSV; строки read / used / excluded и полный итог видны; top-N сходится через other; студент объясняет, какие выводы расчёт не доказывает. ✅ <strong>Урок готов</strong></p></article>
     <div class="nav-prevnext" id="prevnext"><a href="../../lessons/agent-platforms-openclaw-hermes/"><small>← 4.5</small>Агентные платформы: OpenClaw / Hermes</a><a href="../../lessons/code-interpreter/" style="text-align:right"><small>5.2 →</small>Code Interpreter</a></div>
   </section>
 
   <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
 
   <script>window.__BASE__="../../";</script>
-  <script src="../../data.js?v=6137d04f0cc6"></script>
-  <script src="../../progress.js?v=6137d04f0cc6"></script>
-  <script src="../../header.js?v=6137d04f0cc6"></script>
-  <script src="../../app.js?v=6137d04f0cc6"></script>
+  <script src="../../data.js?v=42ace9bd6238"></script>
+  <script src="../../progress.js?v=42ace9bd6238"></script>
+  <script src="../../header.js?v=42ace9bd6238"></script>
+  <script src="../../app.js?v=42ace9bd6238"></script>
 </body>
 </html>
