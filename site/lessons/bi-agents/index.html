@@ -4,16 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>5.4 BI-агенты — AI Native</title>
-  <meta name="description" content="BI-агент не отвечает одним запросом, а ведёт расследование: обзор → разбивка → причина.">
+  <meta name="description" content="Урок 5.4 курса AI Native: BI-агенты. Практический материал с проверяемым результатом.">
   <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/bi-agents/">
   <meta property="og:type" content="article">
   <meta property="og:title" content="5.4 BI-агенты — AI Native">
-  <meta property="og:description" content="BI-агент не отвечает одним запросом, а ведёт расследование: обзор → разбивка → причина.">
+  <meta property="og:description" content="Урок 5.4 курса AI Native: BI-агенты. Практический материал с проверяемым результатом.">
   <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/bi-agents/">
   <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
   <meta name="twitter:card" content="summary_large_image">
   <script>(function(){try{var t=localStorage.getItem("theme")||"light";document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
-  <link rel="stylesheet" href="../../style.css?v=c3ede7741528">
+  <link rel="stylesheet" href="../../style.css?v=7ef6da12bfd5">
   <!-- Yandex.Metrika counter -->
   <script type="text/javascript">
       (function(m,e,t,r,i,k,a){
@@ -31,121 +31,843 @@
   <section class="container" style="padding-top:24px">
     <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
     <div class="lessonbar" id="lessonbar"></div>
-    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 5.4 · BI-агенты</h1><p><strong>Фаза 5 — Данные и аналитика</strong> · <strong>Результат фазы:</strong> Анализировать данные с ИИ, делать NL→SQL и автоотчёты с валидацией результатов.</p><p><strong>Requires (только для USE IT):</strong> платный API-ключ или доступ к BI-платформе (Genie/Spotter/Hex). BUILD IT работает офлайн, без ключей и без сети.</p><p><strong>В 5.3 ты провёл один вопрос через intent, семантический контракт, SQL и проверку результата. Теперь один запрос станет последовательностью.</strong> На каждом шаге BI-агент должен выбирать согласованные metric IDs и dimensions из того же контракта, а не заново изобретать смысл метрик. Учебный планировщик ниже работает с готовыми строками, чтобы отдельно показать логику выбора следующего шага; при переносе в BI его исполнитель должен оставаться за границей semantic contract 5.3.</p><p><strong>До сих пор один вопрос = один ответ.</strong> Но настоящие бизнес-вопросы так не решаются: «почему упала выручка?» — это не запрос, а <strong>расследование</strong>. BI-агент ведёт его сам: смотрит общую картину, разбивает по разрезам, находит виновника. Это первый агентный цикл в курсе — на знакомых данных.</p><blockquote><strong>MOTTO.</strong> BI-агент не отвечает одним запросом, а ведёт расследование: обзор → разбивка → причина.</blockquote><h2>PROBLEM</h2><p>«Почему упала выручка?» — одним SQL не ответишь. Нужна цепочка: посмотреть общий тренд → разбить по регионам/продуктам/времени → найти сегмент, который тянет вниз → копнуть в него глубже. Человек-аналитик делает это руками, шаг за шагом, решая после каждого результата, куда смотреть дальше.</p><p>BI-агент автоматизирует именно <strong>последовательность шагов</strong>, а не отдельный запрос. Вопрос «как выбрать следующий шаг по результату предыдущего» — это уже агентная логика. Соберём планировщик расследования и увидим, как агент идёт от общего к конкретному.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>BI-агент работает как <strong>детектив</strong>, а не как справочник. Справочник отвечает на один вопрос одним фактом. Детектив начинает с общей картины, сужает круг подозреваемых, идёт по следу к виновнику — каждый следующий шаг зависит от того, что нашли на предыдущем.</p><p>В аналитике «следствие» — это типовая воронка: сначала <strong>обзор</strong> (какой итог вообще), потом <strong>разбивка</strong> по измерению (кто из сегментов сколько даёт), потом <strong>топ-сегмент</strong> (кто доминирует и с какой долей). Дальше можно копнуть в победителя глубже. Так общий вопрос превращается в конкретный ответ «вот этот сегмент и вот почему».</p><h3>Как это работает</h3><pre><code>вопрос → policy выбирает шаг → исполнить → наблюдение → следующий шаг
-   overview → breakdown(по измерению) → top_segment(доля) → [drill-down]</code></pre><p>Это агентный цикл <strong>reason → act → observe</strong> (подробно разберём в Фазе 7), но над данными:</p><ul><li><code>overview</code> — посчитать общий итог метрики (отправная точка).</li><li><code>breakdown</code> — разбить итог по измерению (split-apply-combine из 5.1): <code>{сегмент: число}</code>.</li><li><code>top_segment</code> — найти доминирующий сегмент и его <strong>долю</strong> в итоге (где сконцентрирована метрика).</li></ul><p>В нашем уроке policy (правило выбора шага) <strong>детерминированная</strong> — фиксированная воронка из трёх шагов. В проде следующий шаг выбирает LLM по наблюдению: увидел перекос в регионе — разбивает регион по продуктам, и так далее. Механика одна, разница — кто решает «куда дальше».</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Прогоним <code>investigate</code> по продажам, разрез — <code>region</code>, метрика — <code>amount</code>:</p><pre><code>Москва 150   Питер 100   Казань 20</code></pre><p>Три шага плана:</p><pre><code>1. overview     → total = 150 + 100 + 20 = 270
-2. breakdown    → {Москва: 150, Питер: 100, Казань: 20}   (по region)
-3. top_segment  → max = Москва (150); share = 150 / 270 = 0.556</code></pre><p>Вывод расследования: <strong>большую часть выручки (55.6%) даёт Москва</strong>. От «сколько всего» (270) агент за три шага пришёл к «кто доминирует и насколько» — не одним числом, а цепочкой, которую видно и можно проверить. Дальше человек (или LLM) решает: копнуть в Москву по продуктам или сравнить динамику — это и есть drill-down.</p><h2>BUILD IT</h2><p><strong>Задание: собери BI-агента-планировщика</strong> — функцию <code>investigate</code>, строящую план расследования из трёх шагов. Только стандартная библиотека, без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/5.4-bi-agents/</code>), а файлы урока клади в подпапку <code>code/</code> (по соглашению курса). Нужен только <strong>Python 3</strong> (для теста ещё <code>pytest</code>).</blockquote><p>Создай файл <code>bi_agent.py</code> с функцией <code>investigate(rows, dimension, value)</code>, которая возвращает список из трёх шагов-словарей:</p><ul><li><strong>overview</strong> — <code>{"step": "overview", "total": &lt;сумма value по всем строкам&gt;}</code>.</li><li><strong>breakdown</strong> — <code>{"step": "breakdown", "by": dimension, "values": {сегмент: сумма value}}</code> (агрегация по <code>dimension</code>; пригодится хелпер <code>_aggregate</code>).</li><li><strong>top_segment</strong> — <code>{"step": "top_segment", "segment": &lt;ключ с макс. суммой&gt;, "value": &lt;его сумма&gt;, "share": round(value/total, 3)}</code> (если <code>total == 0</code> → доля <code>0.0</code>).</li></ul><p><strong>Готово, когда</strong> все тесты в <code>test_bi_agent.py</code> зелёные — они проверяют: ровно три шага в порядке overview→breakdown→top_segment; <code>total</code> = 270; breakdown даёт Москва = 150; top_segment = Москва со <code>share = round(150/270, 3)</code>.</p><pre><code>pytest code -q        # красное → реализуй investigate → зелёное
-python code/bi_agent.py # демо: итог 270 → разбивка → топ-сегмент Москва (доля 0.556)</code></pre><p><strong>Подсказка.</strong> Итог — <code>sum(float(r[value]) for r in rows)</code>. Агрегация по измерению — словарь <code>out[r[dimension]] += float(r[value])</code>. Топ-сегмент — <code>max(by_dim.items(), key=lambda kv: kv[1])</code>.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>Готовые BI-агенты ведут расследование поверх семантического слоя (5.3) (обзор и практика):</p><ul><li><strong>Databricks AI/BI Genie</strong> — NL-вопросы к данным под управлением Unity Catalog: возвращает SQL-запрос, таблицу-результат и график. Аналитик курирует пространство «доверенными активами» — примерами SQL-запросов, SQL-выражениями для бизнес-семантики и текстовыми инструкциями под терминологию команды. Это ровно семантический слой из 5.3, поднятый в проде.</li><li><strong>ThoughtSpot Spotter</strong> — агент-аналитик поверх семантической модели (оперирует токенами метрик, а не прямой генерацией SQL), с human-in-the-loop коучингом.</li><li><strong>Hex</strong> — Notebook Agent: NL→SQL/Python прямо в ноутбуке, с диффом и ревью ячеек.</li></ul><p>Общее у всех: семантический слой (5.3) + планирование шагов + объяснимость и governance. ⚠️ Агент ускоряет расследование, но <strong>выводы проверяет человек</strong> (5.5) — агент может пойти по ложному следу.</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Сценарий BI-расследования → <a href="#f-phases-05-data-and-analytics-04-bi-agents-outputs-bi-investigation-playbook-md"><code>outputs/bi-investigation-playbook.md</code></a></p><p>Плейбук расследования (обзор → разрезы → гипотезы → проверка → вывод) под типовой бизнес-вопрос. Дальше: валидация результатов, поиск аномалий и автоотчёты (5.5).</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Ждать ответа одним запросом.</strong> «Почему упало» требует цепочки шагов, а не одного SQL. BI-агент планирует расследование, а не отвечает фактом.</li><li><strong>Останавливаться на топ-сегменте.</strong> Доминирующий сегмент — гипотеза, а не вывод. Доля 55.6% у Москвы говорит «где искать», но причину покажет drill-down внутрь.</li><li><strong>Доверять цепочке агента вслепую.</strong> Агент может пойти по ложному следу (взять не то измерение, перепутать причину и следствие). Вывод проверяет человек (5.5).</li><li><strong>BI-агент без семантического слоя.</strong> Тогда каждый шаг считает метрику по-своему (5.3), и расследование рассыпается. Сначала единые определения, потом агент поверх.</li><li><strong>Путать долю и причинность.</strong> Большая доля сегмента не значит, что он «виноват» в падении — это лишь концентрация метрики. Падение мог дать маленький, но резко просевший сегмент.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="5.4"></div><h2>Дополнительное чтение</h2><ul><li><a href="https://docs.databricks.com/aws/en/genie/" target="_blank" rel="noopener">Databricks — AI/BI Genie</a> — разговорная аналитика над данными.</li><li><a href="https://www.thoughtspot.com/product/agents/spotter" target="_blank" rel="noopener">ThoughtSpot — Spotter</a> — агент-аналитик с governance.</li><li><a href="https://learn.hex.tech/docs/getting-started/ai-overview" target="_blank" rel="noopener">Hex — AI overview</a> — AI-агенты в ноутбуке данных.</li><li><a href="https://arxiv.org/abs/2210.03629" target="_blank" rel="noopener">Yao et al., 2022 — ReAct</a> — reason + act: как агент выбирает шаги анализа (основа Build It урока).</li><li><a href="https://arxiv.org/abs/2402.18679" target="_blank" rel="noopener">Hong et al., 2024 — Data Interpreter</a> — LLM-агент для data science: иерархическая декомпозиция задачи на подшаги.</li><li><a href="https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-analyst" target="_blank" rel="noopener">Snowflake — Cortex Analyst</a> — BI-агент на семантической модели (YAML): NL→SQL; честно документирует лимиты (нет памяти между запросами).</li><li><a href="https://arxiv.org/abs/2401.05507" target="_blank" rel="noopener">Hu et al., 2024 — InfiAgent-DABench</a> — первый бенчмарк для агентов анализа данных (как измерять BI-агента; ICML 2024).</li><li><a href="https://arxiv.org/abs/2510.04023" target="_blank" rel="noopener">Rahman et al., 2025 — LLM-Based Data Science Agents: A Survey</a> — свежий обзор: таксономия агентов по 6 стадиям DS-процесса.</li><li><a href="https://medium.com/data-science-collective/building-an-agentic-analytics-system-bc7e8fcd058d" target="_blank" rel="noopener">Fangyu Lo — Building an Agentic Analytics System (Medium)</a> — практика мульти-агентной аналитики: разбиение работы на шаги, баланс точность/латентность.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Если делегируешь ИИ, реши, что отдаёшь; опиши задачу и критерии; проверь результат; сохрани ответственность за итог.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-05-data-and-analytics-04-bi-agents-code-test-bi-agent-py" open data-test="1"><summary><span class="fname">code/test_bi_agent.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from bi_agent import investigate, DEMO
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 5.4 · BI-агенты</h1><p><strong>Фаза 5 — Данные и аналитика</strong> · <strong>Результат фазы:</strong> Анализировать данные с ИИ, делать NL→SQL и автоотчёты с валидацией результатов.</p><p><strong>Результат урока:</strong> после урока студент сможет задать ограниченный цикл BI-расследования, в котором следующее аналитическое намерение (<code>intent</code>) выбирается по предыдущему наблюдению; проверить каждый intent по semantic contract; остановить цикл при неподтверждённой посылке, несходящихся данных или исчерпанном бюджете; передать человеку воспроизводимый trace без выдуманной причинности.</p><p><strong>Опоры:</strong> в 5.3 один вопрос прошёл путь <code>question → intent → semantic contract → SQL → result → review</code>. · <strong>Дальше:</strong> в 5.5 наблюдения и вывод из trace пройдут автоматическую валидацию, проверку на аномалии и подготовку к отчёту.</p><p><strong>Requires:</strong> для обязательной практики нужны только Python 3 и его стандартная библиотека. API-ключ, сеть, BI-платформа, установленный <code>pytest</code> и клонирование курса не нужны. Для USE IT подойдёт любой доступный AI-инструмент; без него можно разобрать готовые предложения из урока.</p><blockquote><strong>Главная мысль.</strong> BI-агент не получает право задавать базе любые вопросы. Он выбирает следующий <strong>разрешённый intent</strong> по проверенному observation, сохраняет trace и останавливается по явной причине. Trace локализует изменение, но не доказывает его причину.</blockquote><h2>PROBLEM</h2><p>В 5.3 мы ответили на один конкретный вопрос:</p><blockquote>Какие регионы принесли больше оплаченной выручки в Q2?</blockquote><p>Проверенный результат был:</p><pre><code>Москва 150
+Питер   30
+Казань  20
+Итого  200 RUB</code></pre><p>Теперь приходит другой вопрос:</p><blockquote>Почему <code>paid_revenue</code> снизилась в Q2 относительно Q1?</blockquote><p>Одного запроса здесь недостаточно. Сначала нужно проверить, <strong>было ли падение вообще</strong>. Если оно подтвердилось — разложить изменение по регионам. Затем выбрать регион с наибольшим отрицательным вкладом и углубиться по следующему разрешённому измерению. После каждого результата маршрут может измениться или закончиться.</p><p>Наивная автоматизация часто делает иначе:</p><ol><li>верит формулировке пользователя и не проверяет, что метрика действительно упала;</li><li>выбирает крупнейший сегмент текущего периода;</li><li>придумывает для него правдоподобную причину;</li><li>продолжает выполнять запросы без понятного лимита.</li></ol><p>Так получается длинный, дорогой и уверенно неверный рассказ. Нам нужен управляемый цикл, где решение о следующем шаге наблюдаемо и проверяемо.</p><h2>Сначала уточним границу вопроса «почему»</h2><p>В разговорной речи «почему упала выручка?» может означать два разных вопроса:</p><ol><li><strong>Где сосредоточено изменение?</strong> Какой период, регион или продукт дал основной отрицательный вклад?</li><li><strong>Каков причинный механизм?</strong> Изменились цена, остатки, трафик, конверсия, клиенты или действия команды?</li></ol><p>Этот урок решает первый вопрос. Мы локализуем изменение:</p><pre><code>общий спад → регион с наибольшим отрицательным вкладом → продукт внутри региона</code></pre><p>Но данных о цене, остатках, трафике или действиях команды у нас нет. Поэтому фраза «падение сосредоточено в Питере и продукте Pro» допустима, а «Pro закончился на складе» — уже неподтверждённая гипотеза.</p><h2>CONCEPT</h2><h3>Что здесь называется BI-агентом</h3><p><strong>BI</strong> — business intelligence: получение и объяснение бизнес-показателей по данным.</p><p>В рамках урока <strong>BI-агент</strong> — это не чат и не название конкретного продукта. Это управляющий цикл, который:</p><ol><li>хранит состояние расследования;</li><li>выбирает одно действие из разрешённого каталога;</li><li>передаёт структурированный intent доверенному исполнителю;</li><li>получает observation;</li><li>решает, продолжать или остановиться;</li><li>сохраняет trace для проверки человеком.</li></ol><p>Модель может помогать предложить следующий intent, но правила допустимости, исполнение и условия остановки не должны зависеть только от убедительности её текста.</p><h3>Новые термины</h3><p><strong>State</strong> — состояние расследования: исходный вопрос, Metric ID, сравниваемые периоды, версия semantic contract и уже выполненные шаги.</p><p><strong>Action</strong> — разрешённый тип аналитического действия. В уроке их два: <code>compare_periods</code> и <code>breakdown_delta</code>.</p><p><strong>Intent</strong> — структурированное описание конкретного действия. Как и в 5.3, это ещё не SQL и не результат.</p><p><strong>Executor</strong> — доверенный исполнитель. Он проверяет intent и получает observation. В проде за этой границей могут находиться компилятор 5.3, read-only БД или BI-платформа. В учебном примере executor работает с заранее проверенными фактами, чтобы мы изучали именно выбор шагов, а не повторяли SQL.</p><p><strong>Observation</strong> — наблюдаемый результат исполненного intent: значения, изменения, сегменты, единица и версия контракта.</p><p><strong>Policy</strong> — правило выбора следующего действия по state и observation. Учебная policy детерминирована: одинаковый trace всегда приводит к одинаковому решению. Это позволяет проверить механизм тестами.</p><p><strong>Trace</strong> — журнал исполненных шагов. В нём сохраняются intent, короткое основание выбора и observation. Trace нужен, чтобы другой человек мог восстановить путь к выводу.</p><p><strong>Step budget</strong> — максимальное число разрешённых исполнений. Бюджет защищает от бесконечного или слишком широкого исследования.</p><p><strong>Stop condition</strong> — явная причина закончить цикл. Остановка бывает успешной (<code>ready_for_review</code>) или защитной (<code>premise_not_supported</code>, <code>insufficient_data</code>, <code>observation_mismatch</code>, <code>step_budget_exhausted</code>).</p><h3>Центральный цикл</h3><pre><code>state
+  ↓
+policy выбирает разрешённый intent или stop
+  ↓
+executor проверяет и исполняет intent
+  ↓
+observation
+  ↓
+trace обновляется
+  └──────────────→ policy выбирает следующий intent или stop</code></pre><p>Это частный случай цикла <code>reason → act → observe</code>, который подробно появится в Фазе 7. Сейчас важно не название, а проверяемая механика:</p><ul><li><strong>reason:</strong> коротко зафиксировать, какое наблюдение требует следующего действия;</li><li><strong>act:</strong> исполнить только разрешённый intent;</li><li><strong>observe:</strong> получить результат с происхождением и версией;</li><li>затем снова принять решение.</li></ul><p>В trace не нужно сохранять скрытые рассуждения модели. Достаточно проверяемого основания: «delta отрицательна, поэтому разложить по region».</p><h2>Semantic contract 1.1</h2><p>Определение метрики из 5.3 не меняется:</p><pre><code>Metric ID: paid_revenue
+Определение: SUM(amount) для status=paid
+Единица: RUB</code></pre><p>Для нового расследования контракт получает версию <code>1.1</code>: в сценарий добавлено измерение <code>product</code>.</p><pre><code>SEMANTIC = {
+    "version": "1.1",
+    "metric_ids": {
+        "paid_revenue": {
+            "unit": "RUB",
+            "required_filter": {"status": "paid"},
+        }
+    },
+    "periods": ["Q1", "Q2"],
+    "dimension_ids": ["region", "product"],
+    "investigation_order": ["region", "product"],
+}</code></pre><p>Версия важна по двум причинам:</p><ol><li>старый trace можно интерпретировать по тем определениям, с которыми он был получен;</li><li>агент не подменяет контракт незаметно, когда ему понадобилось новое измерение.</li></ol><p><code>product</code> добавлен явно. Агент не имеет права сам придумать <code>manager_email</code>, <code>channel</code> или другую колонку только потому, что она кажется полезной.</p><h2>Каталог действий</h2><h3>1. <code>compare_periods</code></h3><p>Проверяет исходную посылку:</p><pre><code>{
+  "action": "compare_periods",
+  "metric_id": "paid_revenue",
+  "baseline": "Q1",
+  "focus": "Q2",
+  "group_by": null,
+  "filters": {},
+  "semantic_version": "1.1"
+}</code></pre><p>Observation содержит:</p><pre><code>baseline_value
+focus_value
+delta = focus_value - baseline_value</code></pre><p>Если <code>delta &gt;= 0</code>, падение не подтвердилось. Правильное действие — остановиться, а не искать «виновника» вопреки данным.</p><h3>2. <code>breakdown_delta</code></h3><p>Разлагает изменение текущего среза по одному разрешённому измерению:</p><pre><code>{
+  "action": "breakdown_delta",
+  "metric_id": "paid_revenue",
+  "baseline": "Q1",
+  "focus": "Q2",
+  "group_by": "product",
+  "filters": {"region": "Питер"},
+  "semantic_version": "1.1"
+}</code></pre><p>Для каждого сегмента executor возвращает значение baseline, значение focus и разность. Сумма сегментных <code>delta</code> должна совпадать с <code>delta</code> всего среза. Иначе доказательная цепочка прерывается.</p><h2>РАЗБОР ПО ШАГАМ</h2><h3>Перед расчётом сделайте прогноз</h3><p>Из предыдущего урока известно, что в Q2:</p><pre><code>Москва 150
+Питер   30
+Казань  20</code></pre><p>Можно ли уже решить, какой регион дал основной вклад в падение?</p><p>Нет. Москва крупнейшая в Q2, но мы не знаем её значение в Q1. Для вклада в изменение нужны <strong>два периода</strong>, а не только текущий размер.</p><h3>Шаг 1. Проверяем посылку</h3><p>Executor возвращает:</p><table><thead><tr><th>Период</th><th><code>paid_revenue</code></th></tr></thead><tbody><tr><td>Q1</td><td>270</td></tr><tr><td>Q2</td><td>200</td></tr></tbody></table><pre><code>delta = 200 - 270 = -70 RUB</code></pre><p>Падение подтвердилось. Значение Q2 = 200 — тот же проверенный итог, что в 5.1–5.3. Значение Q1 = 270 — новый baseline этого сценария. Его нельзя путать со старым ошибочным расчётом Q2 = 270 без фильтра <code>status=paid</code> из 5.2.</p><p>Policy теперь имеет основание для следующего шага:</p><pre><code>observation: delta &lt; 0
+decision: breakdown_delta по первому разрешённому измерению region</code></pre><h3>Шаг 2. Разлагаем падение по регионам</h3><table><thead><tr><th>Регион</th><th>Q1</th><th>Q2</th><th>Изменение</th></tr></thead><tbody><tr><td>Москва</td><td>170</td><td>150</td><td>−20</td></tr><tr><td>Питер</td><td>80</td><td>30</td><td><strong>−50</strong></td></tr><tr><td>Казань</td><td>20</td><td>20</td><td>0</td></tr><tr><td><strong>Итого</strong></td><td><strong>270</strong></td><td><strong>200</strong></td><td><strong>−70</strong></td></tr></tbody></table><p>Проверка:</p><pre><code>-20 + -50 + 0 = -70</code></pre><p>Декомпозиция сходится с общим изменением. Самая большая выручка Q2 по-прежнему у Москвы, но самый отрицательный вклад — у Питера. Поэтому policy фиксирует <code>region="Питер"</code> и выбирает следующее разрешённое измерение <code>product</code>.</p><h3>Шаг 3. Детализируем Питер по продуктам</h3><table><thead><tr><th>Продукт</th><th>Q1</th><th>Q2</th><th>Изменение</th></tr></thead><tbody><tr><td>Basic</td><td>30</td><td>20</td><td>−10</td></tr><tr><td>Pro</td><td>50</td><td>10</td><td><strong>−40</strong></td></tr><tr><td><strong>Питер целиком</strong></td><td><strong>80</strong></td><td><strong>30</strong></td><td><strong>−50</strong></td></tr></tbody></table><p>Проверка:</p><pre><code>-10 + -40 = -50</code></pre><p>Разрешённые уровни детализации закончились, а бюджет трёх исполнений израсходован. Policy возвращает <code>ready_for_review</code>.</p><h3>Что именно найдено</h3><pre><code>paid_revenue: Q1 270 → Q2 200, delta −70
+└── region=Питер, delta −50
+    └── product=Pro, delta −40</code></pre><p>Допустимый вывод:</p><blockquote>Падение оплаченной выручки на 70 RUB в основном локализовано в Питере (−50 RUB), а внутри Питера — в продукте Pro (−40 RUB).</blockquote><p>Недопустимый вывод:</p><blockquote>Выручка упала, потому что в Питере закончился Pro.</blockquote><p>Trace не содержит остатков. Он показывает <strong>где искать причину</strong>, но не подменяет причинное доказательство.</p><h2>Как policy принимает решения</h2><table><thead><tr><th>Observation</th><th>Следующее решение</th></tr></thead><tbody><tr><td>Trace пуст</td><td><code>compare_periods</code></td></tr><tr><td>Общий <code>delta &gt;= 0</code></td><td><code>premise_not_supported</code></td></tr><tr><td>Общий <code>delta &lt; 0</code></td><td><code>breakdown_delta</code> по <code>region</code></td></tr><tr><td>Вклады сегментов не сходятся с delta среза</td><td><code>observation_mismatch</code></td></tr><tr><td>Сегментов нет</td><td><code>insufficient_data</code></td></tr><tr><td>Есть отрицательный вклад и следующее измерение</td><td>зафиксировать сегмент фильтром и продолжить</td></tr><tr><td>Разрешённые измерения закончились</td><td><code>ready_for_review</code></td></tr><tr><td>Следующий intent превысит лимит</td><td><code>step_budget_exhausted</code></td></tr></tbody></table><p>Это не универсальная стратегия всей аналитики. Это маленькая проверяемая policy для одного класса вопросов: сравнить два периода и локализовать отрицательный вклад по заранее разрешённой иерархии.</p><h2>Почему BUILD IT здесь нужен</h2><p>В 5.1 код считал агрегаты. В 5.3 код проверял intent и строил SQL. Здесь новый механизм — <strong>управляющее ветвление</strong>:</p><ul><li>observation меняет следующий intent;</li><li>некоторые observations запрещают продолжение;</li><li>каждый исполненный шаг расходует бюджет;</li><li>trace сохраняет путь;</li><li>результатом может быть безопасная остановка, а не только «успех».</li></ul><p>Такое поведение лучше всего сделать наблюдаемым исполняемым кодом и проверить тестами. Если оставить только схему или текстовый плейбук, легко снова получить фиксированную последовательность, которая лишь называется агентом.</p><h2>BUILD IT</h2><p><strong>Задание:</strong> соберите детерминированный планировщик BI-расследования. Доверенный <code>execute_intent()</code> и учебные факты уже даны как инфраструктура примера; центральная работа — реализовать <code>choose_next_action()</code> и цикл <code>investigate()</code>.</p><p>Работайте в созданной в фазе 0 личной папке:</p><pre><code>ai-native-work/
+└── course-work/
+    └── phase-5/
+        └── bi-agents/
+            └── code/</code></pre><p>Клонировать репозиторий курса не нужно. Скопируйте со страницы:</p><pre><code>code/test_bi_agent.py
+code/bi_agent.py</code></pre><p>Если хотите пройти упражнение самостоятельно, сначала оставьте в <code>bi_agent.py</code> готовыми только:</p><ul><li><code>SEMANTIC</code> и <code>DEMO_FACTS</code>;</li><li><code>_validate_intent()</code> и <code>execute_intent()</code>;</li><li>сигнатуры <code>choose_next_action()</code> и <code>investigate()</code>.</li></ul><p>Затем восстановите policy и цикл по тестам.</p><h3>Контракт <code>choose_next_action</code></h3><p>Функция получает:</p><ul><li><code>state</code> — вопрос, метрику, baseline, focus и версию;</li><li><code>trace</code> — уже исполненные intents и observations;</li><li><code>semantic</code> — разрешённые метрики, периоды и порядок измерений.</li></ul><p>Она возвращает одно из двух решений:</p><pre><code>{"kind": "intent", "intent": {...}, "reason": "..."}</code></pre><p>или:</p><pre><code>{"kind": "stop", "status": "...", "reason": "..."}</code></pre><h3>Контракт <code>investigate</code></h3><p>Цикл:</p><ol><li>спрашивает policy о следующем решении;</li><li>проверяет step budget;</li><li>передаёт intent executor;</li><li>записывает intent, краткое основание и observation в trace;</li><li>повторяет до явного <code>stop</code>.</li></ol><p>Итог содержит:</p><pre><code>status
+reason
+state
+trace
+finding</code></pre><p><code>finding</code> появляется только при <code>ready_for_review</code>. Защитная остановка не должна маскироваться под законченный вывод.</p><h3>Сначала предскажите тесты</h3><p>До запуска ответьте:</p><ol><li>Почему первый intent всегда <code>compare_periods</code>?</li><li>Какой регион выберет policy: крупнейший в Q2 или давший самый отрицательный delta?</li><li>Что произойдёт, если Q2 окажется больше Q1?</li><li>Можно ли исполнить <code>group_by="manager_email"</code>?</li><li>Почему при сумме вкладов <code>−60</code> и общем delta <code>−70</code> нельзя продолжать?</li><li>Выполнится ли третий intent при <code>max_steps=2</code>?</li></ol><h3>Запуск</h3><pre><code>cd ai-native-work/course-work/phase-5/bi-agents
+python3 -m unittest discover -s code -p 'test_*.py' -v
+python3 code/bi_agent.py</code></pre><p>Ожидаемо проходят одиннадцать тестов. Демонстрация заканчивается:</p><pre><code>status: ready_for_review
+total_delta: -70
+region: Питер, delta -50
+product: Pro, delta -40</code></pre><p>Тесты также проверяют:</p><ul><li>правильный Q2 = 200;</li><li>совпадение суммы региональных вкладов с <code>−70</code>;</li><li>отличие крупнейшего текущего сегмента от крупнейшего падения;</li><li>остановку, если падения нет;</li><li>отказ для неизвестной метрики и измерения;</li><li>step budget;</li><li>пустую декомпозицию;</li><li>несходящееся observation;</li><li>версию semantic contract и основание policy в trace.</li></ul><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, доступны тесты-ТЗ, эталон и способ делегировать реализацию ИИ с последующей самостоятельной проверкой.</p><h2>USE IT</h2><p>Цель USE IT — не познакомиться с тремя интерфейсами, а проверить границу между предложением модели и исполнением.</p><p>Используйте любой доступный AI-инструмент. Данные и доступ к БД передавать не нужно. Дайте модели:</p><ul><li>semantic contract <code>1.1</code>;</li><li>каталог <code>compare_periods</code> / <code>breakdown_delta</code>;</li><li>текущий trace;</li><li>step budget;</li><li>требование вернуть только следующий intent или <code>stop</code>.</li></ul><p>Пример задания:</p><pre><code>Ты предлагаешь следующий шаг BI-расследования.
+
+Разрешены только:
+1) compare_periods;
+2) breakdown_delta по region, затем product.
+
+Metric ID: paid_revenue.
+Baseline: Q1. Focus: Q2.
+Semantic version: 1.1.
+Максимум: 3 исполненных шага.
+
+Текущий observation:
+Q1=270, Q2=200, delta=-70 RUB.
+
+Верни JSON:
+{
+  "decision": "intent" | "stop",
+  "intent": {...} | null,
+  "reason": "одно проверяемое предложение"
+}
+Не пиши SQL и не придумывай новые поля.</code></pre><p>Проверь ответ до исполнения:</p><ol><li>действие входит в каталог;</li><li><code>metric_id</code>, периоды и версия не изменились;</li><li><code>group_by</code> входит в разрешённые Dimension ID;</li><li>фильтры появились только из предыдущего observation;</li><li>следующий шаг не превышает бюджет;</li><li>краткое основание ссылается на наблюдение, а не на догадку.</li></ol><p>Повторите для трёх случаев:</p><table><thead><tr><th>Случай</th><th>Правильное решение</th></tr></thead><tbody><tr><td>Q1=270, Q2=200</td><td>разложить delta по <code>region</code></td></tr><tr><td>Питер дал −50, доступны продукты</td><td><code>region=Питер</code>, group by <code>product</code></td></tr><tr><td>Q1=270, Q2=280</td><td><code>stop: premise_not_supported</code></td></tr></tbody></table><p>Если AI-инструмента нет, самостоятельно составьте три JSON-решения по таблице policy. Навык урока — проверить следующий intent, а не получить доступ к конкретному провайдеру.</p><p>Если у вас уже есть BI-платформа, можно повторить те же случаи в ней и сравнить: видны ли metric ID, SQL или другой исполняемый план, источники данных, история шагов, условия остановки и возможность человеческого ревью. Это необязательная ветка.</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> проверяемый плейбук BI-расследования → <a href="#f-phases-05-data-and-analytics-04-bi-agents-outputs-bi-investigation-playbook-md"><code>outputs/bi-investigation-playbook.md</code></a></p><p>В артефакте зафиксированы:</p><ul><li>паспорт вопроса и semantic contract;</li><li>каталог разрешённых действий;</li><li>таблица решений policy;</li><li>step budget и stop conditions;</li><li>эталонный trace;</li><li>сверки вкладов;</li><li>evidence path;</li><li>граница между локализацией изменения и причиной;</li><li>передача проверок в 5.5.</li></ul><p>Это не копия кода. Код доказывает поведение планировщика, а плейбук делает правила расследования понятными аналитику, владельцу метрики и ревьюеру.</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Верить посылке вопроса.</strong> Сначала проверьте, что метрика действительно снизилась. Если Q2 больше Q1, поиск причины падения должен остановиться.</li><li><strong>Выбирать крупнейший текущий сегмент.</strong> Размер отвечает на «кто больше сейчас», delta — на «кто внёс вклад в изменение». Для расследования падения нужен второй вопрос.</li><li><strong>Исполнять произвольный следующий запрос.</strong> Любопытное измерение не становится разрешённым автоматически. Сначала меняется и версионируется semantic contract.</li><li><strong>Не сверять декомпозицию.</strong> Если вклады сегментов не сходятся с родительским delta, следующий шаг лишь унесёт ошибку глубже.</li><li><strong>Продолжать без бюджета.</strong> Неограниченный drill-down повышает стоимость и вероятность ложного следа. Исчерпанный бюджет — нормальная причина передать trace человеку.</li><li><strong>Называть вклад причиной.</strong> <code>Питер → Pro</code> локализует изменение, но не сообщает, что случилось с ценой, наличием, спросом или клиентами.</li><li><strong>Скрывать защитную остановку.</strong> <code>insufficient_data</code> и <code>observation_mismatch</code> нельзя оформлять как готовый аналитический вывод.</li><li><strong>Сохранять только финальную фразу.</strong> Без intent, observation, версии и основания следующий человек не сможет проверить путь.</li></ul><h2>Что сознательно не входит в урок</h2><ul><li>свободная генерация SQL — intent→SQL уже разобран в 5.3;</li><li>доказательство причинности — для него нужны дополнительные данные и дизайн проверки;</li><li>универсальное планирование LLM-агента — это Фаза 7;</li><li>подключение к реальной БД через MCP — это Фаза 6;</li><li>расписание, алерты и автоотчёт — следующий урок 5.5;</li><li>настройка конкретной BI-платформы — это необязательный инструментальный маршрут.</li></ul><h2>Переход в 5.5</h2><p>Сейчас у нас есть не одна цифра, а доказательная цепочка:</p><pre><code>общий delta −70
+→ регионы сходятся в −70
+→ Питер даёт −50
+→ продукты Питера сходятся в −50
+→ Pro даёт −40</code></pre><p>Но пока мы доверяем самим observations. В 5.5 проверим:</p><ul><li>совпадает ли Q2 с контрольным итогом <code>200</code>;</li><li>не потерялись ли сегменты;</li><li>выполняются ли арифметические и бизнес-инварианты;</li><li>нет ли аномальных значений;</li><li>можно ли собирать отчёт или нужен алерт человеку.</li></ul><p>Так trace 5.4 становится входом для автоматической проверки, а не красивой историей, которую остаётся принять на веру.</p><h2>ПРОВЕРЬ СЕБЯ</h2><p>Вопросы проверяют выбор следующего шага, безопасную остановку, разрешённые измерения, границу причинности, сверку декомпозиции и step budget.</p><div class="quiz-section" data-lesson="5.4"></div><h2>Дополнительное чтение</h2><p>Читать весь список не требуется. Выберите ветку по своему вопросу: сравнить учебный агент с продуктами, изучить human-in-the-loop, углубиться в архитектуру или разобраться в оценке качества.</p><h3>Продуктовые реализации</h3><ul><li><a href="https://docs.databricks.com/aws/en/genie-agents/concepts" target="_blank" rel="noopener">Databricks — Genie Agents concepts</a> — посмотрите разделы про Agent mode, trusted assets и benchmarks: это промышленный пример многошагового анализа с проверяемыми опорами.</li><li><a href="https://www.thoughtspot.com/product/agents/spotter" target="_blank" rel="noopener">ThoughtSpot — Spotter</a> — продуктовый пример агента над управляемым семантическим слоем; полезен для сравнения traceability и governance, но не является руководством по архитектуре.</li><li><a href="https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-analyst" target="_blank" rel="noopener">Snowflake — Cortex Analyst</a> — полезный контраст с агентом урока: история диалога передаётся между запросами явно, результаты предыдущих SQL недоступны, а ответы ограничены вопросами, разрешимыми через SQL.</li></ul><h3>Человек в контуре</h3><ul><li><a href="https://learn.hex.tech/tutorials/ai-best-practices/notebook-agent-best-practices" target="_blank" rel="noopener">Hex — Notebook Agent best practices</a> — практика ревью предложенных изменений через diff, ограничения стоимости запросов и передачи агенту метаданных и правил.</li></ul><h3>Архитектуры аналитических агентов</h3><ul><li><a href="https://arxiv.org/abs/2210.03629" target="_blank" rel="noopener">Yao et al., 2022 — ReAct</a> — концептуальный предшественник цикла «действие → наблюдение»; сравните свободное чередование рассуждений и действий с детерминированной policy и явным trace из урока.</li><li><a href="https://arxiv.org/abs/2402.18679" target="_blank" rel="noopener">Hong et al., 2024 — Data Interpreter</a> — более широкая архитектура для сквозных data science-задач с динамической декомпозицией и проверкой подзадач.</li><li><a href="https://medium.com/data-science-collective/building-an-agentic-analytics-system-bc7e8fcd058d" target="_blank" rel="noopener">Fangyu Lo — Building an Agentic Analytics System</a> — практический опыт автора, а не нормативная схема: явное состояние, гибридная маршрутизация, лимиты и передача выполненного SQL пользователю для проверки.</li></ul><h3>Оценка качества и обзор области</h3><ul><li><a href="https://arxiv.org/abs/2401.05507" target="_blank" rel="noopener">Hu et al., 2024 — InfiAgent-DABench</a> — пример воспроизводимой оценки data analysis-агентов: 257 задач на 52 CSV и формат для автоматической проверки ответов.</li><li><a href="https://arxiv.org/abs/2510.04023" target="_blank" rel="noopener">Rahman et al., 2025 — LLM-Based Data Science Agents: A Survey</a> — обзор 45 систем по шести стадиям data science, планированию, инструментам, governance и оценке; работа находится на рецензировании.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Если делегируешь ИИ, реши, что отдаёшь; опиши задачу и критерии; проверь результат; сохрани ответственность за итог.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-05-data-and-analytics-04-bi-agents-code-test-bi-agent-py" open data-test="1"><summary><span class="fname">code/test_bi_agent.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>import unittest
+
+from bi_agent import (
+    SEMANTIC,
+    choose_next_action,
+    execute_intent,
+    investigate,
+)
 
 
-def test_plan_has_three_steps():
-    steps = investigate(DEMO, "region", "amount")
-    assert [s["step"] for s in steps] == ["overview", "breakdown", "top_segment"]
+QUESTION = "Почему paid_revenue снизилась в Q2 относительно Q1?"
 
 
-def test_overview_total_is_sum():
-    steps = investigate(DEMO, "region", "amount")
-    assert steps[0]["total"] == 270
+class BiAgentTest(unittest.TestCase):
+    def test_period_comparison_preserves_phase_numbers(self):
+        observation = execute_intent(
+            {
+                "action": "compare_periods",
+                "metric_id": "paid_revenue",
+                "baseline": "Q1",
+                "focus": "Q2",
+                "group_by": None,
+                "filters": {},
+                "semantic_version": "1.1",
+            }
+        )
+        self.assertEqual(observation["baseline_value"], 270)
+        self.assertEqual(observation["focus_value"], 200)
+        self.assertEqual(observation["delta"], -70)
 
+    def test_region_breakdown_reconciles_with_total_delta(self):
+        observation = execute_intent(
+            {
+                "action": "breakdown_delta",
+                "metric_id": "paid_revenue",
+                "baseline": "Q1",
+                "focus": "Q2",
+                "group_by": "region",
+                "filters": {},
+                "semantic_version": "1.1",
+            }
+        )
+        deltas = {row["segment"]: row["delta"] for row in observation["segments"]}
+        self.assertEqual(deltas, {"Казань": 0, "Москва": -20, "Питер": -50})
+        self.assertEqual(sum(deltas.values()), observation["delta"])
 
-def test_breakdown_aggregates_by_dimension():
-    steps = investigate(DEMO, "region", "amount")
-    assert steps[1]["values"]["Москва"] == 150
+    def test_full_investigation_chooses_piter_then_pro(self):
+        result = investigate(QUESTION)
+        self.assertEqual(result["status"], "ready_for_review")
+        self.assertEqual(
+            [step["intent"]["action"] for step in result["trace"]],
+            ["compare_periods", "breakdown_delta", "breakdown_delta"],
+        )
+        self.assertEqual(result["trace"][1]["intent"]["group_by"], "region")
+        self.assertEqual(result["trace"][2]["intent"]["group_by"], "product")
+        self.assertEqual(result["trace"][2]["intent"]["filters"], {"region": "Питер"})
+        self.assertEqual(
+            result["finding"]["path"],
+            [
+                {"dimension": "region", "segment": "Питер", "delta": -50},
+                {"dimension": "product", "segment": "Pro", "delta": -40},
+            ],
+        )
 
+    def test_largest_current_segment_is_not_confused_with_largest_drop(self):
+        result = investigate(QUESTION)
+        region_observation = result["trace"][1]["observation"]
+        q2_values = {
+            row["segment"]: row["focus_value"]
+            for row in region_observation["segments"]
+        }
+        self.assertEqual(max(q2_values, key=q2_values.get), "Москва")
+        self.assertEqual(result["finding"]["path"][0]["segment"], "Питер")
 
-def test_top_segment_and_share():
-    top = investigate(DEMO, "region", "amount")[2]
-    assert top["segment"] == "Москва"
-    assert top["value"] == 150
-    assert top["share"] == round(150 / 270, 3)
-</code></pre></details><h3>Эталонное решение</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-05-data-and-analytics-04-bi-agents-code-bi-agent-py"><summary><span class="fname">code/bi_agent.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""BI-агент: выбирает шаги анализа — Build It для урока 5.4.
+    def test_no_decline_stops_after_comparison(self):
+        def no_decline_executor(intent):
+            return {
+                "kind": "period_comparison",
+                "metric_id": "paid_revenue",
+                "baseline": "Q1",
+                "focus": "Q2",
+                "baseline_value": 270,
+                "focus_value": 280,
+                "delta": 10,
+                "unit": "RUB",
+                "filters": {},
+                "semantic_version": intent["semantic_version"],
+            }
 
-Без зависимостей. Агент-планировщик строит план BI-расследования (обзор →
-разбивка по измерению → топ-сегмент с долей) и исполняет его на данных.
-Policy детерминированная (офлайн); в USE IT шаги выбирает LLM (Genie/Spotter/Hex).
-"""
+        result = investigate(QUESTION, executor=no_decline_executor)
+        self.assertEqual(result["status"], "premise_not_supported")
+        self.assertEqual(len(result["trace"]), 1)
 
+    def test_unknown_metric_is_rejected_before_execution(self):
+        with self.assertRaisesRegex(ValueError, "unknown metric_id"):
+            investigate(QUESTION, metric_id="gross_revenue")
 
-def _aggregate(rows, group_by, value):
-    out = {}
-    for r in rows:
-        out[r[group_by]] = out.get(r[group_by], 0.0) + float(r[value])
-    return out
+    def test_unknown_dimension_is_rejected_by_executor(self):
+        with self.assertRaisesRegex(ValueError, "unknown group_by dimension"):
+            execute_intent(
+                {
+                    "action": "breakdown_delta",
+                    "metric_id": "paid_revenue",
+                    "baseline": "Q1",
+                    "focus": "Q2",
+                    "group_by": "manager_email",
+                    "filters": {},
+                    "semantic_version": "1.1",
+                }
+            )
 
+    def test_step_budget_stops_before_unapproved_extra_query(self):
+        result = investigate(QUESTION, max_steps=2)
+        self.assertEqual(result["status"], "step_budget_exhausted")
+        self.assertEqual(len(result["trace"]), 2)
 
-def investigate(rows, dimension, value):
-    """План расследования: overview → breakdown → top_segment. Возвращает шаги."""
-    total = sum(float(r[value]) for r in rows)
-    by_dim = _aggregate(rows, dimension, value)
-    top_key, top_val = max(by_dim.items(), key=lambda kv: kv[1])
-    return [
-        {"step": "overview", "total": total},
-        {"step": "breakdown", "by": dimension, "values": by_dim},
-        {"step": "top_segment", "segment": top_key, "value": top_val,
-         "share": round(top_val / total, 3) if total else 0.0},
-    ]
+    def test_empty_breakdown_stops_as_insufficient_data(self):
+        comparison = execute_intent(
+            {
+                "action": "compare_periods",
+                "metric_id": "paid_revenue",
+                "baseline": "Q1",
+                "focus": "Q2",
+                "group_by": None,
+                "filters": {},
+                "semantic_version": "1.1",
+            }
+        )
+        state = {
+            "question": QUESTION,
+            "metric_id": "paid_revenue",
+            "baseline": "Q1",
+            "focus": "Q2",
+            "semantic_version": "1.1",
+        }
+        empty = {
+            "kind": "delta_breakdown",
+            "metric_id": "paid_revenue",
+            "baseline": "Q1",
+            "focus": "Q2",
+            "baseline_value": 0,
+            "focus_value": 0,
+            "delta": 0,
+            "unit": "RUB",
+            "filters": {},
+            "semantic_version": "1.1",
+            "group_by": "region",
+            "segments": [],
+        }
+        trace = [
+            {"intent": {}, "observation": comparison},
+            {"intent": {"group_by": "region", "filters": {}}, "observation": empty},
+        ]
+        decision = choose_next_action(state, trace, SEMANTIC)
+        self.assertEqual(decision["status"], "insufficient_data")
 
+    def test_mismatched_segment_sum_stops_investigation(self):
+        calls = 0
 
-DEMO = [
-    {"region": "Москва", "amount": "150"},
-    {"region": "Питер", "amount": "100"},
-    {"region": "Казань", "amount": "20"},
-]
+        def inconsistent_executor(intent):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                return execute_intent(intent)
+            observation = execute_intent(intent)
+            observation["segments"][0]["delta"] = 10
+            return observation
+
+        result = investigate(QUESTION, executor=inconsistent_executor)
+        self.assertEqual(result["status"], "observation_mismatch")
+        self.assertEqual(len(result["trace"]), 2)
+
+    def test_trace_keeps_semantic_version_and_policy_reason(self):
+        result = investigate(QUESTION)
+        for step in result["trace"]:
+            self.assertEqual(step["intent"]["semantic_version"], "1.1")
+            self.assertEqual(step["observation"]["semantic_version"], "1.1")
+            self.assertTrue(step["policy_reason"])
+
 
 if __name__ == "__main__":
-    for step in investigate(DEMO, "region", "amount"):
-        print(step)
-</code></pre></details><h3>Артефакт</h3><details class="filebox" id="f-phases-05-data-and-analytics-04-bi-agents-outputs-bi-investigation-playbook-md" open><summary><span class="fname">outputs/bi-investigation-playbook.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: плейбук BI-расследования
+    unittest.main()
+</code></pre></details><h3>Эталонное решение</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-05-data-and-analytics-04-bi-agents-code-bi-agent-py"><summary><span class="fname">code/bi_agent.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Детерминированный BI-планировщик для урока 5.4.
 
-Сценарий, по которому агент (или аналитик) ведёт расследование от вопроса к причине. Планировщик — [`code/bi_agent.py`](../code/bi_agent.py).
+Планировщик не пишет произвольный SQL. Он выбирает следующий разрешённый
+аналитический intent по предыдущему наблюдению, сохраняет trace и останавливается
+по явной причине.
+"""
 
-## Шаги расследования
+from __future__ import annotations
 
+import json
+from collections.abc import Callable, Mapping, Sequence
+from typing import Any
+
+
+SEMANTIC = {
+    "version": "1.1",
+    "owner": "course-team",
+    "metric_ids": {
+        "paid_revenue": {
+            "unit": "RUB",
+            "definition": "Сумма оплаченной выручки",
+            "required_filter": {"status": "paid"},
+        }
+    },
+    "periods": ["Q1", "Q2"],
+    "dimension_ids": ["region", "product"],
+    "investigation_order": ["region", "product"],
+}
+
+# Это уже проверенные наблюдения semantic executor, а не сырые строки заказов.
+# Q2 сохраняет результат предыдущих уроков: 150 + 30 + 20 = 200 RUB.
+DEMO_FACTS = [
+    {"quarter": "Q1", "region": "Москва", "product": "Basic", "paid_revenue": 70},
+    {"quarter": "Q1", "region": "Москва", "product": "Pro", "paid_revenue": 100},
+    {"quarter": "Q1", "region": "Питер", "product": "Basic", "paid_revenue": 30},
+    {"quarter": "Q1", "region": "Питер", "product": "Pro", "paid_revenue": 50},
+    {"quarter": "Q1", "region": "Казань", "product": "Basic", "paid_revenue": 10},
+    {"quarter": "Q1", "region": "Казань", "product": "Pro", "paid_revenue": 10},
+    {"quarter": "Q2", "region": "Москва", "product": "Basic", "paid_revenue": 70},
+    {"quarter": "Q2", "region": "Москва", "product": "Pro", "paid_revenue": 80},
+    {"quarter": "Q2", "region": "Питер", "product": "Basic", "paid_revenue": 20},
+    {"quarter": "Q2", "region": "Питер", "product": "Pro", "paid_revenue": 10},
+    {"quarter": "Q2", "region": "Казань", "product": "Basic", "paid_revenue": 10},
+    {"quarter": "Q2", "region": "Казань", "product": "Pro", "paid_revenue": 10},
+]
+
+
+def _validate_state(state: Mapping[str, Any], semantic: Mapping[str, Any]) -&gt; None:
+    if state["metric_id"] not in semantic["metric_ids"]:
+        raise ValueError(f"unknown metric_id: {state['metric_id']}")
+    if state["baseline"] not in semantic["periods"]:
+        raise ValueError(f"unknown baseline period: {state['baseline']}")
+    if state["focus"] not in semantic["periods"]:
+        raise ValueError(f"unknown focus period: {state['focus']}")
+    if state["baseline"] == state["focus"]:
+        raise ValueError("baseline and focus periods must differ")
+
+
+def _validate_intent(intent: Mapping[str, Any], semantic: Mapping[str, Any]) -&gt; None:
+    if intent.get("semantic_version") != semantic["version"]:
+        raise ValueError("semantic version mismatch")
+    if intent.get("metric_id") not in semantic["metric_ids"]:
+        raise ValueError(f"unknown metric_id: {intent.get('metric_id')}")
+    if intent.get("baseline") not in semantic["periods"]:
+        raise ValueError(f"unknown baseline period: {intent.get('baseline')}")
+    if intent.get("focus") not in semantic["periods"]:
+        raise ValueError(f"unknown focus period: {intent.get('focus')}")
+
+    action = intent.get("action")
+    if action not in {"compare_periods", "breakdown_delta"}:
+        raise ValueError(f"unknown action: {action}")
+
+    filters = intent.get("filters", {})
+    if not isinstance(filters, Mapping):
+        raise ValueError("filters must be a mapping")
+    unknown_filters = set(filters) - set(semantic["dimension_ids"])
+    if unknown_filters:
+        raise ValueError(f"unknown filter dimensions: {sorted(unknown_filters)}")
+
+    group_by = intent.get("group_by")
+    if action == "compare_periods" and group_by is not None:
+        raise ValueError("compare_periods must not contain group_by")
+    if action == "breakdown_delta":
+        if group_by not in semantic["dimension_ids"]:
+            raise ValueError(f"unknown group_by dimension: {group_by}")
+        if group_by in filters:
+            raise ValueError("group_by dimension is already fixed by filters")
+
+
+def _matches_filters(row: Mapping[str, Any], filters: Mapping[str, Any]) -&gt; bool:
+    return all(row.get(key) == value for key, value in filters.items())
+
+
+def execute_intent(
+    intent: Mapping[str, Any],
+    facts: Sequence[Mapping[str, Any]] = DEMO_FACTS,
+    semantic: Mapping[str, Any] = SEMANTIC,
+) -&gt; dict[str, Any]:
+    """Исполняет только разрешённый intent над проверенными учебными фактами."""
+    _validate_intent(intent, semantic)
+
+    metric_id = intent["metric_id"]
+    baseline = intent["baseline"]
+    focus = intent["focus"]
+    filters = intent.get("filters", {})
+    selected = [row for row in facts if _matches_filters(row, filters)]
+
+    baseline_value = sum(
+        float(row[metric_id]) for row in selected if row["quarter"] == baseline
+    )
+    focus_value = sum(
+        float(row[metric_id]) for row in selected if row["quarter"] == focus
+    )
+    base = {
+        "metric_id": metric_id,
+        "baseline": baseline,
+        "focus": focus,
+        "baseline_value": baseline_value,
+        "focus_value": focus_value,
+        "delta": focus_value - baseline_value,
+        "unit": semantic["metric_ids"][metric_id]["unit"],
+        "filters": dict(filters),
+        "semantic_version": semantic["version"],
+    }
+
+    if intent["action"] == "compare_periods":
+        return {"kind": "period_comparison", **base}
+
+    group_by = intent["group_by"]
+    segment_names = sorted({str(row[group_by]) for row in selected})
+    segments = []
+    for segment in segment_names:
+        segment_rows = [row for row in selected if str(row[group_by]) == segment]
+        segment_baseline = sum(
+            float(row[metric_id])
+            for row in segment_rows
+            if row["quarter"] == baseline
+        )
+        segment_focus = sum(
+            float(row[metric_id])
+            for row in segment_rows
+            if row["quarter"] == focus
+        )
+        segments.append(
+            {
+                "segment": segment,
+                "baseline_value": segment_baseline,
+                "focus_value": segment_focus,
+                "delta": segment_focus - segment_baseline,
+            }
+        )
+
+    return {
+        "kind": "delta_breakdown",
+        "group_by": group_by,
+        "segments": segments,
+        **base,
+    }
+
+
+def _intent(
+    state: Mapping[str, Any],
+    action: str,
+    *,
+    group_by: str | None = None,
+    filters: Mapping[str, Any] | None = None,
+) -&gt; dict[str, Any]:
+    return {
+        "action": action,
+        "metric_id": state["metric_id"],
+        "baseline": state["baseline"],
+        "focus": state["focus"],
+        "group_by": group_by,
+        "filters": dict(filters or {}),
+        "semantic_version": state["semantic_version"],
+    }
+
+
+def _stop(status: str, reason: str) -&gt; dict[str, Any]:
+    return {"kind": "stop", "status": status, "reason": reason}
+
+
+def choose_next_action(
+    state: Mapping[str, Any],
+    trace: Sequence[Mapping[str, Any]],
+    semantic: Mapping[str, Any] = SEMANTIC,
+) -&gt; dict[str, Any]:
+    """Возвращает следующий разрешённый intent либо явное решение stop."""
+    if not trace:
+        return {
+            "kind": "intent",
+            "intent": _intent(state, "compare_periods"),
+            "reason": "Сначала проверяем, существовало ли падение.",
+        }
+
+    observation = trace[-1]["observation"]
+    if observation.get("semantic_version") != state["semantic_version"]:
+        return _stop(
+            "semantic_version_mismatch",
+            "Наблюдение получено не по той версии semantic contract.",
+        )
+
+    if observation["kind"] == "period_comparison":
+        if observation["delta"] &gt;= 0:
+            return _stop(
+                "premise_not_supported",
+                "В фокусном периоде метрика не снизилась; исходная посылка не подтверждена.",
+            )
+        first_dimension = next(
+            (
+                dimension
+                for dimension in semantic["investigation_order"]
+                if dimension in semantic["dimension_ids"]
+            ),
+            None,
+        )
+        if first_dimension is None:
+            return _stop(
+                "needs_clarification",
+                "В semantic contract нет разрешённого измерения для следующего шага.",
+            )
+        return {
+            "kind": "intent",
+            "intent": _intent(
+                state,
+                "breakdown_delta",
+                group_by=first_dimension,
+            ),
+            "reason": "Падение подтверждено; ищем вклад сегментов.",
+        }
+
+    if observation["kind"] != "delta_breakdown":
+        return _stop("unsupported_observation", "Policy не знает такой тип наблюдения.")
+
+    segments = observation["segments"]
+    if not segments:
+        return _stop(
+            "insufficient_data",
+            "Исполнитель не вернул сегменты для продолжения расследования.",
+        )
+
+    segment_delta = sum(float(item["delta"]) for item in segments)
+    if round(segment_delta, 6) != round(float(observation["delta"]), 6):
+        return _stop(
+            "observation_mismatch",
+            "Сумма вкладов сегментов не совпадает с изменением текущего среза.",
+        )
+
+    worst = min(segments, key=lambda item: float(item["delta"]))
+    if worst["delta"] &gt;= 0:
+        return _stop(
+            "inconclusive",
+            "Отрицательный вклад не локализован в доступных сегментах.",
+        )
+
+    used_dimensions = {
+        item["intent"]["group_by"]
+        for item in trace
+        if item["intent"].get("group_by") is not None
+    }
+    current_filters = dict(trace[-1]["intent"].get("filters", {}))
+    current_filters[observation["group_by"]] = worst["segment"]
+    next_dimension = next(
+        (
+            dimension
+            for dimension in semantic["investigation_order"]
+            if dimension in semantic["dimension_ids"]
+            and dimension not in used_dimensions
+            and dimension not in current_filters
+        ),
+        None,
+    )
+    if next_dimension is None:
+        return _stop(
+            "ready_for_review",
+            "Все разрешённые уровни детализации пройдены; пора проверить вывод.",
+        )
+
+    return {
+        "kind": "intent",
+        "intent": _intent(
+            state,
+            "breakdown_delta",
+            group_by=next_dimension,
+            filters=current_filters,
+        ),
+        "reason": (
+            f"Наибольший отрицательный вклад даёт сегмент {worst['segment']}; "
+            f"детализируем по {next_dimension}."
+        ),
+    }
+
+
+def _build_finding(
+    state: Mapping[str, Any], trace: Sequence[Mapping[str, Any]]
+) -&gt; dict[str, Any] | None:
+    if not trace or trace[0]["observation"]["kind"] != "period_comparison":
+        return None
+
+    path = []
+    for item in trace[1:]:
+        observation = item["observation"]
+        if observation["kind"] != "delta_breakdown" or not observation["segments"]:
+            continue
+        worst = min(observation["segments"], key=lambda row: float(row["delta"]))
+        path.append(
+            {
+                "dimension": observation["group_by"],
+                "segment": worst["segment"],
+                "delta": worst["delta"],
+            }
+        )
+
+    return {
+        "metric_id": state["metric_id"],
+        "total_delta": trace[0]["observation"]["delta"],
+        "path": path,
+        "statement": (
+            "Trace локализует наибольший отрицательный вклад, "
+            "но сам по себе не доказывает причину изменения."
+        ),
+    }
+
+
+def investigate(
+    question: str,
+    *,
+    metric_id: str = "paid_revenue",
+    baseline: str = "Q1",
+    focus: str = "Q2",
+    max_steps: int = 3,
+    semantic: Mapping[str, Any] = SEMANTIC,
+    executor: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+) -&gt; dict[str, Any]:
+    """Запускает цикл policy → intent → executor → observation до явного stop."""
+    if not isinstance(max_steps, int) or max_steps &lt; 1:
+        raise ValueError("max_steps must be a positive integer")
+
+    state = {
+        "question": question,
+        "metric_id": metric_id,
+        "baseline": baseline,
+        "focus": focus,
+        "semantic_version": semantic["version"],
+    }
+    _validate_state(state, semantic)
+    run = executor or (lambda intent: execute_intent(intent, semantic=semantic))
+    trace: list[dict[str, Any]] = []
+
+    while True:
+        decision = choose_next_action(state, trace, semantic)
+        if decision["kind"] == "stop":
+            return {
+                "status": decision["status"],
+                "reason": decision["reason"],
+                "state": state,
+                "trace": trace,
+                "finding": (
+                    _build_finding(state, trace)
+                    if decision["status"] == "ready_for_review"
+                    else None
+                ),
+            }
+
+        if len(trace) &gt;= max_steps:
+            return {
+                "status": "step_budget_exhausted",
+                "reason": "Лимит шагов исчерпан до следующего запроса.",
+                "state": state,
+                "trace": trace,
+                "finding": None,
+            }
+
+        intent = decision["intent"]
+        try:
+            observation = dict(run(intent))
+        except (KeyError, TypeError, ValueError) as error:
+            return {
+                "status": "executor_error",
+                "reason": str(error),
+                "state": state,
+                "trace": trace,
+                "finding": None,
+            }
+        trace.append(
+            {
+                "intent": intent,
+                "policy_reason": decision["reason"],
+                "observation": observation,
+            }
+        )
+
+
+if __name__ == "__main__":
+    result = investigate("Почему paid_revenue снизилась в Q2 относительно Q1?")
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+</code></pre></details><h3>Артефакт</h3><details class="filebox" id="f-phases-05-data-and-analytics-04-bi-agents-outputs-bi-investigation-playbook-md" open><summary><span class="fname">outputs/bi-investigation-playbook.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: плейбук проверяемого BI-расследования
+
+Этот плейбук задаёт границы многошагового расследования: какие действия разрешены,
+как наблюдение влияет на следующий шаг, когда агент обязан остановиться и что человек
+получает для проверки.
+
+## Паспорт
+
+| Поле | Значение |
+|---|---|
+| Вопрос | Почему `paid_revenue` снизилась в Q2 относительно Q1? |
+| Metric ID | `paid_revenue` |
+| Определение | сумма оплаченной выручки; обязательный фильтр `status=paid` |
+| Единица | RUB |
+| Baseline / focus | Q1 / Q2 |
+| Semantic contract | версия `1.1`, владелец `course-team` |
+| Разрешённые измерения | сначала `region`, затем `product` |
+| Бюджет | не более трёх исполненных intents |
+| Выход | trace, статус остановки, evidence path для ревью |
+
+Версия `1.1` сохраняет определение `paid_revenue` из 5.3 и добавляет разрешённое
+измерение `product`. Агент не может самостоятельно придумать другую метрику, колонку
+или порядок детализации.
+
+## Что считается шагом
+
+Каждый шаг содержит четыре части:
+
+```text
+policy_reason → intent → observation → решение о продолжении
 ```
-1. OVERVIEW    общий тренд метрики во времени (вырос/упал, насколько)
-2. BREAKDOWN   разбивка по измерениям (регион, продукт, канал)
-3. TOP_SEGMENT сегмент с наибольшим вкладом/просадкой + его доля
-4. DRILL-DOWN  углубиться в виновный сегмент (ещё разрез)
-5. HYPOTHESIS  гипотеза причины (сезонность, акция, отвал клиента)
-6. VALIDATE    проверить гипотезу на данных (урок 5.5)
-7. CONCLUSION  вывод + рекомендация (что делать)
+
+- `policy_reason` — короткое проверяемое основание выбора действия;
+- `intent` — структурированный запрос из разрешённого каталога;
+- `observation` — результат доверенного исполнителя с версией контракта;
+- решение — следующий intent либо явный `stop`.
+
+Внутренние рассуждения модели не являются доказательством. В trace сохраняются только
+решение, его краткое основание, исполненный intent и наблюдаемый результат.
+
+## Каталог разрешённых действий
+
+### `compare_periods`
+
+Проверить исходную посылку вопроса.
+
+```json
+{
+  "action": "compare_periods",
+  "metric_id": "paid_revenue",
+  "baseline": "Q1",
+  "focus": "Q2",
+  "group_by": null,
+  "filters": {},
+  "semantic_version": "1.1"
+}
 ```
 
-## Пример: «почему упала выручка в Q2?»
+### `breakdown_delta`
 
-| Шаг | Действие | Находка |
-|---|---|---|
-| overview | выручка по месяцам | −18% к Q1 |
-| breakdown | по регионам | падение в одном регионе |
-| top_segment | доля региона | −60% вклада в просадку |
-| drill-down | по продуктам региона | один SKU обвалился |
-| hypothesis | что случилось с SKU | закончился сток |
-| validate | проверка остатков | подтверждено |
+Разложить изменение текущего среза по одному разрешённому измерению.
 
-## Как запустить (прототип)
-
-```python
-from bi_agent import investigate
-for step in investigate(rows, dimension="region", value="amount"):
-    print(step)     # overview → breakdown → top_segment
+```json
+{
+  "action": "breakdown_delta",
+  "metric_id": "paid_revenue",
+  "baseline": "Q1",
+  "focus": "Q2",
+  "group_by": "product",
+  "filters": {"region": "Питер"},
+  "semantic_version": "1.1"
+}
 ```
 
-## Правила
+Свободный SQL, неизвестные Metric ID и Dimension ID, смена версии контракта и
+неограниченное число шагов запрещены.
 
-- **Сужай поиск пошагово** — от общего к сегменту-виновнику, не «всё сразу».
-- **Каждый шаг — проверяемая находка** (трейс), а не вывод «из головы».
-- **Гипотезу валидируй на данных** (урок 5.5), прежде чем включать в вывод.
-- В проде шаги выбирает LLM (Genie/Spotter/Hex) поверх семантического слоя (5.3); governance и human-in-the-loop обязательны.
-</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+## Таблица решений policy
+
+| Наблюдение | Решение |
+|---|---|
+| Trace пуст | выполнить `compare_periods` |
+| `delta &gt;= 0` | `premise_not_supported`: падение не подтверждено |
+| `delta &lt; 0`, доступен `region` | разложить изменение по регионам |
+| Сумма вкладов сегментов не равна изменению среза | `observation_mismatch` |
+| Сегменты отсутствуют | `insufficient_data` |
+| Найден крупнейший отрицательный вклад и доступно следующее измерение | зафиксировать сегмент фильтром и продолжить |
+| Все разрешённые измерения пройдены | `ready_for_review` |
+| Следующий запрос превысит бюджет | `step_budget_exhausted` |
+
+## Эталонный trace
+
+### Шаг 1. Существовало ли падение
+
+| Период | `paid_revenue` |
+|---|---:|
+| Q1 | 270 |
+| Q2 | 200 |
+| Изменение | **−70** |
+
+Q2 равен проверенному итогу предыдущих уроков: `150 + 30 + 20 = 200`. Значение
+Q1 = 270 — новый baseline сценария, а не ошибочный Q2 без фильтра `status=paid`.
+
+### Шаг 2. Кто дал отрицательный вклад
+
+| Регион | Q1 | Q2 | Изменение |
+|---|---:|---:|---:|
+| Москва | 170 | 150 | −20 |
+| Питер | 80 | 30 | **−50** |
+| Казань | 20 | 20 | 0 |
+| **Итого** | **270** | **200** | **−70** |
+
+Москва остаётся крупнейшим регионом в Q2, но основной отрицательный вклад дал Питер.
+Policy поэтому выбирает Питер, а не максимум текущего периода.
+
+### Шаг 3. Что произошло внутри Питера
+
+| Продукт | Q1 | Q2 | Изменение |
+|---|---:|---:|---:|
+| Basic | 30 | 20 | −10 |
+| Pro | 50 | 10 | **−40** |
+| **Питер целиком** | **80** | **30** | **−50** |
+
+## Evidence path
+
+```text
+paid_revenue: Q1 270 → Q2 200, delta −70
+└── region=Питер, delta −50
+    └── product=Pro, delta −40
+```
+
+Допустимый вывод:
+
+&gt; Падение оплаченной выручки на 70 RUB в основном локализовано в Питере
+&gt; (−50 RUB), а внутри Питера — в продукте Pro (−40 RUB).
+
+Недопустимый вывод:
+
+&gt; Выручка упала, потому что в Питере закончился продукт Pro.
+
+Второе утверждение называет причину, которой нет в наблюдениях. Для неё понадобятся
+данные об остатках, ценах, клиентах или другом возможном механизме.
+
+## Передача в 5.5
+
+Следующий урок должен проверить:
+
+1. сходится ли Q2 с контрольным итогом `200`;
+2. сходятся ли `−20 − 50 + 0 = −70`;
+3. сходятся ли `−10 − 40 = −50` внутри Питера;
+4. нет ли пропущенных сегментов и аномальных значений;
+5. можно ли публиковать локализацию падения без неподтверждённой причинной формулировки.
+
+## Критерии приёмки плейбука
+
+- вопрос, metric ID, периоды и версия контракта указаны явно;
+- каждый intent принадлежит разрешённому каталогу;
+- следующий шаг действительно зависит от observation;
+- есть бюджет и безопасные stop conditions;
+- trace позволяет воспроизвести путь без догадок;
+- вклады на каждом уровне сходятся с родительским изменением;
+- evidence path отделён от гипотезы о причине;
+- результат готов к автоматической валидации в 5.5.
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> одиннадцать <code>unittest</code> проходят без внешних пакетов; студент объясняет state / intent / executor / observation / policy / trace / stop; Q2 сохраняет проверенный итог <code>200</code>, а общий delta равен <code>−70</code>; policy выбирает <code>Питер → Pro</code> по отрицательному вкладу, а не по текущему максимуму; неизвестные IDs, несходящиеся observations и превышение step budget безопасно останавливаются; артефакт отделяет evidence path от причинной гипотезы. ✅ <strong>Урок готов</strong></p></article>
     <div class="nav-prevnext" id="prevnext"><a href="../../lessons/nl-to-sql-semantic-layer/"><small>← 5.3</small>NL→SQL и семантический слой</a><a href="../../lessons/validation-anomalies-reports/" style="text-align:right"><small>5.5 →</small>Валидация, аномалии, автоотчёты</a></div>
   </section>
 
   <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
 
   <script>window.__BASE__="../../";</script>
-  <script src="../../data.js?v=c3ede7741528"></script>
-  <script src="../../progress.js?v=c3ede7741528"></script>
-  <script src="../../header.js?v=c3ede7741528"></script>
-  <script src="../../app.js?v=c3ede7741528"></script>
+  <script src="../../data.js?v=7ef6da12bfd5"></script>
+  <script src="../../progress.js?v=7ef6da12bfd5"></script>
+  <script src="../../header.js?v=7ef6da12bfd5"></script>
+  <script src="../../app.js?v=7ef6da12bfd5"></script>
 </body>
 </html>
