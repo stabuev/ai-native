@@ -1,31 +1,163 @@
-from validation import validate_result, find_anomalies, build_report
+import math
+import unittest
+from copy import deepcopy
+
+from validation import (
+    DEMO_PACKET,
+    DEMO_POLICY,
+    detect_current_anomaly,
+    run_quality_gate,
+)
 
 
-def test_validate_flags_failing_and_missing():
-    metrics = {"revenue": -5}
-    problems = validate_result(metrics, {"revenue": lambda x: x >= 0, "orders": lambda x: x > 0})
-    assert any("revenue" in p for p in problems)
-    assert any("orders" in p and "отсутствует" in p for p in problems)
+def failed_ids(result):
+    return {check["id"] for check in result["checks"] if not check["passed"]}
 
 
-def test_validate_passes_good_metrics():
-    metrics = {"revenue": 270, "orders": 5}
-    assert validate_result(metrics, {"revenue": lambda x: x >= 0, "orders": lambda x: x > 0}) == []
+class QualityGateTests(unittest.TestCase):
+    def test_reference_packet_is_publishable(self):
+        result = run_quality_gate(deepcopy(DEMO_PACKET))
+
+        self.assertEqual(result["decision"], "publish")
+        self.assertEqual(result["anomaly"]["status"], "clear")
+        self.assertFalse(failed_ids(result))
+
+    def test_unusual_current_value_requires_review(self):
+        packet = deepcopy(DEMO_PACKET)
+        packet["history"][:-1] = [
+            {"period": f"baseline-{index}", "value": value}
+            for index, value in enumerate([268, 272, 269, 271, 270], start=1)
+        ]
+
+        result = run_quality_gate(packet)
+
+        self.assertEqual(result["decision"], "review")
+        self.assertEqual(result["anomaly"]["status"], "review")
+        self.assertGreater(abs(result["anomaly"]["z"]), 2.0)
+
+    def test_insufficient_history_is_not_reported_as_clear(self):
+        packet = deepcopy(DEMO_PACKET)
+        packet["history"] = packet["history"][-3:]
+
+        result = run_quality_gate(packet)
+
+        self.assertEqual(result["decision"], "review")
+        self.assertEqual(result["anomaly"]["status"], "insufficient_history")
+
+    def test_semantic_version_mismatch_blocks_release(self):
+        packet = deepcopy(DEMO_PACKET)
+        packet["semantic_version"] = "0.9"
+
+        result = run_quality_gate(packet)
+
+        self.assertEqual(result["decision"], "block")
+        self.assertIn("contract.semantic_version", failed_ids(result))
+
+    def test_missing_required_filter_blocks_release(self):
+        packet = deepcopy(DEMO_PACKET)
+        packet["filters"] = {}
+
+        result = run_quality_gate(packet)
+
+        self.assertEqual(result["decision"], "block")
+        self.assertIn("contract.required_filters", failed_ids(result))
+
+    def test_wrong_focus_control_value_blocks_release(self):
+        packet = deepcopy(DEMO_PACKET)
+        packet["totals"]["Q2"] = 201.0
+        packet["history"][-1]["value"] = 201.0
+
+        result = run_quality_gate(packet)
+
+        self.assertEqual(result["decision"], "block")
+        self.assertIn("totals.focus_control", failed_ids(result))
+
+    def test_missing_region_blocks_release(self):
+        packet = deepcopy(DEMO_PACKET)
+        packet["breakdowns"]["region"].pop()
+
+        result = run_quality_gate(packet)
+
+        self.assertEqual(result["decision"], "block")
+        self.assertIn("region.segments", failed_ids(result))
+
+    def test_wrong_row_delta_blocks_release(self):
+        packet = deepcopy(DEMO_PACKET)
+        packet["breakdowns"]["region"][0]["delta"] = -19.0
+
+        result = run_quality_gate(packet)
+
+        self.assertEqual(result["decision"], "block")
+        self.assertIn("region.row_arithmetic", failed_ids(result))
+        self.assertIn("region.reconciliation", failed_ids(result))
+
+    def test_product_contributions_must_match_piter_delta(self):
+        packet = deepcopy(DEMO_PACKET)
+        packet["breakdowns"]["product|region=Питер"][1].update(
+            {"focus_value": 20.0, "delta": -30.0}
+        )
+
+        result = run_quality_gate(packet)
+
+        self.assertEqual(result["decision"], "block")
+        self.assertIn(
+            "product|region=Питер.reconciliation", failed_ids(result)
+        )
+
+    def test_non_finite_total_blocks_release(self):
+        packet = deepcopy(DEMO_PACKET)
+        packet["totals"]["Q2"] = math.nan
+
+        result = run_quality_gate(packet)
+
+        self.assertEqual(result["decision"], "block")
+        self.assertIn("totals.finite", failed_ids(result))
+
+    def test_evidence_path_must_be_supported(self):
+        packet = deepcopy(DEMO_PACKET)
+        packet["evidence_path"][1]["delta"] = -999.0
+
+        result = run_quality_gate(packet)
+
+        self.assertEqual(result["decision"], "block")
+        self.assertIn("evidence_path.supported", failed_ids(result))
+
+    def test_invalid_history_blocks_release(self):
+        packet = deepcopy(DEMO_PACKET)
+        packet["history"][2]["value"] = "unknown"
+
+        result = run_quality_gate(packet)
+
+        self.assertEqual(result["decision"], "block")
+        self.assertEqual(result["anomaly"]["status"], "invalid")
+
+    def test_change_from_constant_baseline_requires_review(self):
+        anomaly = detect_current_anomaly(
+            [
+                {"period": "p1", "value": 100},
+                {"period": "p2", "value": 100},
+                {"period": "p3", "value": 100},
+                {"period": "p4", "value": 100},
+                {"period": "p5", "value": 100},
+                {"period": "current", "value": 120},
+            ]
+        )
+
+        self.assertEqual(anomaly["status"], "review")
+        self.assertIsNone(anomaly["z"])
+
+    def test_report_contains_decision_failures_and_evidence_boundary(self):
+        packet = deepcopy(DEMO_PACKET)
+        packet["filters"] = {}
+
+        result = run_quality_gate(packet)
+        report = result["report"]
+
+        self.assertIn("Решение: **block**", report)
+        self.assertIn("[FAIL] `contract.required_filters`", report)
+        self.assertIn("region=Питер", report)
+        self.assertIn("не доказывает его причину", report)
 
 
-def test_find_anomalies_flags_outlier():
-    anomalies = find_anomalies([100, 110, 95, 105, 100, 500])
-    assert len(anomalies) == 1
-    assert anomalies[0]["value"] == 500
-
-
-def test_no_anomalies_when_uniform():
-    assert find_anomalies([5, 5, 5, 5]) == []
-    assert find_anomalies([42]) == []
-
-
-def test_report_contains_metrics_and_anomalies():
-    report = build_report("Отчёт", {"revenue": 270}, [{"index": 5, "value": 500, "z": 2.2}])
-    assert "# Отчёт" in report
-    assert "revenue: 270" in report
-    assert "индекс 5" in report
+if __name__ == "__main__":
+    unittest.main()
