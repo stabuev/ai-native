@@ -13,7 +13,7 @@
   <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
   <meta name="twitter:card" content="summary_large_image">
   <script>(function(){try{var t=localStorage.getItem("theme")||"light";document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
-  <link rel="stylesheet" href="../../style.css?v=c560182bc231">
+  <link rel="stylesheet" href="../../style.css?v=2553bc092873">
   <!-- Yandex.Metrika counter -->
   <script type="text/javascript">
       (function(m,e,t,r,i,k,a){
@@ -31,9 +31,19 @@
   <section class="container" style="padding-top:24px">
     <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
     <div class="lessonbar" id="lessonbar"></div>
-    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 5.5 · Валидация, аномалии, автоотчёты</h1><p><strong>Фаза 5 — Данные и аналитика</strong> · <strong>Результат фазы:</strong> анализировать данные с ИИ, делать NL→SQL и выпускать автоотчёты с проверяемой валидацией результатов.</p><p><strong>Результат урока:</strong> вы возьмёте пакет BI-расследования из 5.4, пропустите его через детерминированный контрольный шлюз и получите одно из трёх решений — <code>publish</code>, <code>review</code> или <code>block</code> — вместе с результатами проверок и воспроизводимым отчётом.</p><p><strong>Опоры:</strong> в 5.3 вы зафиксировали metric ID, обязательный фильтр и версию semantic contract; в 5.4 построили trace <code>общий delta −70 → Питер −50 → Pro −40</code> и отделили локализацию изменения от гипотезы о причине.</p><p><strong>Requires:</strong> только Python 3. BUILD IT, тесты и эталонный запуск работают без внешних пакетов, API-ключа, сети, базы данных и клонирования репозитория курса.</p><blockquote><strong>Главная мысль.</strong> Автоотчёт — не Markdown, созданный по расписанию. Это повторяемый процесс, который до публикации сохраняет вход, выполняет явные проверки, объясняет решение о выпуске и не выдаёт аномальный сигнал за доказанную ошибку.</blockquote><h2>От trace к решению о выпуске</h2><p>В конце 5.4 BI-планировщик остановился со статусом <code>ready_for_review</code>. Он сохранил такой путь:</p><pre><code>paid_revenue: Q1 270 → Q2 200, delta −70
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 5.5 · Валидация, аномалии, автоотчёты</h1><p><strong>Фаза 5 — Данные и аналитика</strong> · <strong>Результат фазы:</strong> превращать бизнес-вопрос в проверяемый анализ и NL→SQL, проводить ограниченное BI-расследование и выпускать отчёт по решению quality gate.</p><p><strong>Результат урока:</strong> ты преобразуешь сохранённый результат BI-расследования 5.4 в validation packet, пропустишь его через детерминированный контрольный шлюз и получишь одно из трёх решений — <code>publish</code>, <code>review</code> или <code>block</code> — вместе с результатами проверок и воспроизводимым отчётом.</p><p><strong>Опоры:</strong> в 5.3 ты зафиксировал metric ID, обязательный фильтр и версию semantic contract; в 5.4 построил trace <code>общий delta −70 → Питер −50 → Pro −40</code> и отделил локализацию изменения от гипотезы о причине.</p><p><strong>Requires:</strong> только Python 3. BUILD IT, тесты и эталонный запуск работают без внешних пакетов, API-ключа, сети, базы данных и клонирования репозитория курса.</p><blockquote><strong>Главная мысль.</strong> Автоотчёт — не Markdown, созданный по расписанию. Это повторяемый процесс, который до публикации сохраняет вход, выполняет явные проверки, объясняет решение о выпуске и не выдаёт аномальный сигнал за доказанную ошибку.</blockquote><h2>От trace к решению о выпуске</h2><p>В конце 5.4 BI-планировщик остановился со статусом <code>ready_for_review</code>. Он сохранил такой путь:</p><pre><code>paid_revenue: Q1 270 → Q2 200, delta −70
 └── region=Питер, delta −50
-    └── product=Pro, delta −40</code></pre><p>Этот trace уже лучше одиночной фразы «выручка упала»: каждый шаг можно увидеть и повторить. Но воспроизводимость пути ещё не доказывает корректность входных чисел. Например:</p><ul><li>в observation могла остаться версия semantic contract <code>0.9</code>, хотя политика выпуска требует <code>1.1</code>;</li><li>обязательный фильтр <code>status=paid</code> мог исчезнуть;</li><li>один регион мог потеряться при подготовке декомпозиции;</li><li>delta строки могла не совпасть с <code>focus − baseline</code>;</li><li>сумма региональных вкладов могла не дать общий delta;</li><li>корректное число <code>200</code> могло оказаться необычным относительно сопоставимой истории.</li></ul><p>Последний пункт принципиально отличается от остальных. Несходящаяся арифметика — уже доказанный дефект пакета. Необычное значение — только сигнал: возможно, данные сломаны, а возможно, бизнес действительно резко изменился.</p><p>Поэтому перед отчётом нужен не один <code>if</code>, а <strong>контрольный шлюз</strong> — дальше будем называть его английским термином <strong>quality gate</strong>. Это функция, которая получает пакет результата и политику выпуска, сохраняет результаты проверок и принимает ограниченное решение.</p><pre><code>пакет расследования 5.4
+    └── product=Pro, delta −40</code></pre><p>Этот trace уже лучше одиночной фразы «выручка упала»: каждый шаг можно увидеть и повторить. Но воспроизводимость пути ещё не доказывает корректность входных чисел. Например:</p><ul><li>в observation могла остаться версия semantic contract <code>0.9</code>, хотя политика выпуска требует <code>1.1</code>;</li><li>обязательный фильтр <code>status=paid</code> мог исчезнуть;</li><li>один регион мог потеряться при подготовке декомпозиции;</li><li>delta строки могла не совпасть с <code>focus − baseline</code>;</li><li>сумма региональных вкладов могла не дать общий delta;</li><li>корректное число <code>200</code> могло оказаться необычным относительно сопоставимой истории.</li></ul><p>Последний пункт принципиально отличается от остальных. Несходящаяся арифметика — уже доказанный дефект пакета. Необычное значение — только сигнал: возможно, данные сломаны, а возможно, бизнес действительно резко изменился.</p><p>Поэтому перед отчётом нужен не один <code>if</code>, а <strong>контрольный шлюз</strong> — дальше будем называть его английским термином <strong>quality gate</strong>. Это функция, которая получает пакет результата и политику выпуска, сохраняет результаты проверок и принимает ограниченное решение.</p><pre><code>результат investigate() из 5.4
+        │
+        ├── semantic contract
+        ├── run_id и as_of
+        └── сопоставимая история
+                    │
+                    ▼
+       детерминированный адаптер
+                    │
+                    ▼
+            validation packet
         │
         ├── контракт и обязательные поля
         ├── контрольные значения
@@ -46,7 +56,7 @@
           publish / review / block
                     │
                     ▼
-       отчёт + результаты проверок + основание решения</code></pre><h2>Пять объектов, которые нельзя смешивать</h2><h3>1. Пакет расследования</h3><p><strong>Пакет</strong> — это переносимое представление результата 5.4. В нём находятся не сырые строки заказов, а уже полученные observations и сведения, необходимые для их проверки:</p><ul><li><code>run_id</code> и <code>as_of</code> — какой это запуск и на каком срезе данных;</li><li><code>trace_status</code> — дошло ли расследование до <code>ready_for_review</code>;</li><li><code>semantic_version</code>, <code>metric_id</code>, периоды и фильтры;</li><li>общие итоги Q1 и Q2;</li><li>декомпозиции по регионам и продуктам;</li><li>evidence path;</li><li>история той же метрики для проверки необычности текущего значения.</li></ul><p>Поля <code>run_id</code> и <code>as_of</code> не доказывают корректность чисел. Они отвечают на другой вопрос: какой именно запуск мы проверяли и можно ли позже воспроизвести решение.</p><h3>2. Политика выпуска</h3><p><strong>Политика выпуска</strong> — заранее согласованный контракт проверки. Она не извлекается из самого отчёта и не придумывается после того, как мы увидели удобный результат.</p><p>В учебном примере политика требует:</p><pre><code>{
+       отчёт + результаты проверок + основание решения</code></pre><h2>Пять объектов, которые нельзя смешивать</h2><h3>1. Пакет расследования</h3><p><strong>Пакет</strong> — это переносимое представление результата 5.4, а не сам результат <code>investigate()</code>. Функция <code>build_validation_packet(...)</code> переносит status, observations и evidence path из trace; semantic contract добавляет единицу и обязательные фильтры; <code>run_id</code>, <code>as_of</code> и сопоставимая история передаются отдельно. В пакете находятся не сырые строки заказов, а уже полученные observations и сведения, необходимые для их проверки:</p><ul><li><code>run_id</code> и <code>as_of</code> — какой это запуск и на каком срезе данных;</li><li><code>trace_status</code> — дошло ли расследование до <code>ready_for_review</code>;</li><li><code>semantic_version</code>, <code>metric_id</code>, периоды и фильтры;</li><li>общие итоги Q1 и Q2;</li><li>декомпозиции по регионам и продуктам;</li><li>evidence path;</li><li>история той же метрики для проверки необычности текущего значения.</li></ul><p>Адаптер не должен угадывать отсутствующие значения по финальной фразе расследования. Поля <code>run_id</code> и <code>as_of</code> не доказывают корректность чисел: они отвечают, какой именно запуск мы проверяли и можно ли позже воспроизвести решение. История тоже не возникает из trace 5.4 — её сопоставимость по метрике, версии определения и периодичности должен подтвердить владелец policy.</p><h3>2. Политика выпуска</h3><p><strong>Политика выпуска</strong> — заранее согласованный контракт проверки. Она не извлекается из самого отчёта и не придумывается после того, как мы увидели удобный результат.</p><p>В учебном примере политика требует:</p><pre><code>{
     "semantic_version": "1.1",
     "metric_id": "paid_revenue",
     "required_filters": {"status": "paid"},
@@ -66,15 +76,22 @@ delta = 200 − 270 = −70
 → одна версия политики
 → одинаковый набор проверок
 → детерминированное решение
-→ отчёт с доказательствами</code></pre><p>Такой запуск уже можно безопасно повторять на новом срезе. Но реальный cron, облачный планировщик, доставка уведомлений, ретраи и мониторинг самого job здесь не настраиваются. Это инфраструктура распространения, а не механизм проверки результата.</p><h2>BUILD IT — соберите quality gate с нуля</h2><p>Создайте рабочую папку внутри личного пространства курса:</p><pre><code>ai-native-work/
+→ отчёт с доказательствами</code></pre><p>Такой запуск уже можно безопасно повторять на новом срезе. Но реальный cron, облачный планировщик, доставка уведомлений, ретраи и мониторинг самого job здесь не настраиваются. Это инфраструктура распространения, а не механизм проверки результата.</p><h2>BUILD IT — собери переход и quality gate с нуля</h2><p>Создай рабочую папку внутри личного пространства курса:</p><pre><code>ai-native-work/
 └── course-work/
     └── phase-5/
         └── validated-reports/
             └── code/
                 ├── validation.py
-                └── test_validation.py</code></pre><p>Скопируйте тесты из блока «Исходники урока». Репозиторий курса клонировать не нужно. Работайте только со стандартной библиотекой Python.</p><h3>Шаг 1. Зафиксируйте пакет и политику</h3><p>Перенесите <code>DEMO_PACKET</code> и <code>DEMO_POLICY</code>. До запуска кода предскажите решения:</p><ol><li>эталонный пакет;</li><li>пакет без <code>status=paid</code>;</li><li>пакет с историей из трёх точек;</li><li>пакет с корректной арифметикой, но необычным текущим значением.</li></ol><p>Запишите прогнозы. Иначе зелёный тест покажет только совпадение реализации с тестом, но не ваше понимание таблицы решений.</p><h3>Шаг 2. Реализуйте жёсткие проверки</h3><p>Функция <code>validate_packet(packet, policy)</code> должна вернуть список структурированных результатов. Проверьте:</p><ul><li>наличие обязательных полей;</li><li><code>ready_for_review</code>;</li><li>semantic version, metric ID, периоды и обязательные фильтры;</li><li>конечность чисел;</li><li>контрольный итог Q2 = <code>200</code>;</li><li>полный набор регионов и продуктов;</li><li><code>delta = focus − baseline</code> в каждой строке;</li><li><code>−20 − 50 + 0 = −70</code>;</li><li><code>−10 − 40 = −50</code>;</li><li>подтверждение каждого шага evidence path;</li><li>совпадение последней исторической точки с Q2.</li></ul><p>Не возвращайте только <code>True</code> или <code>False</code>. Ревьюеру нужны ID проверки, сообщение и evidence, иначе причину блокировки придётся восстанавливать вручную.</p><h3>Шаг 3. Реализуйте сигнал аномалии</h3><p><code>detect_current_anomaly(history, minimum_baseline_points=5, z_threshold=2.0)</code> должна:</p><ol><li>проверить форму и конечность всех значений;</li><li>отделить последнюю точку от baseline;</li><li>отличить недостаточную историю от чистого результата;</li><li>отдельно обработать постоянный baseline с <code>std == 0</code>;</li><li>вернуть статус, пояснение, число baseline-точек и z-score, если он определён.</li></ol><h3>Шаг 4. Реализуйте решение и отчёт</h3><ul><li><code>decide_release(checks, anomaly)</code> применяет таблицу <code>publish/review/block</code>;</li><li><code>build_report(...)</code> обязательно включает решение, все PASS/FAIL, сигнал аномалии, evidence path и следующее действие;</li><li><code>run_quality_gate(packet, policy)</code> связывает шаги и возвращает переносимый пакет результата.</li></ul><h3>Шаг 5. Проверьте поведение</h3><pre><code>cd ai-native-work/course-work/phase-5/validated-reports
+                └── test_validation.py</code></pre><p>Скопируй тесты из блока «Исходники урока». Репозиторий курса клонировать не нужно. Работай только со стандартной библиотекой Python.</p><h3>Шаг 1. Преобразуй результат 5.4 в validation packet</h3><p>В файле даны три разных входа:</p><ul><li><code>DEMO_INVESTIGATION</code> — сохранённый результат <code>investigate()</code> из 5.4;</li><li><code>DEMO_SEMANTIC</code> — версия определения метрики, единица и обязательный фильтр;</li><li>история — отдельный набор сопоставимых прошлых точек и текущая точка последней.</li></ul><p>Реализуй:</p><pre><code>build_validation_packet(
+    investigation,
+    semantic,
+    *,
+    run_id,
+    as_of,
+    history,
+) -&gt; dict</code></pre><p>Функция должна:</p><ol><li>взять status и state из результата 5.4;</li><li>извлечь общие итоги и breakdowns из observations;</li><li>сопоставить каждый шаг finding с единственной поддерживающей декомпозицией;</li><li>взять единицу и обязательные фильтры из semantic contract, а не из текста finding;</li><li>добавить переданные <code>run_id</code>, <code>as_of</code> и историю;</li><li>отклонить несовпадающие версии, Metric ID, периоды или неизвестный тип observation.</li></ol><p>Эталонный результат адаптера должен точно совпасть с <code>DEMO_PACKET</code>. Незавершённый результат со статусом <code>step_budget_exhausted</code> не может превратиться в <code>ready_for_review</code>: gate обязан вернуть <code>block</code>.</p><p>До запуска кода предскажи решения:</p><ol><li>эталонный пакет;</li><li>пакет без <code>status=paid</code>;</li><li>пакет с историей из трёх точек;</li><li>пакет с корректной арифметикой, но необычным текущим значением.</li><li>пакет, собранный из незавершённого расследования.</li></ol><p>Запиши прогнозы. Иначе зелёный тест покажет только совпадение реализации с тестом, но не твоё понимание таблицы решений.</p><h3>Шаг 2. Реализуй жёсткие проверки</h3><p>Функция <code>validate_packet(packet, policy)</code> должна вернуть список структурированных результатов. Проверь:</p><ul><li>наличие обязательных полей;</li><li><code>ready_for_review</code>;</li><li>semantic version, metric ID, периоды и обязательные фильтры;</li><li>конечность чисел;</li><li>контрольный итог Q2 = <code>200</code>;</li><li>полный набор регионов и продуктов;</li><li><code>delta = focus − baseline</code> в каждой строке;</li><li><code>−20 − 50 + 0 = −70</code>;</li><li><code>−10 − 40 = −50</code>;</li><li>подтверждение каждого шага evidence path;</li><li>совпадение последней исторической точки с Q2.</li></ul><p>Не возвращай только <code>True</code> или <code>False</code>. Ревьюеру нужны ID проверки, сообщение и evidence, иначе причину блокировки придётся восстанавливать вручную.</p><h3>Шаг 3. Реализуй сигнал аномалии</h3><p><code>detect_current_anomaly(history, minimum_baseline_points=5, z_threshold=2.0)</code> должна:</p><ol><li>проверить форму и конечность всех значений;</li><li>отделить последнюю точку от baseline;</li><li>отличить недостаточную историю от чистого результата;</li><li>отдельно обработать постоянный baseline с <code>std == 0</code>;</li><li>вернуть статус, пояснение, число baseline-точек и z-score, если он определён.</li></ol><h3>Шаг 4. Реализуй решение и отчёт</h3><ul><li><code>decide_release(checks, anomaly)</code> применяет таблицу <code>publish/review/block</code>;</li><li><code>build_report(...)</code> обязательно включает решение, все PASS/FAIL, сигнал аномалии, evidence path и следующее действие;</li><li><code>run_quality_gate(packet, policy)</code> связывает шаги и возвращает переносимый пакет результата.</li></ul><h3>Шаг 5. Проверь поведение</h3><pre><code>cd ai-native-work/course-work/phase-5/validated-reports
 python3 -m unittest discover -s code -p 'test_*.py' -v
-python3 code/validation.py</code></pre><p>Четырнадцать тестов проверяют не только успешный запуск, но и реалистичные ошибки: неверную версию контракта, потерянный фильтр или сегмент, несходящуюся арифметику, неподтверждённый evidence path, <code>NaN</code>, неверную историю, аномалию и недостаток истории.</p><h2>USE IT — где уместен ИИ</h2><p>Детерминированные проверки нельзя заменять просьбой «посмотри, всё ли нормально». Доступный AI-инструмент можно использовать в двух ограниченных ролях:</p><ol><li>предложить недостающую проверку для вашей предметной области;</li><li>подготовить понятное человеку объяснение уже рассчитанных PASS/FAIL и anomaly signal.</li></ol><p>Пример запроса:</p><pre><code>Ты помогаешь улучшить политику проверки аналитического отчёта.
+python3 code/validation.py</code></pre><p>Шестнадцать тестов проверяют не только успешный запуск, но и реальный шов 5.4 → 5.5: эталонный trace превращается в публикуемый пакет, а незавершённое расследование не маскируется под готовое. Остальные случаи ловят неверную версию контракта, потерянный фильтр или сегмент, несходящуюся арифметику, неподтверждённый evidence path, <code>NaN</code>, неверную историю, аномалию и недостаток истории.</p><h2>USE IT — где уместен ИИ</h2><p>Детерминированные проверки нельзя заменять просьбой «посмотри, всё ли нормально». Доступный AI-инструмент можно использовать в двух ограниченных ролях:</p><ol><li>предложить недостающую проверку для твоей предметной области;</li><li>подготовить понятное человеку объяснение уже рассчитанных PASS/FAIL и anomaly signal.</li></ol><p>Пример запроса:</p><pre><code>Ты помогаешь улучшить политику проверки аналитического отчёта.
 
 Metric: paid_revenue — сумма оплаченной выручки.
 Обязательный фильтр: status=paid.
@@ -89,7 +106,7 @@ delta каждой строки, сверку вкладов, evidence path и �
 - должна ли ошибка вести к block или review;
 - как проверить правило локальным кодом.
 
-Не выдумывай доступные поля. Если данных недостаточно, так и напиши.</code></pre><p>Затем примените знакомый цикл 4D:</p><ul><li><strong>Decide:</strong> ИИ предлагает проверку или формулировку, но не принимает решение о выпуске;</li><li><strong>Describe:</strong> передайте определение метрики, поля пакета и существующую policy;</li><li><strong>Delegate:</strong> запросите ограниченный список предложений с критерием действия;</li><li><strong>Discern:</strong> проверьте, можно ли вычислить правило из реальных полей, добавьте тест и только после этого включайте его в policy.</li></ul><p>API-ключ не требуется: используйте любой уже доступный инструмент или пропустите этот вариант. Обязательный результат доказывается локальными тестами.</p><h2>SHIP IT — плейбук выпуска проверенного отчёта</h2><p><strong>Артефакт:</strong> <a href="#f-phases-05-data-and-analytics-05-validation-anomalies-reports-outputs-validated-report-playbook-md"><code>outputs/validated-report-playbook.md</code></a></p><p>Плейбук фиксирует:</p><ul><li>паспорт входного пакета;</li><li>версию политики;</li><li>реестр жёстких проверок;</li><li>контракт anomaly signal;</li><li>таблицу <code>publish/review/block</code>;</li><li>эталонный evidence path;</li><li>действия человека для каждого решения;</li><li>критерии приёмки одного запуска;</li><li>досье завершения Фазы 5.</li></ul><p>Код вычисляет решение, а плейбук позволяет владельцу метрики, аналитику и ревьюеру согласовать правила без чтения реализации.</p><h2>Как этим уроком закрывается Фаза 5</h2><p>После 5.5 результаты фазы связываются в один процесс:</p><pre><code>5.1  AnalysisPlan и проверяемый аналитический brief
+Не выдумывай доступные поля. Если данных недостаточно, так и напиши.</code></pre><p>Затем примени знакомую рамку AI Fluency 4D:</p><ul><li><strong>Delegation:</strong> отдай ИИ предложение новых проверок или объяснение уже вычисленных результатов, но не решение <code>publish / review / block</code>.</li><li><strong>Description:</strong> передай определение метрики, реальные поля пакета, существующую policy и формат ожидаемого предложения.</li><li><strong>Discernment:</strong> проверь, ловит ли правило правдоподобную ошибку и можно ли вычислить его только из доступных данных.</li><li><strong>Diligence:</strong> реализуй принятое правило локально, добавь failure-тест, версионируй policy и сохрани ответственность за выпуск.</li></ul><p>API-ключ не требуется: используй любой уже доступный инструмент или пропусти этот вариант. Обязательный результат доказывается локальными тестами.</p><h2>SHIP IT — плейбук выпуска и досье фазы</h2><p><strong>Артефакты:</strong></p><ul><li>плейбук выпуска → <a href="#f-phases-05-data-and-analytics-05-validation-anomalies-reports-outputs-validated-report-playbook-md"><code>outputs/validated-report-playbook.md</code></a>;</li><li>заполняемое досье завершения → <a href="#f-phases-05-data-and-analytics-05-validation-anomalies-reports-outputs-phase-5-dossier-md"><code>outputs/phase-5-dossier.md</code></a>.</li></ul><p>Плейбук фиксирует:</p><ul><li>паспорт входного пакета;</li><li>версию политики;</li><li>реестр жёстких проверок;</li><li>контракт anomaly signal;</li><li>таблицу <code>publish/review/block</code>;</li><li>эталонный evidence path;</li><li>действия человека для каждого решения;</li><li>критерии приёмки одного запуска;</li><li>границу между trace 5.4 и validation packet 5.5.</li></ul><p>Код вычисляет решение, а плейбук позволяет владельцу метрики, аналитику и ревьюеру согласовать правила без чтения реализации. Скопируй шаблон досье в <code>course-work/phase-5/phase-5-dossier.md</code>: там ты свяжешь пять собственных результатов, сохранишь один успешный прогон, воспроизведёшь один FAIL с исправлением и ответишь на вопросы рефлексии по результату фазы.</p><h2>Как этим уроком закрывается Фаза 5</h2><p>После 5.5 результаты фазы связываются в один процесс:</p><pre><code>5.1  AnalysisPlan и проверяемый аналитический brief
  ↓
 5.2  execution trace и карточка проверки исполнения
  ↓
@@ -97,13 +114,18 @@ delta каждой строки, сверку вкладов, evidence path и �
  ↓
 5.4  многошаговый BI trace и evidence path
  ↓
-5.5  quality gate, release decision и проверенный отчёт</code></pre><p>Это ещё не автономная production-система. Но теперь каждый переход оставляет объект, который можно проверить, передать следующему шагу и воспроизвести без доверия к одной уверенной фразе ИИ.</p><h2>Частые ошибки</h2><ul><li><strong>Проверять только финальное число.</strong> Q2 может совпасть с <code>200</code>, а декомпозиция — не сходиться. Проверяйте и результат, и путь.</li><li><strong>Считать красивую сумму доказательством полноты.</strong> Сначала сравните фактический набор сегментов с ожидаемым, затем сверяйте их вклады.</li><li><strong>Терять проваленные проверки при сборке отчёта.</strong> Report bundle обязан содержать все PASS/FAIL, иначе решение нельзя перепроверить.</li><li><strong>Называть аномалию ошибкой.</strong> Необычное число может быть реальным событием. Аномалия ведёт к <code>review</code>, а не автоматически к исправлению данных.</li><li><strong>Писать «аномалий нет» при короткой истории.</strong> Недостаток данных — отдельный результат <code>insufficient_history</code>.</li><li><strong>Включать текущую точку в baseline без осознанной причины.</strong> Выброс изменит параметры, с которыми сравнивается, и может ослабить собственный сигнал.</li><li><strong>Оставлять правила анонимными лямбдами.</strong> Без стабильного ID, сообщения и evidence невозможно понять, что сломалось и как менялась политика.</li><li><strong>Считать <code>publish</code> доказательством причины.</strong> Gate проверяет локализацию изменения, а не гипотезы о запасах, цене, спросе или поведении клиентов.</li><li><strong>Называть локальный скрипт агентом.</strong> Здесь решение принимает явная policy. Возможность модели запрашивать функции появится только после изучения tool use.</li><li><strong>Смешивать проверку и доставку.</strong> Cron может повторить ошибочный процесс идеально по расписанию. Сначала нужен корректный единичный запуск.</li></ul><h2>Что сознательно не входит в урок</h2><ul><li>реальный MCP-коннектор и доступ к БД — Фаза 6;</li><li>автономный выбор инструментов моделью — Фаза 7;</li><li>cron, ретраи, доставка уведомлений и мониторинг job — Production-фаза;</li><li>доказательство причинности — для него нужны дополнительные данные и дизайн проверки;</li><li>сезонные модели, Isolation Forest и другие промышленные детекторы — факультативное углубление;</li><li>универсальная политика качества: владелец каждой метрики должен определить свою.</li></ul><h2>Переход в Фазу 6</h2><p>Сейчас Python-код сам вызывает <code>validate_packet</code>, <code>detect_current_anomaly</code> и <code>build_report</code>. Модель не может запросить эти функции и не управляет их исполнением.</p><p>В 6.1 мы разберём следующий механизм: модель возвращает структурированный <code>tool_call</code>, локальный диспетчер проверяет аргументы и вызывает разрешённую функцию, а результат возвращается модели как <code>tool_result</code>. Quality gate 5.5 станет хорошим примером инструмента, но его policy и право блокировать выпуск останутся в детерминированном коде.</p><h2>ПРОВЕРЬ СЕБЯ</h2><p>Вопросы проверяют решение о выпуске, полноту и сверку декомпозиций, смысл аномального сигнала, недостаток истории и границу между локализацией изменения и причиной.</p><div class="quiz-section" data-lesson="5.5"></div><h2>Дополнительное чтение</h2><p>Читать всё не требуется. Выберите одну ветку по своей следующей задаче: перенести quality gate в готовый инструмент, глубже разобраться в аномалиях или увидеть более широкую систему мониторинга данных.</p><p><strong>Перенести проверки урока в готовые инструменты</strong></p><ul><li><a href="https://docs.greatexpectations.io/docs/core/introduction/gx_overview/" target="_blank" rel="noopener">Great Expectations — GX Core overview</a> — сопоставьте <code>Expectation → Validation Result → Checkpoint/Action</code> с нашей цепочкой <code>check → decision → report</code>.</li><li><a href="https://pandera.readthedocs.io/en/latest/dataframe_schemas.html" target="_blank" rel="noopener">Pandera — DataFrame Schemas</a> — откройте разделы про обязательные и строгие колонки, пользовательские checks и накопление нескольких ошибок; это развитие проверок структуры пакета, а не замена release policy.</li><li><a href="https://docs.evidentlyai.com/metrics/preset_data_summary" target="_blank" rel="noopener">Evidently — Data Summary</a> — посмотрите, как сравнивать текущий набор с reference dataset, получать pass/fail-тесты качества и собирать отчёт для регулярного мониторинга.</li></ul><p><strong>Разобраться в детекции аномалий и её ограничениях</strong></p><ul><li><a href="https://scikit-learn.org/stable/modules/outlier_detection.html" target="_blank" rel="noopener">scikit-learn — Novelty and Outlier Detection</a> — начните с различия между поиском выбросов внутри обучающей выборки и проверкой новой точки относительно чистой истории: в уроке используется второй сценарий.</li><li><a href="https://itl.nist.gov/div898/handbook/eda/section3/eda35h.htm" target="_blank" rel="noopener">NIST — Detection of Outliers</a> — разберите, почему обычный z-score может быть ненадёжен на короткой истории и как несколько выбросов способны маскировать друг друга.</li></ul><p><strong>Увидеть более широкую систему мониторинга данных</strong></p><ul><li><a href="https://www.oreilly.com/library/view/data-quality-fundamentals/9781098112035/ch04.html" target="_blank" rel="noopener">O'Reilly — Data Quality Fundamentals, глава 4</a> — углубитесь в построение мониторинга и anomaly detection для data pipelines; полный текст может требовать доступа к книге.</li><li><a href="https://montecarlo.ai/blog-data-quality-anomaly-detection-everything-you-need-to-know/" target="_blank" rel="noopener">Monte Carlo — Data Quality Anomaly Detection</a> — дополнительный взгляд поставщика data-observability-платформы на различие правил, статистических мониторов и контроля пайплайна.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Если делегируешь ИИ, реши, что отдаёшь; опиши задачу и критерии; проверь результат; сохрани ответственность за итог.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-05-data-and-analytics-05-validation-anomalies-reports-code-test-validation-py" open data-test="1"><summary><span class="fname">code/test_validation.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>import math
+     build_validation_packet(trace, semantic, run metadata, history)
+ ↓
+5.5  validation packet → quality gate → release decision и проверенный отчёт</code></pre><p>Это ещё не автономная production-система. Но теперь каждый переход оставляет объект, который можно проверить, передать следующему шагу и воспроизвести без доверия к одной уверенной фразе ИИ.</p><h2>Частые ошибки</h2><ul><li><strong>Переписывать trace 5.4 в пакет вручную.</strong> Так легко изменить status, потерять сегмент или приписать finding обязательный фильтр, которого в нём нет. Используй адаптер и передавай semantic contract, metadata и историю отдельными входами.</li><li><strong>Проверять только финальное число.</strong> Q2 может совпасть с <code>200</code>, а декомпозиция — не сходиться. Проверяй и результат, и путь.</li><li><strong>Считать красивую сумму доказательством полноты.</strong> Сначала сравни фактический набор сегментов с ожидаемым, затем сверяй их вклады.</li><li><strong>Терять проваленные проверки при сборке отчёта.</strong> Report bundle обязан содержать все PASS/FAIL, иначе решение нельзя перепроверить.</li><li><strong>Называть аномалию ошибкой.</strong> Необычное число может быть реальным событием. Аномалия ведёт к <code>review</code>, а не автоматически к исправлению данных.</li><li><strong>Писать «аномалий нет» при короткой истории.</strong> Недостаток данных — отдельный результат <code>insufficient_history</code>.</li><li><strong>Включать текущую точку в baseline без осознанной причины.</strong> Выброс изменит параметры, с которыми сравнивается, и может ослабить собственный сигнал.</li><li><strong>Оставлять правила анонимными лямбдами.</strong> Без стабильного ID, сообщения и evidence невозможно понять, что сломалось и как менялась политика.</li><li><strong>Считать <code>publish</code> доказательством причины.</strong> Gate проверяет локализацию изменения, а не гипотезы о запасах, цене, спросе или поведении клиентов.</li><li><strong>Называть локальный скрипт агентом.</strong> Здесь решение принимает явная policy. Возможность модели запрашивать функции появится только после изучения tool use.</li><li><strong>Смешивать проверку и доставку.</strong> Cron может повторить ошибочный процесс идеально по расписанию. Сначала нужен корректный единичный запуск.</li></ul><h2>Что сознательно не входит в урок</h2><ul><li>реальный MCP-коннектор и доступ к БД — Фаза 6;</li><li>автономный выбор инструментов моделью — Фаза 7;</li><li>cron, ретраи, доставка уведомлений и мониторинг job — Production-фаза;</li><li>доказательство причинности — для него нужны дополнительные данные и дизайн проверки;</li><li>сезонные модели, Isolation Forest и другие промышленные детекторы — факультативное углубление;</li><li>универсальная политика качества: владелец каждой метрики должен определить свою.</li></ul><h2>Переход в Фазу 6</h2><p>Сейчас Python-код сам вызывает <code>validate_packet</code>, <code>detect_current_anomaly</code> и <code>build_report</code>. Модель не может запросить эти функции и не управляет их исполнением.</p><p>В 6.1 мы разберём следующий механизм: модель возвращает структурированный <code>tool_call</code>, локальный диспетчер проверяет аргументы и вызывает разрешённую функцию, а результат возвращается модели как <code>tool_result</code>. Quality gate 5.5 станет хорошим примером инструмента, но его policy и право блокировать выпуск останутся в детерминированном коде.</p><h2>ПРОВЕРЬ СЕБЯ</h2><p>Вопросы проверяют решение о выпуске, полноту и сверку декомпозиций, смысл аномального сигнала, недостаток истории и границу между локализацией изменения и причиной.</p><div class="quiz-section" data-lesson="5.5"></div><h2>Дополнительное чтение</h2><p>Читать всё не требуется. Выбери одну ветку по своей следующей задаче: перенести quality gate в готовый инструмент, глубже разобраться в аномалиях или увидеть более широкую систему мониторинга данных.</p><p><strong>Перенести проверки урока в готовые инструменты</strong></p><ul><li><a href="https://docs.greatexpectations.io/docs/core/introduction/gx_overview/" target="_blank" rel="noopener">Great Expectations — GX Core overview</a> — сопоставь <code>Expectation → Validation Result → Checkpoint/Action</code> с нашей цепочкой <code>check → decision → report</code>.</li><li><a href="https://pandera.readthedocs.io/en/latest/dataframe_schemas.html" target="_blank" rel="noopener">Pandera — DataFrame Schemas</a> — открой разделы про обязательные и строгие колонки, пользовательские checks и накопление нескольких ошибок; это развитие проверок структуры пакета, а не замена release policy.</li><li><a href="https://docs.evidentlyai.com/metrics/preset_data_summary" target="_blank" rel="noopener">Evidently — Data Summary</a> — посмотри, как сравнивать текущий набор с reference dataset, получать pass/fail-тесты качества и собирать отчёт для регулярного мониторинга.</li></ul><p><strong>Разобраться в детекции аномалий и её ограничениях</strong></p><ul><li><a href="https://scikit-learn.org/stable/modules/outlier_detection.html" target="_blank" rel="noopener">scikit-learn — Novelty and Outlier Detection</a> — начни с различия между поиском выбросов внутри обучающей выборки и проверкой новой точки относительно чистой истории: в уроке используется второй сценарий.</li><li><a href="https://itl.nist.gov/div898/handbook/eda/section3/eda35h.htm" target="_blank" rel="noopener">NIST — Detection of Outliers</a> — разбери, почему обычный z-score может быть ненадёжен на короткой истории и как несколько выбросов способны маскировать друг друга.</li></ul><p><strong>Увидеть более широкую систему мониторинга данных</strong></p><ul><li><a href="https://www.oreilly.com/library/view/data-quality-fundamentals/9781098112035/ch04.html" target="_blank" rel="noopener">O'Reilly — Data Quality Fundamentals, глава 4</a> — углубись в построение мониторинга и anomaly detection для data pipelines; полный текст может требовать доступа к книге.</li><li><a href="https://montecarlo.ai/blog-data-quality-anomaly-detection-everything-you-need-to-know/" target="_blank" rel="noopener">Monte Carlo — Data Quality Anomaly Detection</a> — дополнительный взгляд поставщика data-observability-платформы на различие правил, статистических мониторов и контроля пайплайна.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Если делегируешь ИИ, реши, что отдаёшь; опиши задачу и критерии; проверь результат; сохрани ответственность за итог.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-05-data-and-analytics-05-validation-anomalies-reports-code-test-validation-py" open data-test="1"><summary><span class="fname">code/test_validation.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>import math
 import unittest
 from copy import deepcopy
 
 from validation import (
+    DEMO_INVESTIGATION,
     DEMO_PACKET,
     DEMO_POLICY,
+    DEMO_SEMANTIC,
+    build_validation_packet,
     detect_current_anomaly,
     run_quality_gate,
 )
@@ -114,6 +136,36 @@ def failed_ids(result):
 
 
 class QualityGateTests(unittest.TestCase):
+    def test_investigation_trace_builds_reference_packet(self):
+        packet = build_validation_packet(
+            deepcopy(DEMO_INVESTIGATION),
+            deepcopy(DEMO_SEMANTIC),
+            run_id=DEMO_PACKET["run_id"],
+            as_of=DEMO_PACKET["as_of"],
+            history=deepcopy(DEMO_PACKET["history"]),
+        )
+
+        self.assertEqual(packet, DEMO_PACKET)
+        self.assertEqual(run_quality_gate(packet)["decision"], "publish")
+
+    def test_unfinished_investigation_cannot_publish(self):
+        investigation = deepcopy(DEMO_INVESTIGATION)
+        investigation["status"] = "step_budget_exhausted"
+        investigation["trace"] = investigation["trace"][:2]
+        investigation["finding"] = None
+        packet = build_validation_packet(
+            investigation,
+            deepcopy(DEMO_SEMANTIC),
+            run_id="unfinished-run",
+            as_of=DEMO_PACKET["as_of"],
+            history=deepcopy(DEMO_PACKET["history"]),
+        )
+
+        result = run_quality_gate(packet)
+
+        self.assertEqual(result["decision"], "block")
+        self.assertIn("trace.ready_for_review", failed_ids(result))
+
     def test_reference_packet_is_publishable(self):
         result = run_quality_gate(deepcopy(DEMO_PACKET))
 
@@ -213,13 +265,25 @@ class QualityGateTests(unittest.TestCase):
         self.assertIn("totals.finite", failed_ids(result))
 
     def test_evidence_path_must_be_supported(self):
-        packet = deepcopy(DEMO_PACKET)
-        packet["evidence_path"][1]["delta"] = -999.0
+        cases = {
+            "unsupported step": [
+                DEMO_PACKET["evidence_path"][0],
+                {
+                    **DEMO_PACKET["evidence_path"][1],
+                    "delta": -999.0,
+                },
+            ],
+            "empty path": [],
+        }
+        for case, evidence_path in cases.items():
+            with self.subTest(case=case):
+                packet = deepcopy(DEMO_PACKET)
+                packet["evidence_path"] = deepcopy(evidence_path)
 
-        result = run_quality_gate(packet)
+                result = run_quality_gate(packet)
 
-        self.assertEqual(result["decision"], "block")
-        self.assertIn("evidence_path.supported", failed_ids(result))
+                self.assertEqual(result["decision"], "block")
+                self.assertIn("evidence_path.supported", failed_ids(result))
 
     def test_invalid_history_blocks_release(self):
         packet = deepcopy(DEMO_PACKET)
@@ -262,9 +326,9 @@ if __name__ == "__main__":
     unittest.main()
 </code></pre></details><h3>Эталонное решение</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-05-data-and-analytics-05-validation-anomalies-reports-code-validation-py"><summary><span class="fname">code/validation.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Детерминированный quality gate для аналитического отчёта урока 5.5.
 
-Вход — пакет BI-расследования из 5.4. Выход — результаты проверок,
-сигнал аномалии, решение publish/review/block и проверяемый Markdown-отчёт.
-Только стандартная библиотека Python.
+Сначала сохранённый результат BI-расследования 5.4 преобразуется в validation packet.
+Затем gate возвращает результаты проверок, сигнал аномалии, решение
+publish/review/block и проверяемый Markdown-отчёт. Только стандартная библиотека Python.
 """
 
 from __future__ import annotations
@@ -365,6 +429,119 @@ DEMO_PACKET = {
 }
 
 
+# Сохранённый результат investigate() из 5.4. Он намеренно имеет другую форму:
+# задача адаптера — сделать границу между trace и validation packet наблюдаемой.
+DEMO_INVESTIGATION = {
+    "status": "ready_for_review",
+    "state": {
+        "question": "Почему paid_revenue снизилась в Q2 относительно Q1?",
+        "metric_id": "paid_revenue",
+        "baseline": "Q1",
+        "focus": "Q2",
+        "semantic_version": "1.1",
+    },
+    "trace": [
+        {
+            "observation": {
+                "kind": "period_comparison",
+                "metric_id": "paid_revenue",
+                "baseline": "Q1",
+                "focus": "Q2",
+                "baseline_value": 270.0,
+                "focus_value": 200.0,
+                "delta": -70.0,
+                "unit": "RUB",
+                "filters": {},
+                "semantic_version": "1.1",
+            }
+        },
+        {
+            "observation": {
+                "kind": "delta_breakdown",
+                "group_by": "region",
+                "segments": [
+                    {
+                        "segment": "Москва",
+                        "baseline_value": 170.0,
+                        "focus_value": 150.0,
+                        "delta": -20.0,
+                    },
+                    {
+                        "segment": "Питер",
+                        "baseline_value": 80.0,
+                        "focus_value": 30.0,
+                        "delta": -50.0,
+                    },
+                    {
+                        "segment": "Казань",
+                        "baseline_value": 20.0,
+                        "focus_value": 20.0,
+                        "delta": 0.0,
+                    },
+                ],
+                "metric_id": "paid_revenue",
+                "baseline": "Q1",
+                "focus": "Q2",
+                "baseline_value": 270.0,
+                "focus_value": 200.0,
+                "delta": -70.0,
+                "unit": "RUB",
+                "filters": {},
+                "semantic_version": "1.1",
+            }
+        },
+        {
+            "observation": {
+                "kind": "delta_breakdown",
+                "group_by": "product",
+                "segments": [
+                    {
+                        "segment": "Basic",
+                        "baseline_value": 30.0,
+                        "focus_value": 20.0,
+                        "delta": -10.0,
+                    },
+                    {
+                        "segment": "Pro",
+                        "baseline_value": 50.0,
+                        "focus_value": 10.0,
+                        "delta": -40.0,
+                    },
+                ],
+                "metric_id": "paid_revenue",
+                "baseline": "Q1",
+                "focus": "Q2",
+                "baseline_value": 80.0,
+                "focus_value": 30.0,
+                "delta": -50.0,
+                "unit": "RUB",
+                "filters": {"region": "Питер"},
+                "semantic_version": "1.1",
+            }
+        },
+    ],
+    "finding": {
+        "metric_id": "paid_revenue",
+        "total_delta": -70.0,
+        "path": [
+            {"dimension": "region", "segment": "Питер", "delta": -50.0},
+            {"dimension": "product", "segment": "Pro", "delta": -40.0},
+        ],
+    },
+}
+
+
+DEMO_SEMANTIC = {
+    "version": "1.1",
+    "metric_ids": {
+        "paid_revenue": {
+            "unit": "RUB",
+            "required_filter": {"status": "paid"},
+        }
+    },
+}
+
+
 def _is_finite_number(value: Any) -&gt; bool:
     return (
         isinstance(value, (int, float))
@@ -393,6 +570,157 @@ def _check(
         "failure_effect": "block",
         "message": message,
         "evidence": evidence,
+    }
+
+
+def _require_mapping(value: Any, label: str) -&gt; Mapping[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{label} must be a mapping")
+    return value
+
+
+def _breakdown_id(group_by: str, filters: Mapping[str, Any]) -&gt; str:
+    if not filters:
+        return group_by
+    suffix = ",".join(f"{key}={filters[key]}" for key in sorted(filters))
+    return f"{group_by}|{suffix}"
+
+
+def build_validation_packet(
+    investigation: Mapping[str, Any],
+    semantic: Mapping[str, Any],
+    *,
+    run_id: str,
+    as_of: str,
+    history: Sequence[Mapping[str, Any]],
+) -&gt; dict[str, Any]:
+    """Преобразует сохранённый результат 5.4 во вход quality gate 5.5.
+
+    Trace даёт наблюдения и evidence path. Semantic contract даёт единицу и
+    обязательные фильтры. Run metadata и сопоставимая история приходят отдельно:
+    адаптер не должен придумывать их из финальной фразы расследования.
+    """
+    if not isinstance(run_id, str) or not run_id.strip():
+        raise ValueError("run_id must be a non-empty string")
+    if not isinstance(as_of, str) or not as_of.strip():
+        raise ValueError("as_of must be a non-empty string")
+    if not isinstance(history, Sequence) or isinstance(history, (str, bytes)):
+        raise ValueError("history must be a sequence of points")
+
+    investigation = _require_mapping(investigation, "investigation")
+    semantic = _require_mapping(semantic, "semantic")
+    state = _require_mapping(investigation.get("state"), "investigation.state")
+    trace = investigation.get("trace")
+    if not isinstance(trace, Sequence) or isinstance(trace, (str, bytes)):
+        raise ValueError("investigation.trace must be a sequence")
+
+    metric_id = state.get("metric_id")
+    metric_ids = _require_mapping(semantic.get("metric_ids"), "semantic.metric_ids")
+    metric_contract = _require_mapping(
+        metric_ids.get(metric_id), f"semantic.metric_ids.{metric_id}"
+    )
+    semantic_version = state.get("semantic_version")
+    if semantic_version != semantic.get("version"):
+        raise ValueError("investigation and semantic contract versions differ")
+
+    baseline = state.get("baseline")
+    focus = state.get("focus")
+    if not all(isinstance(value, str) and value for value in (baseline, focus)):
+        raise ValueError("baseline and focus must be non-empty strings")
+
+    required_filters = metric_contract.get(
+        "required_filters", metric_contract.get("required_filter", {})
+    )
+    required_filters = _require_mapping(
+        required_filters, f"semantic.metric_ids.{metric_id}.required_filter"
+    )
+
+    totals: dict[str, Any] = {}
+    breakdowns: dict[str, list[dict[str, Any]]] = {}
+    unit = metric_contract.get("unit")
+
+    for index, step in enumerate(trace):
+        step = _require_mapping(step, f"investigation.trace[{index}]")
+        observation = _require_mapping(
+            step.get("observation"), f"investigation.trace[{index}].observation"
+        )
+        if observation.get("semantic_version") != semantic_version:
+            raise ValueError(f"trace observation {index} has another semantic version")
+        if observation.get("metric_id") != metric_id:
+            raise ValueError(f"trace observation {index} has another metric ID")
+        if observation.get("baseline") != baseline or observation.get("focus") != focus:
+            raise ValueError(f"trace observation {index} has other periods")
+
+        kind = observation.get("kind")
+        if kind == "period_comparison":
+            totals = {
+                baseline: observation.get("baseline_value"),
+                focus: observation.get("focus_value"),
+            }
+            unit = observation.get("unit", unit)
+        elif kind == "delta_breakdown":
+            group_by = observation.get("group_by")
+            filters = _require_mapping(
+                observation.get("filters", {}),
+                f"investigation.trace[{index}].observation.filters",
+            )
+            rows = observation.get("segments")
+            if not isinstance(group_by, str) or not group_by:
+                raise ValueError(f"trace observation {index} has no group_by")
+            if not isinstance(rows, Sequence) or isinstance(rows, (str, bytes)):
+                raise ValueError(f"trace observation {index} has invalid segments")
+            breakdowns[_breakdown_id(group_by, filters)] = [
+                dict(_require_mapping(row, f"trace segment {row_index}"))
+                for row_index, row in enumerate(rows)
+            ]
+        else:
+            raise ValueError(f"trace observation {index} has unknown kind: {kind}")
+
+    finding = investigation.get("finding")
+    path = finding.get("path", []) if isinstance(finding, Mapping) else []
+    if not isinstance(path, Sequence) or isinstance(path, (str, bytes)):
+        raise ValueError("investigation.finding.path must be a sequence")
+
+    evidence_path: list[dict[str, Any]] = []
+    for index, hop in enumerate(path):
+        hop = _require_mapping(hop, f"investigation.finding.path[{index}]")
+        dimension = hop.get("dimension")
+        segment = hop.get("segment")
+        delta = hop.get("delta")
+        candidates = []
+        for breakdown_id, rows in breakdowns.items():
+            if breakdown_id.split("|", 1)[0] != dimension:
+                continue
+            if any(
+                row.get("segment") == segment and _same_number(row.get("delta"), delta)
+                for row in rows
+            ):
+                candidates.append(breakdown_id)
+        if len(candidates) != 1:
+            raise ValueError(f"evidence hop {index} has no unique supporting breakdown")
+        evidence_path.append(
+            {
+                "breakdown_id": candidates[0],
+                "dimension": dimension,
+                "segment": segment,
+                "delta": delta,
+            }
+        )
+
+    return {
+        "run_id": run_id,
+        "as_of": as_of,
+        "trace_status": investigation.get("status"),
+        "semantic_version": semantic_version,
+        "metric_id": metric_id,
+        "unit": unit,
+        "baseline": baseline,
+        "focus": focus,
+        "filters": dict(required_filters),
+        "totals": totals,
+        "breakdowns": breakdowns,
+        "evidence_path": evidence_path,
+        "history": [dict(_require_mapping(point, "history point")) for point in history],
     }
 
 
@@ -496,6 +824,8 @@ def _evidence_path_is_supported(packet: Mapping[str, Any]) -&gt; tuple[bool, lis
     path = packet.get("evidence_path", [])
     if not isinstance(breakdowns, Mapping) or not isinstance(path, Sequence):
         return False, []
+    if not path:
+        return False, ["путь доказательств пуст"]
 
     unsupported: list[str] = []
     for step in path:
@@ -514,7 +844,7 @@ def _evidence_path_is_supported(packet: Mapping[str, Any]) -&gt; tuple[bool, lis
             unsupported.append(
                 f"{breakdown_id}:{step.get('segment')}:{step.get('delta')}"
             )
-    return bool(path) and not unsupported, unsupported
+    return not unsupported, unsupported
 
 
 def validate_packet(
@@ -894,11 +1224,147 @@ def run_quality_gate(
 
 
 if __name__ == "__main__":
-    result = run_quality_gate(DEMO_PACKET)
+    packet = build_validation_packet(
+        DEMO_INVESTIGATION,
+        DEMO_SEMANTIC,
+        run_id=DEMO_PACKET["run_id"],
+        as_of=DEMO_PACKET["as_of"],
+        history=DEMO_PACKET["history"],
+    )
+    result = run_quality_gate(packet)
     print(json.dumps({k: v for k, v in result.items() if k != "report"}, ensure_ascii=False, indent=2))
     print()
     print(result["report"])
-</code></pre></details><h3>Артефакт</h3><details class="filebox" id="f-phases-05-data-and-analytics-05-validation-anomalies-reports-outputs-validated-report-playbook-md" open><summary><span class="fname">outputs/validated-report-playbook.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: плейбук выпуска проверенного аналитического отчёта
+</code></pre></details><h3>Артефакт</h3><details class="filebox" id="f-phases-05-data-and-analytics-05-validation-anomalies-reports-outputs-phase-5-dossier-md" open><summary><span class="fname">outputs/phase-5-dossier.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Досье завершения Фазы 5
+
+Досье связывает пять результатов фазы в один проверяемый маршрут. Это не шестой урок и
+не новый отчёт: здесь ты показываешь, что один вопрос, одна метрика и одна доказательная
+цепочка действительно проходят через разные границы без скрытой подмены смысла.
+
+Скопируй шаблон в:
+
+```text
+ai-native-work/course-work/phase-5/phase-5-dossier.md
+```
+
+Можно оставить синтетический сценарий `paid_revenue` из курса или использовать один
+безопасный рабочий пример. Для рабочего примера не загружай данные во внешний сервис без
+разрешения и не заполняй пробелы догадками.
+
+## 1. Паспорт одного маршрута
+
+| Поле | Значение |
+|---|---|
+| Бизнес-вопрос | |
+| Решение, которое поддерживает ответ | |
+| Источник и его версия | |
+| Grain и row ID | |
+| Metric ID | |
+| Определение, единица и обязательные фильтры | |
+| Baseline → focus | |
+| Владелец определения | |
+| Граница вывода: что результат не доказывает | |
+
+Если эти поля различаются между уроками, сначала объясни и версионируй изменение. Не
+исправляй старые артефакты задним числом так, будто перехода не было.
+
+## 2. Пять доказательств
+
+Укажи путь к своему файлу или сохранённому результату, а не к эталону на странице курса.
+
+| Урок | Что приложить | Путь | Что проверил самостоятельно |
+|---|---|---|---|
+| 5.1 | `AnalysisPlan` и аналитический brief | | Вопрос, grain, фильтры, метрика, read / used / excluded и полный итог |
+| 5.2 | Execution trace и карточка проверки | | Вход, код, среда, результат и решение `accept / reject / needs clarification` |
+| 5.3 | Semantic contract, intent, SQL и params | | Metric ID, обязательный фильтр, read-only исполнение и сверка |
+| 5.4 | Результат `investigate()` | | Каждый следующий action intent следует из observation; stop и evidence path сохранены |
+| 5.5 | Validation packet и результат `run_quality_gate()` | | Все PASS/FAIL, anomaly status, решение и граница доказательств попали в report bundle |
+
+## 3. Проверка интерфейсов между уроками
+
+Заполни фактическими значениями из своих файлов.
+
+| Передача | Что должно сохраниться | Фактическое доказательство |
+|---|---|---|
+| 5.1 → 5.2 | источник, grain, период, фильтры, метрика и ожидаемый итог | |
+| 5.2 → 5.3 | принятый смысл расчёта, но новый исполнитель и новый контракт доступа | |
+| 5.3 → 5.4 | Metric ID и обязательные фильтры; изменение semantic version объяснено | |
+| 5.4 → 5.5 | `status`, периоды, observations, breakdowns и evidence path преобразованы адаптером | |
+| 5.5 → 6.1 | функции gate остаются детерминированными; модели ещё не разрешено вызывать их | |
+
+Для синтетического маршрута должны сохраниться контрольные значения:
+
+```text
+paid_revenue, status=paid, RUB
+Q1 270 → Q2 200, delta −70
+region=Питер, delta −50
+product=Pro, delta −40
+```
+
+## 4. Исполняемое завершение
+
+Сохрани результат 5.4 как `investigation-result.json`. В 5.5 передай его в
+`build_validation_packet(...)` вместе с semantic contract, `run_id`, `as_of` и
+сопоставимой историей, затем вызови `run_quality_gate(...)`.
+
+| Поле запуска | Значение |
+|---|---|
+| `run_id` | |
+| `as_of` | |
+| Semantic version | |
+| Число шагов trace | |
+| Число PASS / FAIL | |
+| Anomaly status | |
+| Решение | |
+| Путь к сохранённому report bundle | |
+
+Приложи команду запуска и её фактический вывод. Досье не принимается по фразе «код
+работает» без сохранённого решения и проверок.
+
+## 5. Правдоподобный сбой и восстановление
+
+Выбери один сбой:
+
+- удали обязательный фильтр `status=paid`;
+- удали один ожидаемый сегмент;
+- измени delta строки так, чтобы она не равнялась `focus − baseline`;
+- оборви расследование статусом `step_budget_exhausted`.
+
+| Шаг | Запись |
+|---|---|
+| Что изменено | |
+| Какой FAIL или stop ожидался | |
+| Какой результат получен | |
+| Почему выпуск заблокирован | |
+| Что исправлено | |
+| Результат повторного запуска | |
+
+Не меняй Markdown-вердикт вручную. Исправь вход, trace или policy и повтори полный gate.
+
+## 6. Рефлексия по результату фазы
+
+Ответь своими словами:
+
+1. Где в твоём маршруте ИИ предлагает решение, а где не имеет права принимать его?
+2. Какое доказательство не позволяет перепутать успешное исполнение с корректным анализом?
+3. Какое предположение оказалось самым опасным: grain, фильтр, источник, semantic version, полнота сегментов или история?
+4. Что ещё потребуется для реального подключения к данным, но сознательно начинается только в Фазе 6?
+
+## 7. Критерии готовности
+
+- [ ] Один вопрос и Metric ID прослеживаются через все пять уроков.
+- [ ] Изменение semantic contract с `1.0` на `1.1` объяснено, а не скрыто.
+- [ ] Результат 5.4 превращён в пакет 5.5 функцией-адаптером.
+- [ ] Сохранены validation packet, все PASS/FAIL, anomaly status и report bundle.
+- [ ] Один реалистичный сбой воспроизведён, заблокирован и исправлен повторным запуском.
+- [ ] Evidence path не назван доказательством причины.
+- [ ] Ответы рефлексии разделяют роль модели, детерминированного кода и человека.
+- [ ] Для следующей фазы ясно, какие функции можно будет оформить как tools, а какие policy нельзя отдавать модели.
+
+Фаза завершена, если другой человек может пройти по этим доказательствам от исходного
+вопроса до решения `publish / review / block`, воспроизвести хотя бы один запуск и
+объяснить, почему решение следует из сохранённых проверок.
+</code></pre></details><details class="filebox" id="f-phases-05-data-and-analytics-05-validation-anomalies-reports-outputs-validated-report-playbook-md" open><summary><span class="fname">outputs/validated-report-playbook.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: плейбук выпуска проверенного аналитического отчёта
 
 Этот плейбук задаёт границу между завершённым BI-расследованием и публикацией его
 результата. Он не заменяет код quality gate: код вычисляет проверки и решение, а документ
@@ -908,7 +1374,7 @@ if __name__ == "__main__":
 
 | Поле | Значение |
 |---|---|
-| Вход | пакет расследования из 5.4 |
+| Вход | validation packet, детерминированно собранный из результата `investigate()` 5.4 |
 | Metric ID | `paid_revenue` |
 | Определение | сумма оплаченной выручки |
 | Unit | `RUB` |
@@ -921,6 +1387,12 @@ if __name__ == "__main__":
 | Исполнитель | детерминированный `run_quality_gate(...)` |
 
 ## 2. Контракт входного пакета
+
+Результат 5.4 и пакет 5.5 — разные контракты. Функция
+`build_validation_packet(...)` переносит `status`, state, observations и finding из
+trace; semantic contract добавляет единицу и обязательные фильтры; `run_id`, `as_of` и
+сопоставимая история передаются отдельно. Адаптер не извлекает эти факты из финальной
+формулировки расследования и не придумывает отсутствующие значения.
 
 Обязательные поля:
 
@@ -1083,7 +1555,11 @@ paid_revenue: Q1 270 → Q2 200, delta −70
 
 ## 9. Досье завершения Фазы 5
 
-Перед переходом к Фазе 6 приложите ссылки или пути к пяти результатам:
+Перед переходом к Фазе 6 скопируй
+[`phase-5-dossier.md`](phase-5-dossier.md) в
+`course-work/phase-5/phase-5-dossier.md`. В нём нужно не только приложить пять
+результатов, но и показать фактический переход 5.4 → 5.5, один заблокированный сбой,
+повторный запуск после исправления и рефлексию по результату фазы.
 
 | Урок | Что приложить | Что этим доказано |
 |---|---|---|
@@ -1091,21 +1567,21 @@ paid_revenue: Q1 270 → Q2 200, delta −70
 | 5.2 | execution trace и карточка проверки | исполнение отделено от интерпретации |
 | 5.3 | semantic contract и проверочные intents | смысл метрики и SQL ограничены контрактом |
 | 5.4 | trace и evidence path | следующий шаг зависел от observation |
-| 5.5 | output `run_quality_gate(...)` и этот плейбук | решение о выпуске воспроизводимо |
+| 5.5 | validation packet, output `run_quality_gate(...)` и этот плейбук | решение о выпуске воспроизводимо |
 
 Фаза считается собранной в единый процесс, когда новый человек может пройти по этим
-пяти объектам от исходного вопроса до решения `publish/review/block`, не восстанавливая
-скрытые предположения автора.
-</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> четырнадцать <code>unittest</code> проходят без внешних пакетов; студент объясняет различие жёсткой проверки и anomaly signal; пакет 5.4 проверяется на контракт, полноту, арифметику, сверки и evidence path; недостаток истории не маскируется под <code>clear</code>; отчёт сохраняет все PASS/FAIL и решение <code>publish/review/block</code>; итог не присваивает evidence path причинный смысл. ✅ <strong>Урок готов</strong></p></article>
+пяти объектам от исходного вопроса до решения `publish/review/block`, воспроизвести
+переход через адаптер и объяснить решение без скрытых предположений автора.
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> шестнадцать <code>unittest</code> проходят без внешних пакетов; результат 5.4 детерминированно преобразуется в validation packet, а незавершённый trace не может быть опубликован; студент объясняет различие жёсткой проверки и anomaly signal; пакет проверяется на контракт, полноту, арифметику, сверки и evidence path; недостаток истории не маскируется под <code>clear</code>; отчёт сохраняет все PASS/FAIL и решение <code>publish/review/block</code>; досье связывает пять уроков и не присваивает evidence path причинный смысл. ✅ <strong>Урок готов</strong></p></article>
     <div class="nav-prevnext" id="prevnext"><a href="../../lessons/bi-agents/"><small>← 5.4</small>BI-агенты</a><a href="../../lessons/tool-use-function-calling/" style="text-align:right"><small>6.1 →</small>Tool use / function calling изнутри</a></div>
   </section>
 
   <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
 
   <script>window.__BASE__="../../";</script>
-  <script src="../../data.js?v=c560182bc231"></script>
-  <script src="../../progress.js?v=c560182bc231"></script>
-  <script src="../../header.js?v=c560182bc231"></script>
-  <script src="../../app.js?v=c560182bc231"></script>
+  <script src="../../data.js?v=2553bc092873"></script>
+  <script src="../../progress.js?v=2553bc092873"></script>
+  <script src="../../header.js?v=2553bc092873"></script>
+  <script src="../../app.js?v=2553bc092873"></script>
 </body>
 </html>

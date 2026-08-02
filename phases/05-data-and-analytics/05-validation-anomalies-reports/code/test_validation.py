@@ -3,8 +3,11 @@ import unittest
 from copy import deepcopy
 
 from validation import (
+    DEMO_INVESTIGATION,
     DEMO_PACKET,
     DEMO_POLICY,
+    DEMO_SEMANTIC,
+    build_validation_packet,
     detect_current_anomaly,
     run_quality_gate,
 )
@@ -15,6 +18,36 @@ def failed_ids(result):
 
 
 class QualityGateTests(unittest.TestCase):
+    def test_investigation_trace_builds_reference_packet(self):
+        packet = build_validation_packet(
+            deepcopy(DEMO_INVESTIGATION),
+            deepcopy(DEMO_SEMANTIC),
+            run_id=DEMO_PACKET["run_id"],
+            as_of=DEMO_PACKET["as_of"],
+            history=deepcopy(DEMO_PACKET["history"]),
+        )
+
+        self.assertEqual(packet, DEMO_PACKET)
+        self.assertEqual(run_quality_gate(packet)["decision"], "publish")
+
+    def test_unfinished_investigation_cannot_publish(self):
+        investigation = deepcopy(DEMO_INVESTIGATION)
+        investigation["status"] = "step_budget_exhausted"
+        investigation["trace"] = investigation["trace"][:2]
+        investigation["finding"] = None
+        packet = build_validation_packet(
+            investigation,
+            deepcopy(DEMO_SEMANTIC),
+            run_id="unfinished-run",
+            as_of=DEMO_PACKET["as_of"],
+            history=deepcopy(DEMO_PACKET["history"]),
+        )
+
+        result = run_quality_gate(packet)
+
+        self.assertEqual(result["decision"], "block")
+        self.assertIn("trace.ready_for_review", failed_ids(result))
+
     def test_reference_packet_is_publishable(self):
         result = run_quality_gate(deepcopy(DEMO_PACKET))
 
@@ -114,13 +147,25 @@ class QualityGateTests(unittest.TestCase):
         self.assertIn("totals.finite", failed_ids(result))
 
     def test_evidence_path_must_be_supported(self):
-        packet = deepcopy(DEMO_PACKET)
-        packet["evidence_path"][1]["delta"] = -999.0
+        cases = {
+            "unsupported step": [
+                DEMO_PACKET["evidence_path"][0],
+                {
+                    **DEMO_PACKET["evidence_path"][1],
+                    "delta": -999.0,
+                },
+            ],
+            "empty path": [],
+        }
+        for case, evidence_path in cases.items():
+            with self.subTest(case=case):
+                packet = deepcopy(DEMO_PACKET)
+                packet["evidence_path"] = deepcopy(evidence_path)
 
-        result = run_quality_gate(packet)
+                result = run_quality_gate(packet)
 
-        self.assertEqual(result["decision"], "block")
-        self.assertIn("evidence_path.supported", failed_ids(result))
+                self.assertEqual(result["decision"], "block")
+                self.assertIn("evidence_path.supported", failed_ids(result))
 
     def test_invalid_history_blocks_release(self):
         packet = deepcopy(DEMO_PACKET)

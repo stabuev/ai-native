@@ -1,8 +1,8 @@
 """Детерминированный quality gate для аналитического отчёта урока 5.5.
 
-Вход — пакет BI-расследования из 5.4. Выход — результаты проверок,
-сигнал аномалии, решение publish/review/block и проверяемый Markdown-отчёт.
-Только стандартная библиотека Python.
+Сначала сохранённый результат BI-расследования 5.4 преобразуется в validation packet.
+Затем gate возвращает результаты проверок, сигнал аномалии, решение
+publish/review/block и проверяемый Markdown-отчёт. Только стандартная библиотека Python.
 """
 
 from __future__ import annotations
@@ -103,6 +103,119 @@ DEMO_PACKET = {
 }
 
 
+# Сохранённый результат investigate() из 5.4. Он намеренно имеет другую форму:
+# задача адаптера — сделать границу между trace и validation packet наблюдаемой.
+DEMO_INVESTIGATION = {
+    "status": "ready_for_review",
+    "state": {
+        "question": "Почему paid_revenue снизилась в Q2 относительно Q1?",
+        "metric_id": "paid_revenue",
+        "baseline": "Q1",
+        "focus": "Q2",
+        "semantic_version": "1.1",
+    },
+    "trace": [
+        {
+            "observation": {
+                "kind": "period_comparison",
+                "metric_id": "paid_revenue",
+                "baseline": "Q1",
+                "focus": "Q2",
+                "baseline_value": 270.0,
+                "focus_value": 200.0,
+                "delta": -70.0,
+                "unit": "RUB",
+                "filters": {},
+                "semantic_version": "1.1",
+            }
+        },
+        {
+            "observation": {
+                "kind": "delta_breakdown",
+                "group_by": "region",
+                "segments": [
+                    {
+                        "segment": "Москва",
+                        "baseline_value": 170.0,
+                        "focus_value": 150.0,
+                        "delta": -20.0,
+                    },
+                    {
+                        "segment": "Питер",
+                        "baseline_value": 80.0,
+                        "focus_value": 30.0,
+                        "delta": -50.0,
+                    },
+                    {
+                        "segment": "Казань",
+                        "baseline_value": 20.0,
+                        "focus_value": 20.0,
+                        "delta": 0.0,
+                    },
+                ],
+                "metric_id": "paid_revenue",
+                "baseline": "Q1",
+                "focus": "Q2",
+                "baseline_value": 270.0,
+                "focus_value": 200.0,
+                "delta": -70.0,
+                "unit": "RUB",
+                "filters": {},
+                "semantic_version": "1.1",
+            }
+        },
+        {
+            "observation": {
+                "kind": "delta_breakdown",
+                "group_by": "product",
+                "segments": [
+                    {
+                        "segment": "Basic",
+                        "baseline_value": 30.0,
+                        "focus_value": 20.0,
+                        "delta": -10.0,
+                    },
+                    {
+                        "segment": "Pro",
+                        "baseline_value": 50.0,
+                        "focus_value": 10.0,
+                        "delta": -40.0,
+                    },
+                ],
+                "metric_id": "paid_revenue",
+                "baseline": "Q1",
+                "focus": "Q2",
+                "baseline_value": 80.0,
+                "focus_value": 30.0,
+                "delta": -50.0,
+                "unit": "RUB",
+                "filters": {"region": "Питер"},
+                "semantic_version": "1.1",
+            }
+        },
+    ],
+    "finding": {
+        "metric_id": "paid_revenue",
+        "total_delta": -70.0,
+        "path": [
+            {"dimension": "region", "segment": "Питер", "delta": -50.0},
+            {"dimension": "product", "segment": "Pro", "delta": -40.0},
+        ],
+    },
+}
+
+
+DEMO_SEMANTIC = {
+    "version": "1.1",
+    "metric_ids": {
+        "paid_revenue": {
+            "unit": "RUB",
+            "required_filter": {"status": "paid"},
+        }
+    },
+}
+
+
 def _is_finite_number(value: Any) -> bool:
     return (
         isinstance(value, (int, float))
@@ -131,6 +244,157 @@ def _check(
         "failure_effect": "block",
         "message": message,
         "evidence": evidence,
+    }
+
+
+def _require_mapping(value: Any, label: str) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{label} must be a mapping")
+    return value
+
+
+def _breakdown_id(group_by: str, filters: Mapping[str, Any]) -> str:
+    if not filters:
+        return group_by
+    suffix = ",".join(f"{key}={filters[key]}" for key in sorted(filters))
+    return f"{group_by}|{suffix}"
+
+
+def build_validation_packet(
+    investigation: Mapping[str, Any],
+    semantic: Mapping[str, Any],
+    *,
+    run_id: str,
+    as_of: str,
+    history: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Преобразует сохранённый результат 5.4 во вход quality gate 5.5.
+
+    Trace даёт наблюдения и evidence path. Semantic contract даёт единицу и
+    обязательные фильтры. Run metadata и сопоставимая история приходят отдельно:
+    адаптер не должен придумывать их из финальной фразы расследования.
+    """
+    if not isinstance(run_id, str) or not run_id.strip():
+        raise ValueError("run_id must be a non-empty string")
+    if not isinstance(as_of, str) or not as_of.strip():
+        raise ValueError("as_of must be a non-empty string")
+    if not isinstance(history, Sequence) or isinstance(history, (str, bytes)):
+        raise ValueError("history must be a sequence of points")
+
+    investigation = _require_mapping(investigation, "investigation")
+    semantic = _require_mapping(semantic, "semantic")
+    state = _require_mapping(investigation.get("state"), "investigation.state")
+    trace = investigation.get("trace")
+    if not isinstance(trace, Sequence) or isinstance(trace, (str, bytes)):
+        raise ValueError("investigation.trace must be a sequence")
+
+    metric_id = state.get("metric_id")
+    metric_ids = _require_mapping(semantic.get("metric_ids"), "semantic.metric_ids")
+    metric_contract = _require_mapping(
+        metric_ids.get(metric_id), f"semantic.metric_ids.{metric_id}"
+    )
+    semantic_version = state.get("semantic_version")
+    if semantic_version != semantic.get("version"):
+        raise ValueError("investigation and semantic contract versions differ")
+
+    baseline = state.get("baseline")
+    focus = state.get("focus")
+    if not all(isinstance(value, str) and value for value in (baseline, focus)):
+        raise ValueError("baseline and focus must be non-empty strings")
+
+    required_filters = metric_contract.get(
+        "required_filters", metric_contract.get("required_filter", {})
+    )
+    required_filters = _require_mapping(
+        required_filters, f"semantic.metric_ids.{metric_id}.required_filter"
+    )
+
+    totals: dict[str, Any] = {}
+    breakdowns: dict[str, list[dict[str, Any]]] = {}
+    unit = metric_contract.get("unit")
+
+    for index, step in enumerate(trace):
+        step = _require_mapping(step, f"investigation.trace[{index}]")
+        observation = _require_mapping(
+            step.get("observation"), f"investigation.trace[{index}].observation"
+        )
+        if observation.get("semantic_version") != semantic_version:
+            raise ValueError(f"trace observation {index} has another semantic version")
+        if observation.get("metric_id") != metric_id:
+            raise ValueError(f"trace observation {index} has another metric ID")
+        if observation.get("baseline") != baseline or observation.get("focus") != focus:
+            raise ValueError(f"trace observation {index} has other periods")
+
+        kind = observation.get("kind")
+        if kind == "period_comparison":
+            totals = {
+                baseline: observation.get("baseline_value"),
+                focus: observation.get("focus_value"),
+            }
+            unit = observation.get("unit", unit)
+        elif kind == "delta_breakdown":
+            group_by = observation.get("group_by")
+            filters = _require_mapping(
+                observation.get("filters", {}),
+                f"investigation.trace[{index}].observation.filters",
+            )
+            rows = observation.get("segments")
+            if not isinstance(group_by, str) or not group_by:
+                raise ValueError(f"trace observation {index} has no group_by")
+            if not isinstance(rows, Sequence) or isinstance(rows, (str, bytes)):
+                raise ValueError(f"trace observation {index} has invalid segments")
+            breakdowns[_breakdown_id(group_by, filters)] = [
+                dict(_require_mapping(row, f"trace segment {row_index}"))
+                for row_index, row in enumerate(rows)
+            ]
+        else:
+            raise ValueError(f"trace observation {index} has unknown kind: {kind}")
+
+    finding = investigation.get("finding")
+    path = finding.get("path", []) if isinstance(finding, Mapping) else []
+    if not isinstance(path, Sequence) or isinstance(path, (str, bytes)):
+        raise ValueError("investigation.finding.path must be a sequence")
+
+    evidence_path: list[dict[str, Any]] = []
+    for index, hop in enumerate(path):
+        hop = _require_mapping(hop, f"investigation.finding.path[{index}]")
+        dimension = hop.get("dimension")
+        segment = hop.get("segment")
+        delta = hop.get("delta")
+        candidates = []
+        for breakdown_id, rows in breakdowns.items():
+            if breakdown_id.split("|", 1)[0] != dimension:
+                continue
+            if any(
+                row.get("segment") == segment and _same_number(row.get("delta"), delta)
+                for row in rows
+            ):
+                candidates.append(breakdown_id)
+        if len(candidates) != 1:
+            raise ValueError(f"evidence hop {index} has no unique supporting breakdown")
+        evidence_path.append(
+            {
+                "breakdown_id": candidates[0],
+                "dimension": dimension,
+                "segment": segment,
+                "delta": delta,
+            }
+        )
+
+    return {
+        "run_id": run_id,
+        "as_of": as_of,
+        "trace_status": investigation.get("status"),
+        "semantic_version": semantic_version,
+        "metric_id": metric_id,
+        "unit": unit,
+        "baseline": baseline,
+        "focus": focus,
+        "filters": dict(required_filters),
+        "totals": totals,
+        "breakdowns": breakdowns,
+        "evidence_path": evidence_path,
+        "history": [dict(_require_mapping(point, "history point")) for point in history],
     }
 
 
@@ -234,6 +498,8 @@ def _evidence_path_is_supported(packet: Mapping[str, Any]) -> tuple[bool, list[s
     path = packet.get("evidence_path", [])
     if not isinstance(breakdowns, Mapping) or not isinstance(path, Sequence):
         return False, []
+    if not path:
+        return False, ["путь доказательств пуст"]
 
     unsupported: list[str] = []
     for step in path:
@@ -252,7 +518,7 @@ def _evidence_path_is_supported(packet: Mapping[str, Any]) -> tuple[bool, list[s
             unsupported.append(
                 f"{breakdown_id}:{step.get('segment')}:{step.get('delta')}"
             )
-    return bool(path) and not unsupported, unsupported
+    return not unsupported, unsupported
 
 
 def validate_packet(
@@ -632,7 +898,14 @@ def run_quality_gate(
 
 
 if __name__ == "__main__":
-    result = run_quality_gate(DEMO_PACKET)
+    packet = build_validation_packet(
+        DEMO_INVESTIGATION,
+        DEMO_SEMANTIC,
+        run_id=DEMO_PACKET["run_id"],
+        as_of=DEMO_PACKET["as_of"],
+        history=DEMO_PACKET["history"],
+    )
+    result = run_quality_gate(packet)
     print(json.dumps({k: v for k, v in result.items() if k != "report"}, ensure_ascii=False, indent=2))
     print()
     print(result["report"])
