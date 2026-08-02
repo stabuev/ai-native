@@ -54,7 +54,7 @@
 - [x] 6.1 Tool use / function calling изнутри
 - [x] 6.2 Архитектура MCP
 - [x] 6.3 Свой MCP-сервер на Python SDK
-- [x] 6.4 Тест и подключение
+- [x] 6.4 От server object к Inspector и host
 - [x] 6.5 Безопасность и доступ
 
 ## Фаза 7. Agent Engineering
