@@ -322,7 +322,7 @@ gate → решение `publish / review / block` и проверенный о�
 | # | Урок | Build It | Use It | Ship It | Папка |
 |---|---|---|---|---|---|
 | 6.1 | Tool use / function calling изнутри | Офлайн-runtime: public specs → call ID → валидация и dispatch → result | Сопоставление core envelope с API одного провайдера (опционально) | Контракт собственного инструмента + успешный и отклонённый trace | `phases/06-tools-and-protocols-mcp/01-tool-use-function-calling` |
-| 6.2 | Архитектура MCP | Разбор host ↔ client ↔ server; tools/resources/prompts | Подключение готовых MCP-коннекторов | Карта MCP под свой стек | `phases/06-tools-and-protocols-mcp/02-mcp-architecture` |
+| 6.2 | Архитектура MCP | Карта user/model/host/client/server, stateless data/transport layers и два уровня correlation ID | `server/discover`, выбор tool/resource/prompt и compatibility preflight без подключения | Граница собственного MCP-server + успешный и отказной trace | `phases/06-tools-and-protocols-mcp/02-mcp-architecture` |
 | 6.3 | Свой MCP-сервер на FastMCP | Сервер с tools/resources на FastMCP (mcp 1.27.x) | Транспорты STDIO и Streamable HTTP | Рабочий MCP-сервер | `phases/06-tools-and-protocols-mcp/03-build-mcp-server-fastmcp` |
 | 6.4 | Тест и подключение | Прогон через MCP Inspector | Подключение к Claude Desktop / Cursor | Документированный сервер с примерами | `phases/06-tools-and-protocols-mcp/04-testing-and-connecting` |
 | 6.5 | Безопасность и доступ | Аутентификация, права, изоляция | Что нельзя отдавать модели — практика | Чек-лист безопасности MCP | `phases/06-tools-and-protocols-mcp/05-security-and-access` |

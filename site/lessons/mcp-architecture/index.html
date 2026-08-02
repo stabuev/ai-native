@@ -4,16 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>6.2 Архитектура MCP — AI Native</title>
-  <meta name="description" content="MCP — это USB-C между ИИ и миром: один протокол, три примитива (tools/resources/prompts).">
+  <meta name="description" content="MCP не даёт модели новые способности сам по себе. Он задаёт общий">
   <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/mcp-architecture/">
   <meta property="og:type" content="article">
   <meta property="og:title" content="6.2 Архитектура MCP — AI Native">
-  <meta property="og:description" content="MCP — это USB-C между ИИ и миром: один протокол, три примитива (tools/resources/prompts).">
+  <meta property="og:description" content="MCP не даёт модели новые способности сам по себе. Он задаёт общий">
   <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/mcp-architecture/">
   <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
   <meta name="twitter:card" content="summary_large_image">
   <script>(function(){try{var t=localStorage.getItem("theme")||"light";document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
-  <link rel="stylesheet" href="../../style.css?v=e30ca2105d69">
+  <link rel="stylesheet" href="../../style.css?v=332582a8f676">
   <!-- Yandex.Metrika counter -->
   <script type="text/javascript">
       (function(m,e,t,r,i,k,a){
@@ -31,174 +31,258 @@
   <section class="container" style="padding-top:24px">
     <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
     <div class="lessonbar" id="lessonbar"></div>
-    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 6.2 · Архитектура MCP</h1><p><strong>Фаза 6 — Инструменты и протоколы (MCP)</strong> · <strong>Результат фазы:</strong> Объяснить tool use изнутри и поднять собственный MCP-сервер с контролем доступа.</p><p><strong>Requires (только для USE IT):</strong> клиент с поддержкой MCP (Claude Desktop / Claude Code / Cursor). BUILD IT работает офлайн, без ключей и без сети.</p><p><strong>В 6.1 инструменты были «вшиты» в приложение.</strong> Это не масштабируется: у каждого приложения свои инструменты, переиспользовать их между Claude, Cursor и твоими агентами нельзя. MCP решает ровно эту проблему — стандартом подключения.</p><blockquote><strong>MOTTO.</strong> MCP — это USB-C между ИИ и миром: один протокол, три примитива (tools/resources/prompts).</blockquote><h2>PROBLEM</h2><p>Ты написал инструмент «прочитать таблицу из БД». Чтобы дать его Claude Desktop — пишешь интеграцию под Claude. Для Cursor — переписываешь под Cursor. Для своего агента — снова с нуля. N инструментов × M приложений = хаос несовместимых интеграций.</p><p>Так же когда-то было с периферией: у каждого устройства свой разъём. Пришёл <strong>USB-C</strong> — один разъём для всего. <strong>MCP (Model Context Protocol)</strong> — это USB-C для ИИ: один протокол, по которому <strong>любой</strong> клиент находит и зовёт инструменты <strong>любого</strong> сервера. Написал MCP-сервер один раз — он работает в каждом MCP-совместимом приложении.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Три роли, как в ресторане:</p><ul><li><strong>Host</strong> — приложение с LLM (Claude Desktop, IDE, твой агент). Это <strong>посетитель</strong>, который хочет что-то получить.</li><li><strong>Client</strong> — коннектор внутри host, по одному на каждый сервер (1:1). Это <strong>официант</strong>: говорит на языке протокола, носит запросы туда-обратно.</li><li><strong>Server</strong> — отдаёт возможности. Это <strong>кухня</strong>: умеет готовить (tools), хранит продукты (resources) и держит рецепты (prompts).</li></ul><p>Посетитель не лезет на кухню напрямую — общение идёт через официанта по стандартному протоколу (JSON-RPC 2.0). Поэтому любая кухня (сервер) работает с любым посетителем (host), у которого есть официант (client).</p><h3>Как это работает</h3><pre><code>   Host (приложение с LLM)
-     └─ Client ⇄ Server     (1 client ↔ 1 server, JSON-RPC 2.0)
-                   ├─ tools      действия (как POST: что-то делают)
-                   ├─ resources  данные (как GET: читаются по URI)
-                   └─ prompts    заготовки-шаблоны
-        discovery (list) → invoke (call)</code></pre><p>Три примитива сервера:</p><ul><li><strong>tools</strong> — действия (посчитать, записать в БД, отправить письмо). Аналог POST — у них есть эффект; это и есть tool_call из 6.1.</li><li><strong>resources</strong> — данные, читаемые по URI (файл, запись, документ). Аналог GET — только отдают.</li><li><strong>prompts</strong> — готовые шаблоны-заготовки с подстановкой переменных.</li></ul><p>И две фазы общения:</p><ul><li><strong>discovery</strong> — клиент спрашивает «что ты умеешь?» (<code>list_tools</code> / <code>list_resources</code> / <code>list_prompts</code>). Так host узнаёт возможности, не зашивая их заранее.</li><li><strong>invoke</strong> — клиент вызывает конкретное (<code>call_tool</code> / <code>read_resource</code> / <code>get_prompt</code>).</li></ul><p>Соберём это in-process, без транспорта, чтобы увидеть роли чисто; настоящий JSON-RPC-транспорт добавим в 6.3.</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Поднимем сервер с тремя примитивами и сходим в него клиентом:</p><pre><code>srv.add_tool("sum", lambda a,b: a+b, "сложить")
-srv.add_resource("doc://policy", "Возврат в течение 14 дней.")
-srv.add_prompt("greet", "Привет, {name}!")</code></pre><p><strong>1. discovery</strong> — клиент спрашивает, что есть:</p><pre><code>client.discover() → {
-  tools:     [{name: "sum", description: "сложить"}],
-  resources: ["doc://policy"],
-  prompts:   ["greet"],
-}</code></pre><p><strong>2. invoke</strong> — клиент вызывает каждый примитив:</p><pre><code>client.call("sum", a=2, b=3)        → 5                          (tool: действие)
-srv.read_resource("doc://policy")   → "Возврат в течение 14 дней." (resource: данные)
-srv.get_prompt("greet", name="Иван") → "Привет, Иван!"            (prompt: шаблон)</code></pre><p>Видно разделение ролей: сервер только публикует и исполняет примитивы, клиент только перечисляет и зовёт, host (в демо — функция <code>__main__</code>) оркеструет. Запрос несуществующего (<code>call_tool("nope")</code>) поднимает ошибку — сервер отвечает только за то, что объявил в discovery. Тот же сервер подключишь к Claude Desktop или Cursor — код сервера не изменится.</p><h2>BUILD IT</h2><p><strong>Задание: собери in-process модель MCP</strong> — сервер с тремя примитивами и клиент с discovery/invoke. Только стандартная библиотека, без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/6.2-mcp-architecture/</code>), а файлы урока клади в подпапку <code>code/</code> (по соглашению курса). Нужен только <strong>Python 3</strong> (для теста ещё <code>pytest</code>).</blockquote><p>Создай файл <code>mcp_architecture.py</code> с двумя классами:</p><ul><li><strong><code>MCPServer(name)</code></strong> — хранит три реестра. Методы регистрации: <code>add_tool(name, fn, description="")</code>, <code>add_resource(uri, content)</code>, <code>add_prompt(name, template)</code>. Discovery: <code>list_tools()</code> (список <code>{name, description}</code>), <code>list_resources()</code>, <code>list_prompts()</code>. Invoke: <code>call_tool(name, **args)</code> (исполнить <code>fn</code>, нет — <code>KeyError</code>), <code>read_resource(uri)</code>, <code>get_prompt(prompt_name, **variables)</code> (вернуть <code>template.format(**variables)</code>).</li><li><strong><code>MCPClient(server)</code></strong> — <code>discover()</code> возвращает <code>{"tools", "resources", "prompts"}</code>; <code>call(tool, **args)</code> проксирует в <code>server.call_tool</code>.</li></ul><p><strong>Готово, когда</strong> все тесты в <code>test_mcp_architecture.py</code> зелёные — они проверяют: discovery перечисляет все три примитива; <code>call("sum", a=2, b=3)</code> = 5; ресурс и промпт читаются (промпт подставляет имя); запрос неизвестного примитива → <code>KeyError</code>.</p><pre><code>pytest code -q              # красное → реализуй сервер и клиент → зелёное
-python code/mcp_architecture.py # демо: discovery + вызов tool/resource/prompt</code></pre><p><strong>Подсказка.</strong> Три словаря под примитивы. <code>call_tool</code> исполняет <code>self._tools[name]["fn"](**args)</code>. <code>get_prompt</code> — это <code>template.format(**variables)</code>. Перед invoke проверяй наличие ключа и кидай <code>KeyError</code> с понятным текстом.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>Готовых MCP-серверов уже тысячи (официальный реестр — в Материалах) — подключаешь без единой строчки кода (мульти-платформа):</p><ul><li><strong>Claude Desktop / Claude Code</strong> — добавить сервер в конфиг MCP; клиент сам сделает discovery и покажет инструменты.</li><li><strong>Cursor и другие host'ы</strong> — тот же протокол, свои настройки подключения.</li><li>Реестр референс-серверов — <code>modelcontextprotocol/servers</code> (файлы, БД, GitHub, поиск и др.).</li></ul><p>Смысл стандарта: один сервер работает в любом MCP-совместимом host. Написал — переиспользуешь везде, без N×M интеграций.</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Карта MCP под свой стек → <a href="#f-phases-06-tools-and-protocols-mcp-02-mcp-architecture-outputs-mcp-map-md"><code>outputs/mcp-map.md</code></a></p><p>Карта: какие данные и инструменты вынести в свои MCP-серверы, какие готовые коннекторы подключить, что к какому host'у. Это план перед тем, как поднять собственный сервер на FastMCP (6.3) и закрыть его доступом (6.5).</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Путать host, client и server.</strong> Host — приложение с LLM, client — коннектор внутри него (1:1 к серверу), server — отдаёт примитивы. Сервер не «знает» про модель; он просто публикует возможности.</li><li><strong>Путать tools и resources.</strong> tools — действия с эффектом (как POST), resources — данные для чтения по URI (как GET). Запись в БД — это tool, чтение записи — resource.</li><li><strong>Зашивать возможности в host вместо discovery.</strong> Смысл MCP — клиент сам узнаёт, что умеет сервер (<code>list_*</code>). Хардкод списка инструментов ломает переносимость.</li><li><strong>Думать, что MCP заменяет tool use.</strong> Под капотом тот же цикл из 6.1 (схема → вызов → результат). MCP лишь стандартизирует, <strong>как</strong> это передаётся между процессами.</li><li><strong>Игнорировать, что сервер — граница доверия.</strong> Сервер исполняет вызовы и отдаёт данные; что именно он открывает модели — вопрос безопасности (6.5), а не только удобства.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="6.2"></div><h2>Дополнительное чтение</h2><ul><li><a href="https://modelcontextprotocol.io/specification/2025-11-25" target="_blank" rel="noopener">MCP — Specification</a> — протокол, примитивы, capability negotiation.</li><li><a href="https://www.anthropic.com/news/model-context-protocol" target="_blank" rel="noopener">Anthropic — Introducing MCP</a> — зачем нужен стандарт.</li><li><a href="https://github.com/modelcontextprotocol/servers" target="_blank" rel="noopener">modelcontextprotocol/servers</a> — готовые серверы-примеры.</li><li><a href="https://modelcontextprotocol.io/docs/learn/architecture" target="_blank" rel="noopener">MCP — Architecture overview</a> — официальная страница по теме урока: host/client/server, примитивы (tools/resources/prompts), capability negotiation, JSON-RPC, транспорты.</li><li><a href="https://learn.deeplearning.ai/courses/mcp-build-rich-context-ai-apps-with-anthropic" target="_blank" rel="noopener">DeepLearning.AI — MCP: Build Rich-Context AI Apps with Anthropic</a> — бесплатный курс от Anthropic (Elie Schoppik): архитектура → свой сервер → подключение.</li><li><a href="https://blog.modelcontextprotocol.io/posts/2025-11-25-first-mcp-anniversary/" target="_blank" rel="noopener">MCP Blog — One Year of MCP (релиз спеки 2025-11-25)</a> — что нового и куда развивается протокол (Tasks и др.).</li><li><a href="https://medium.com/@richardhightower/anthropics-claude-and-mcp-a-deep-dive-into-content-based-tool-integration-dcf18cba82f0" target="_blank" rel="noopener">Rick Hightower — Claude and MCP: Content-Based Tool Integration (Medium)</a> — техническое сравнение подходов (Claude как content items vs OpenAI function calls).</li><li><a href="https://registry.modelcontextprotocol.io/" target="_blank" rel="noopener">Официальный MCP Registry</a> — каноничный каталог MCP-серверов (тысячи записей: метаданные, неймспейсы, provenance) — discovery-инфраструктура всей экосистемы.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Если делегируешь ИИ, реши, что отдаёшь; опиши задачу и критерии; проверь результат; сохрани ответственность за итог.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-06-tools-and-protocols-mcp-02-mcp-architecture-code-test-mcp-architecture-py" open data-test="1"><summary><span class="fname">code/test_mcp_architecture.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>import pytest
-from mcp_architecture import MCPServer, MCPClient
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 6.2 · Архитектура MCP</h1><p><strong>Фаза 6 — Инструменты и протоколы (MCP)</strong> · <strong>Результат фазы:</strong> объяснить tool use изнутри и поднять собственный MCP-сервер с контролем доступа.</p><p><strong>Результат урока:</strong> после урока ты сможешь разложить рабочую интеграцию на <code>host → client → server</code>, обоснованно выбрать <code>tool</code>, <code>resource</code> или <code>prompt</code> для каждой возможности и проследить один вызов от модели до MCP-сервера и обратно, не смешивая идентификаторы и уровни протокола.</p><p><strong>Опоры:</strong> tool spec, локальный registry, <code>tool_call</code>, <code>tool_result</code>, allowlist и call ID из 6.1. API-ключи, сеть и установленный MCP-клиент не нужны. Основной маршрут опирается на актуальную ревизию MCP <code>2026-07-28</code>; прежний handshake упомянут только как граница совместимости.</p><blockquote><strong>MOTTO.</strong> MCP не даёт модели новые способности сам по себе. Он задаёт общий контракт, по которому приложение обнаруживает и использует возможности серверов.</blockquote><h2>От локального runtime к переносимой границе</h2><p>В 6.1 всё находилось в одном приложении:</p><pre><code>user request
+    ↓
+model + public tool specs
+    ↓ tool_call
+local registry → validation → Python callable
+    ↓ tool_result
+model → final answer</code></pre><p>Такой runtime уже безопаснее прямого вызова функции, но его public specs и callable всё ещё «вшиты» в конкретное приложение. Если один и тот же read-only <code>get_release_decision</code> нужен в IDE, desktop-ассистенте и внутреннем агенте, придётся поддерживать несколько адаптеров, способов запуска и форматов конфигурации.</p><p>MCP переносит границу:</p><table><thead><tr><th>В 6.1</th><th>В MCP-интеграции</th></tr></thead><tbody><tr><td>public spec хранит приложение</td><td>server публикует descriptor через <code>tools/list</code></td></tr><tr><td>callable находится в local registry</td><td>реализация остаётся внутри MCP server</td></tr><tr><td>runtime выбирает callable по allowlist</td><td>host маршрутизирует вызов через нужный MCP client</td></tr><tr><td>локальный <code>dispatch</code> возвращает результат</td><td>client вызывает <code>tools/call</code> и получает MCP result</td></tr><tr><td>provider call ID связывает call/result</td><td>host дополнительно связывает его с ID MCP-запроса</td></tr></tbody></table><p>Перед чтением дальше сделай прогноз:</p><blockquote>Если один MCP-сервер публикует десять инструментов, а host подключён к трём серверам, сколько MCP clients находится внутри host: один, три или тридцать?</blockquote><p>К ответу вернёмся после разбора ролей.</p><h2>Пять участников, а не три взаимозаменяемых слова</h2><p>Сначала обычным языком:</p><ul><li><strong>пользователь</strong> ставит задачу и видит интерфейс приложения;</li><li><strong>модель</strong> предлагает текст или вызов доступного инструмента;</li><li><strong>host</strong> — само AI-приложение: оно управляет моделью, политиками и подключениями;</li><li><strong>MCP client</strong> — компонент host, который поддерживает одну протокольную связь с конкретным server;</li><li><strong>MCP server</strong> — отдельная программа или сервис, публикующий возможности и исполняющий разрешённые запросы.</li></ul><pre><code>Пользователь
+    ↓ задача / подтверждение
+Host — AI-приложение
+├── model adapter + conversation
+├── policy / approvals / unified registry
+├── MCP client A ⇄ MCP server A
+└── MCP client B ⇄ MCP server B</code></pre><p>Host создаёт отдельный MCP client для каждого подключённого server. Поэтому в вопросе выше правильный ответ — <strong>три clients</strong>, а не один и не тридцать. Это связь «один client target ↔ один server», а не утверждение, что server способен обслуживать только одного клиента вообще. Локальный STDIO-server обычно обслуживает запустивший его client, а удалённый HTTP-server может одновременно обслуживать много клиентов разных hosts.</p><h3>Что делает host</h3><p>MCP не определяет, какую модель использовать и как строить интерфейс. Это ответственность host. Обычно он:</p><ol><li>читает конфигурацию подключений;</li><li>создаёт MCP clients;</li><li>договаривается с servers о поддерживаемых возможностях;</li><li>собирает descriptors из подключений в единый registry;</li><li>передаёт подходящие specs модели;</li><li>применяет локальные политики и подтверждения;</li><li>маршрутизирует запрос нужному server;</li><li>переводит MCP result обратно в формат model provider.</li></ol><h3>Что делает client</h3><p>Client знает протокол для одного server: обнаруживает поддерживаемые версии и capabilities, добавляет protocol metadata в запросы и сопоставляет JSON-RPC request/response. Client не является второй моделью и сам не решает бизнес-задачу.</p><h3>Что делает server</h3><p>Server публикует только собственный контракт и исполняет собственную реализацию. Он может работать локально или удалённо и не обязан знать, какая LLM находится в host. Граница server — одновременно граница домена и доверия: открытые им данные и операции становятся доступны подключённым hosts в пределах их политик.</p><h2>Два слоя MCP</h2><p>Слово «протокол» легко ошибочно свести к способу передать байты. В MCP разделены два слоя:</p><table><thead><tr><th>Слой</th><th>За что отвечает</th><th>Примеры</th></tr></thead><tbody><tr><td><strong>Data layer</strong></td><td>смысл и форма сообщений</td><td>JSON-RPC 2.0, stateless requests, version/capability metadata, tools/resources/prompts</td></tr><tr><td><strong>Transport layer</strong></td><td>как сообщения перемещаются между процессами</td><td>STDIO, Streamable HTTP, framing и транспортная авторизация</td></tr></tbody></table><p>JSON-RPC — основа обмена сообщениями в data layer, а не отдельный MCP-транспорт. В 6.3 ты увидишь envelopes <code>server/discover</code>, <code>tools/list</code> и <code>tools/call</code> и реализуешь server. В 6.4 подключишь transports и проверишь реальную связь.</p><h2>Stateless core: сначала discover, затем self-contained request</h2><p>Начиная с MCP <code>2026-07-28</code>, протокольного handshake и session state нет. Каждый request сам несёт необходимые metadata: версию протокола, сведения о client и актуальные client capabilities. Server не должен восстанавливать смысл запроса из предыдущих сообщений на том же соединении.</p><pre><code>1. host создаёт client для известного server target
+2. client → server: server/discover + per-request _meta
+3. server → client: supportedVersions + capabilities + serverInfo
+4. client → server: tools/list / resources/list / prompts/list + per-request _meta
+5. client → server: tools/call / resources/read / prompts/get + per-request _meta</code></pre><p><code>server/discover</code> отвечает на вопрос «какие версии и части протокола поддерживает этот server». <code>tools/list</code> отвечает на другой вопрос: «какие именно tools сейчас доступны». Нельзя использовать prompt только потому, что MCP вообще знает о prompts: server должен объявить соответствующую capability, а client/host — уметь её использовать.</p><p>Для клиента <code>server/discover</code> опционален: он может сразу отправить self-contained request и обработать ошибку несовместимой версии. В учебном trace мы вызываем discovery явно, потому что так compatibility preflight наблюдаем и потому что этот probe помогает SDK отличить современный server от legacy-server на STDIO.</p><p>Ревизия <code>2025-11-25</code> и более старые servers используют <code>initialize</code> → <code>notifications/initialized</code>. Современный SDK может договориться о legacy-режиме сам; в уроке не нужно вручную смешивать два wire protocol. В 6.3 ориентируйся на Python SDK 2.x, который поддерживает и текущую, и прежние ревизии.</p><p>Здесь <strong>discovery</strong> означает получение protocol metadata и перечисление primitives уже известного server. Поиск и установка публикации из MCP Registry — отдельная задача распространения, а не замена <code>server/discover</code> и <code>*/list</code>.</p><h2>Tool, resource или prompt</h2><p>Это не три формата одного объекта. Они различаются тем, <strong>что представляют</strong> и <strong>кто инициирует использование</strong>.</p><table><thead><tr><th>Primitive</th><th>Интуитивный вопрос</th><th>Кто обычно инициирует</th><th>Пример</th></tr></thead><tbody><tr><td><strong>tool</strong></td><td>Нужно исполнить операцию с аргументами?</td><td>модель предлагает вызов; host разрешает и маршрутизирует</td><td>запросить решение запуска, посчитать метрику, создать задачу</td></tr><tr><td><strong>resource</strong></td><td>Это адресуемые данные, которые приложение получает как контекст?</td><td>приложение или пользователь выбирает источник</td><td>схема БД, policy document, запись по URI</td></tr><tr><td><strong>prompt</strong></td><td>Это явно выбираемый шаблон взаимодействия или workflow?</td><td>пользователь через UI/команду</td><td>«провести review запуска» с аргументом <code>run_id</code></td></tr></tbody></table><h3>Tool не обязан изменять мир</h3><p>Tool — исполняемая функция, а не синоним побочного эффекта. Он может быть:</p><ul><li>read-only: <code>get_release_decision(run_id)</code>;</li><li>вычислительным: <code>calculate_margin(revenue, cost)</code>;</li><li>изменяющим состояние: <code>create_ticket(title)</code>.</li></ul><p>MCP допускает annotations вроде <code>readOnlyHint</code>, <code>destructiveHint</code> и <code>idempotentHint</code>, но это подсказки, а не доказательство безопасности. Allowlist, авторизацию и подтверждения всё равно контролируют server и host; детально это будет в 6.5.</p><h3>Resource — адресуемый контекст</h3><p>Resource имеет URI и содержимое с типом данных. Бывают фиксированные resources и resource templates с параметрами URI. Host может показать их пользователю, выбрать нужное содержимое и поместить его в контекст модели.</p><p>Resource часто читается без побочного эффекта, но «read-only» само по себе ещё не делает любой lookup ресурсом. Если модели нужно сформировать аргументы и запросить вычисление, tool может быть естественнее.</p><h3>Prompt — не просто строка в реестре</h3><p>Prompt — переиспользуемый параметризованный шаблон сообщений. Обычно пользователь явно выбирает его в UI или командой. Server возвращает готовую структуру сообщений, а host решает, как включить её в разговор.</p><h2>Неоднозначный выбор: одно содержание, разные поверхности</h2><p>Возьмём решение quality gate из Фазы 5.</p><p><strong>Вариант A — tool:</strong></p><pre><code>get_release_decision(run_id)</code></pre><p>Подходит, когда пользователь задаёт вопрос естественным языком, модель извлекает <code>run_id</code>, а server выполняет динамический lookup. Tool остаётся read-only.</p><p><strong>Вариант B — resource template:</strong></p><pre><code>release://runs/{run_id}/decision</code></pre><p>Подходит, когда решение является адресуемым документом, host или пользователь уже знает его URI и хочет добавить содержимое в контекст.</p><p><strong>Вариант C — prompt:</strong></p><pre><code>review_release(run_id)</code></pre><p>Подходит для явно запускаемого workflow: получить решение, проверить failed checks и составить review. Prompt не хранит само решение и не исполняет lookup вместо tool.</p><p>Выбор определяется не аналогией GET/POST, а желаемым интерфейсом, владельцем инициативы и формой результата. Иногда server оправданно публикует и resource, и tool над одной доменной областью — если они поддерживают разные способы работы, а не дублируют друг друга без причины.</p><h2>Полный trace: от вопроса до ответа</h2><p>Пользователь спрашивает: «Какое решение у запуска <code>phase-5-paid-revenue-q2</code>?» Server <code>analytics-quality</code> уже известен host.</p><pre><code>1. MCP client → analytics-quality:
+   JSON-RPC request(id=40, method="server/discover",
+                    _meta={protocolVersion: "2026-07-28", clientCapabilities: ...})
 
+2. analytics-quality → MCP client:
+   JSON-RPC response(id=40,
+                     result={supportedVersions: [...], capabilities: {tools: ...}})
 
-def _server():
-    srv = MCPServer("demo")
-    srv.add_tool("sum", lambda a, b: a + b, "сложить")
-    srv.add_resource("doc://policy", "Возврат в течение 14 дней.")
-    srv.add_prompt("greet", "Привет, {name}!")
-    return srv
+3. MCP client → analytics-quality:
+   JSON-RPC request(id=41, method="tools/list",
+                    _meta={protocolVersion: "2026-07-28", clientCapabilities: ...})
 
+4. analytics-quality → MCP client:
+   JSON-RPC response(id=41,
+                     result={tools: [{name: get_release_decision,
+                                      description: ..., inputSchema: ...}]})
 
-def test_discovery_lists_all_primitives():
-    disc = MCPClient(_server()).discover()
-    assert disc["tools"][0]["name"] == "sum"
-    assert "doc://policy" in disc["resources"]
-    assert "greet" in disc["prompts"]
+5. host:
+   нормализует descriptor в provider tool spec и передаёт модели
 
+6. model → host:
+   provider tool_call(id="call-release-1",
+                      name="get_release_decision",
+                      arguments={run_id: "phase-5-paid-revenue-q2"})
 
-def test_call_tool_executes():
-    assert MCPClient(_server()).call("sum", a=2, b=3) == 5
+7. host:
+   находит server-владельца и создаёт MCP request
 
+8. MCP client → analytics-quality:
+   JSON-RPC request(id=42, method="tools/call",
+                    params={name: ..., arguments: ...},
+                    _meta={protocolVersion: "2026-07-28", clientCapabilities: ...})
 
-def test_read_resource_and_prompt():
-    srv = _server()
-    assert "14 дней" in srv.read_resource("doc://policy")
-    assert srv.get_prompt("greet", name="Иван") == "Привет, Иван!"
+9. analytics-quality → MCP client:
+   JSON-RPC response(id=42, result={resultType: "complete", content: ...})
 
+10. host → model:
+   provider tool_result(call_id="call-release-1", content=...)
 
-def test_unknown_primitives_raise():
-    srv = _server()
-    with pytest.raises(KeyError):
-        srv.call_tool("nope")
-    with pytest.raises(KeyError):
-        srv.read_resource("doc://missing")
-</code></pre></details><h3>Эталонное решение</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-06-tools-and-protocols-mcp-02-mcp-architecture-code-mcp-architecture-py"><summary><span class="fname">code/mcp_architecture.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Архитектура MCP: host ↔ client ↔ server — Build It для урока 6.2.
+11. model → user:
+   «Решение: publish ...»</code></pre><p>Здесь два разных уровня корреляции:</p><table><thead><tr><th>ID</th><th>Что связывает</th><th>Кто им управляет</th></tr></thead><tbody><tr><td><code>call-release-1</code></td><td>model tool call ↔ provider tool result</td><td>adapter разговора внутри host</td></tr><tr><td><code>42</code></td><td>MCP JSON-RPC request ↔ MCP response</td><td>MCP client</td></tr></tbody></table><p>Они могут случайно выглядеть одинаково, но полагаться на это нельзя. Host хранит явное соответствие между двумя уровнями. Именно этот adapter превращает tool use из 6.1 в вызов внешнего MCP-server.</p><h2>Граница обещания MCP</h2><p>MCP уменьшает число уникальных интеграций, но не гарантирует, что любой server заработает в любом host без условий. Для совместимости должны совпасть:</p><ul><li>поддерживаемая версия протокола и нужные capabilities;</li><li>transport, который умеют обе стороны;</li><li>схема авторизации и доступные credentials;</li><li>политика host: разрешён ли server и конкретная операция;</li><li>используемые extensions и форматы content;</li><li>доступность самого server и его зависимостей.</li></ul><p>Корректная формулировка поэтому такая: <strong>один MCP-server можно переиспользовать в разных совместимых hosts через общий протокол</strong>, а не «любой server автоматически работает везде».</p><h2>САМОСТОЯТЕЛЬНАЯ ПРАКТИКА — спроектируй границу</h2><p>Здесь не нужно заново программировать registry: это не доказало бы архитектурное решение и забрало бы работу у 6.3. Вместо этого разложи один собственный сценарий на участников, primitives и два уровня trace.</p><p>Работай с безопасным read-only сценарием из Фазы 5 или выбери офлайн-вариант:</p><ul><li>получить определение метрики;</li><li>прочитать решение quality gate;</li><li>открыть policy document;</li><li>запустить шаблон review по локальной фикстуре.</li></ul><p>Создай личную папку с нуля — репозиторий курса клонировать не требуется:</p><pre><code>ai-native-work/
+└── course-work/
+    └── phase-6/
+        └── 6.2-mcp-architecture/
+            └── mcp-boundary-and-traces.md</code></pre><p>Заполни <a href="#lesson-files">шаблон артефакта</a>:</p><ol><li>назови пользователя, host и доменную границу будущего server;</li><li>перечисли связи client ↔ server — по одному client target на server;</li><li>классифицируй минимум три возможности, не заставляя себя использовать все primitives;</li><li>для одного неоднозначного выбора объясни, почему отвергнуты альтернативы;</li><li>построй успешный trace от <code>server/discover</code> до ответа пользователю;</li><li>явно раздели provider call ID и MCP JSON-RPC ID;</li><li>сломай одно условие совместимости и покажи, где отказ обнаруживается до исполнения;</li><li>выбери одну capability, которую реализуешь первой в 6.3.</li></ol><h3>Если делегируешь черновик ИИ</h3><p>Используй 4D как рамку качества:</p><ul><li><strong>Delegation:</strong> отдай черновую классификацию и поиск неоднозначных мест, но не окончательное решение о границе server.</li><li><strong>Description:</strong> передай реальные hosts, данные, операции, владельца инициативы, read/write-эффект и ограничения доступа.</li><li><strong>Discernment:</strong> проверь, не назван ли любой read-only lookup ресурсом, не перепутаны ли host и client и не склеены ли два ID.</li><li><strong>Diligence:</strong> сверяй спорные поля с официальной документацией и заполни failure trace, а не ограничивайся красивой схемой.</li></ul><h2>SHIP IT — карта границ и два trace</h2><p>Артефакт урока — <a href="#f-phases-06-tools-and-protocols-mcp-02-mcp-architecture-outputs-mcp-boundary-and-traces-md"><code>outputs/mcp-boundary-and-traces.md</code></a>. Он станет входом 6.3: там ты выберешь одну server boundary и превратишь первый tool или resource в работающий MCP-server.</p><p>Перед завершением проверь артефакт по рубрике:</p><ul><li>пользователь, model, host, clients и servers не смешаны;</li><li>primitive выбран по форме взаимодействия и владельцу инициативы, а не только по read/write;</li><li>trace показывает <code>server/discover</code>, per-request metadata, <code>*/list</code> и фактическое использование;</li><li>provider call ID не выдан за MCP request ID;</li><li>failure обнаруживается в конкретной точке и не скрывается общим словом «ошибка»;</li><li>граница server достаточно связная, чтобы реализовать её в 6.3.</li></ul><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Называть host моделью.</strong> Модель — компонент; host управляет разговором, подключениями, политиками и переводом форматов.</li><li><strong>Считать один client общим для всех servers.</strong> Host создаёт отдельный client target для каждого server.</li><li><strong>Считать tool обязательно мутирующим.</strong> Запрос к БД и вычисление тоже могут быть tools; эффект описывается отдельно.</li><li><strong>Считать любой read-only объект resource.</strong> Resource — адресуемый контекст; модельно инициируемый lookup может оставаться tool.</li><li><strong>Путать JSON-RPC и transport.</strong> Первый задаёт сообщения, второй переносит их между процессами.</li><li><strong>Переносить session state из старой ревизии.</strong> В <code>2026-07-28</code> каждый request self-contained; server не полагается на прежний handshake.</li><li><strong>Считать <code>server/discover</code> списком tools.</strong> Он сообщает versions/capabilities; конкретные descriptors приходят из <code>*/list</code>.</li><li><strong>Склеивать provider call ID и JSON-RPC ID.</strong> Они коррелируют разные пары событий.</li><li><strong>Обещать универсальную совместимость.</strong> Host всё равно должен поддерживать нужный transport, capability, auth и policy.</li><li><strong>Подключать случайный server ради упражнения.</strong> Архитектурный результат полностью проверяется офлайн; подключение и инспекция будут в 6.4.</li></ul><h2>ЧТО СОЗНАТЕЛЬНО НЕ ВХОДИТ В УРОК</h2><ul><li>точные JSON-RPC envelopes и обработчик server — 6.3;</li><li>STDIO, Streamable HTTP, Inspector и подключение к host — 6.4;</li><li>авторизация, approvals, least privilege и изоляция — 6.5;</li><li>multi round-trip requests, <code>subscriptions/listen</code>, elicitation и extensions;</li><li>legacy-handshake старых ревизий, migration internals и registry/distribution инфраструктура.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Вопросы ниже проверяют выбор primitive, границы участников, capabilities и корреляцию двух протокольных уровней, а не память о расшифровке MCP.</p><div class="quiz-section" data-lesson="6.2"></div><h2>Дополнительное чтение</h2><p>Читать всё не требуется. Выбери одну ветку: уточнить архитектуру, понять переход между ревизиями, подготовиться к Python SDK 2.x или посмотреть распространение servers.</p><p><strong>Уточнить текущий архитектурный контракт</strong></p><ul><li><a href="https://modelcontextprotocol.io/docs/learn/architecture" target="_blank" rel="noopener">MCP — Architecture overview</a> — прочитай Participants, Layers и Data layer walkthrough: сопоставь официальную схему с собственной картой host/client/server и проверь границу JSON-RPC/transport.</li><li><a href="https://modelcontextprotocol.io/specification/2026-07-28" target="_blank" rel="noopener">MCP Specification 2026-07-28 — Overview</a> — открой Base Protocol и Features: это источник точных требований для stateless requests, per-request capabilities и tools/resources/prompts.</li><li><a href="https://modelcontextprotocol.io/specification/2026-07-28/server/discover" target="_blank" rel="noopener">MCP Specification — Server discovery</a> — разберись, чем <code>server/discover</code> отличается от <code>tools/list</code> и публичного MCP Registry; особенно полезно для compatibility preflight артефакта.</li></ul><p><strong>Понять смену ревизии без изучения всей истории</strong></p><ul><li><a href="https://blog.modelcontextprotocol.io/posts/2026-07-28-release-candidate/" target="_blank" rel="noopener">MCP Blog — 2026-07-28 Release Candidate explainer</a> — прочитай Stateless protocol core и The handshake and session are gone: авторы спецификации объясняют, почему <code>initialize</code> из ревизии <code>2025-11-25</code> больше не является текущей основной моделью.</li><li><a href="https://modelcontextprotocol.io/specification/2025-11-25" target="_blank" rel="noopener">MCP Specification 2025-11-25</a> — открывай только при разборе legacy-server или SDK 1.x: сравни stateful connections и initialization с текущим per-request контрактом, не смешивая payload двух ревизий.</li></ul><p><strong>Подготовиться к реализации 6.3</strong></p><ul><li><a href="https://github.com/modelcontextprotocol/python-sdk" target="_blank" rel="noopener">MCP Python SDK v2</a> — пройди A server in 15 lines и A client in 10 lines: v2 поддерживает <code>2026-07-28</code> и прежние ревизии, а текущий server API использует <code>MCPServer</code> вместо учебного ручного dispatcher.</li><li><a href="https://github.com/modelcontextprotocol/python-sdk/releases/tag/v2.0.0" target="_blank" rel="noopener">MCP Python SDK v2.0.0 release</a> — прочитай One SDK, both protocol eras и migration highlights, чтобы отличить текущий SDK от ветки 1.x в maintenance mode.</li></ul><p><strong>Посмотреть происхождение и распространение экосистемы</strong></p><ul><li><a href="https://www.anthropic.com/news/model-context-protocol" target="_blank" rel="noopener">Anthropic — Introducing MCP</a> — исторический анонс 2024 года: полезен для мотивации N×M интеграций, но не является источником текущего wire contract.</li><li><a href="https://registry.modelcontextprotocol.io/" target="_blank" rel="noopener">Official MCP Registry</a> — посмотри, как servers публикуются и находятся пользователями; это distribution discovery, а не <code>server/discover</code> внутри протокола.</li><li><a href="https://github.com/modelcontextprotocol/servers" target="_blank" rel="noopener">modelcontextprotocol/servers</a> — изучи <code>Everything</code> или один небольшой reference server как пример primitives; README прямо предупреждает, что эти реализации учебные, а не production-ready.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Артефакт встроен прямо здесь — открывать GitHub не нужно.</p><h3>Артефакт</h3><details class="filebox" id="f-phases-06-tools-and-protocols-mcp-02-mcp-architecture-outputs-mcp-boundary-and-traces-md" open><summary><span class="fname">outputs/mcp-boundary-and-traces.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт 6.2 · Карта MCP-границ и два trace
 
-Без зависимостей. Игрушечная in-process модель MCP: сервер публикует три
-примитива — tools (действия), resources (данные), prompts (заготовки); клиент их
-перечисляет (discovery) и вызывает (invoke). Так видна роль каждого участника:
-host оркестрирует, client говорит с server, server отдаёт примитивы.
-"""
+Скопируй шаблон в личную папку:
 
+```text
+ai-native-work/course-work/phase-6/6.2-mcp-architecture/mcp-boundary-and-traces.md
+```
 
-class MCPServer:
-    """Сервер публикует tools / resources / prompts."""
+Не подключай внешний server ради заполнения. Здесь оценивается архитектурное решение;
+реализация, transport и инспекция начнутся в 6.3–6.4.
 
-    def __init__(self, name):
-        self.name = name
-        self._tools = {}
-        self._resources = {}
-        self._prompts = {}
+## 1. Рабочая ситуация
 
-    def add_tool(self, name, fn, description=""):
-        self._tools[name] = {"fn": fn, "description": description}
+**Какую задачу решает пользователь:**
 
-    def add_resource(self, uri, content):
-        self._resources[uri] = content
+&gt; ...
 
-    def add_prompt(self, name, template):
-        self._prompts[name] = template
+**Какой результат он должен увидеть:**
 
-    # --- discovery (что умеет сервер) ---
-    def list_tools(self):
-        return [{"name": n, "description": t["description"]} for n, t in self._tools.items()]
+&gt; ...
 
-    def list_resources(self):
-        return list(self._resources)
+**Как это делается сейчас и почему локальной интеграции недостаточно:**
 
-    def list_prompts(self):
-        return list(self._prompts)
+&gt; ...
 
-    # --- invoke (вызов примитива) ---
-    def call_tool(self, name, **args):
-        if name not in self._tools:
-            raise KeyError(f"нет инструмента: {name}")
-        return self._tools[name]["fn"](**args)
+**Какие данные безопасно использовать в учебном trace:**
 
-    def read_resource(self, uri):
-        if uri not in self._resources:
-            raise KeyError(f"нет ресурса: {uri}")
-        return self._resources[uri]
+&gt; ...
 
-    def get_prompt(self, prompt_name, **variables):
-        if prompt_name not in self._prompts:
-            raise KeyError(f"нет промпта: {prompt_name}")
-        return self._prompts[prompt_name].format(**variables)
+## 2. Участники и границы
 
+| Участник | Конкретный компонент | Ответственность | Чего он не делает |
+|---|---|---|---|
+| Пользователь | ... | ставит задачу, выбирает workflow или подтверждает действие | ... |
+| Model | ... | предлагает текст или tool call на основе переданных specs | ... |
+| Host | ... | управляет моделью, registry, policies и routing | ... |
+| MCP client A | ... | поддерживает target и протокольный обмен с server A | ... |
+| MCP server A | ... | публикует и исполняет возможности домена ... | ... |
+| MCP client/server B, если нужен | ... | ... | ... |
 
-class MCPClient:
-    """Клиент подключается к серверу; host через него оркеструет вызовы."""
+Проверь количество связей: на каждый server target внутри host должен быть свой MCP
+client. Это не делает протокол stateful: в `2026-07-28` каждый request self-contained.
 
-    def __init__(self, server):
-        self.server = server
+## 3. Доменная граница server
 
-    def discover(self):
-        return {"tools": self.server.list_tools(),
-                "resources": self.server.list_resources(),
-                "prompts": self.server.list_prompts()}
+**Название будущего server:** `...`
 
-    def call(self, tool, **args):
-        return self.server.call_tool(tool, **args)
+**Одна связная область ответственности:**
 
+&gt; ...
 
-if __name__ == "__main__":
-    srv = MCPServer("demo")
-    srv.add_tool("sum", lambda a, b: a + b, "сложить")
-    srv.add_resource("doc://policy", "Возврат в течение 14 дней.")
-    srv.add_prompt("greet", "Здравствуйте, {name}!")
-    client = MCPClient(srv)
-    print("Discovery:", client.discover())
-    print("call sum:", client.call("sum", a=2, b=3))
-    print("resource:", srv.read_resource("doc://policy"))
-    print("prompt:", srv.get_prompt("greet", name="Иван"))
-</code></pre></details><h3>Артефакт</h3><details class="filebox" id="f-phases-06-tools-and-protocols-mcp-02-mcp-architecture-outputs-mcp-map-md" open><summary><span class="fname">outputs/mcp-map.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: карта MCP под свой стек
+**Что намеренно остаётся вне server и почему:**
 
-Что вынести в свои MCP-серверы, что подключить готовым, и к каким host'ам. Модель архитектуры — [`code/mcp_architecture.py`](../code/mcp_architecture.py).
+- ...
+- ...
 
-## Шаблон карты
+**Почему это не “server на все случаи жизни”:**
 
-| Возможность | Примитив | Свой сервер / готовый | Host(ы) | Доступ |
-|---|---|---|---|---|
-| Поиск по корпусу | tool + resource | свой (doc-assistant, Фаза 3) | Claude Desktop, агент | read-only |
-| Запрос в БД | tool | свой (NL→SQL, Фаза 5) | агент | read-only |
-| Файлы проекта | resource | готовый (filesystem) | IDE | ограничить root |
-| GitHub | tool | готовый (github) | Claude/Cursor | scope-токен |
-| Метрики | tool | свой (семслой 5.3) | дашборд-бот | read-only |
+&gt; ...
 
-## Как решать «свой vs готовый»
+## 4. Решения по primitives
 
-- **Готовый коннектор** — если есть проверенная референс-реализация (`modelcontextprotocol/servers`): файлы, git, поиск.
-- **Свой сервер** — для внутренних данных/логики (твоя БД, метрики, бизнес-правила).
+Не нужно искусственно использовать все три primitive. Выбери форму, естественную для
+сценария, и обоснуй её.
 
-## Три примитива — что куда
+| Возможность | Кто инициирует | Нужная форма результата | Read/write | Primitive | Почему | Почему не альтернативы |
+|---|---|---|---|---|---|---|
+| ... | model / app / user | ... | ... | tool/resource/prompt | ... | ... |
+| ... | ... | ... | ... | ... | ... | ... |
+| ... | ... | ... | ... | ... | ... | ... |
 
-- **tools** — действия с побочным эффектом или вычислением (как POST).
-- **resources** — данные для контекста (как GET): файлы, схемы, записи.
-- **prompts** — переиспользуемые шаблоны рабочих процессов.
+### Неоднозначное решение
 
-## Правила
+**Возможность:** `...`
 
-- Один сервер — одна доменная зона (не «всё в одном»).
-- Каждый сервер проходит инспектор перед подключением (урок 6.4).
-- Права и изоляция — до выкладки (урок 6.5): read-only по умолчанию.
-</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+**Два правдоподобных варианта:**
+
+1. ...
+2. ...
+
+**Выбор и решающий критерий:**
+
+&gt; Не “потому что это GET/POST”, а кто инициирует использование, является ли результат
+&gt; адресуемым контекстом или вычислением и как пользователь должен его обнаружить.
+
+## 5. Compatibility preflight
+
+| Условие | Что требуется сценарию | Как подтвердим | Что делаем при несовместимости |
+|---|---|---|---|
+| Protocol version | ... | `server/discover` + `_meta` каждого request | ... |
+| Server capability | tools/resources/prompts: ... | `server/discover` result | ... |
+| Host/client support | ... | документация/настройки host | ... |
+| Transport | STDIO или Streamable HTTP: ... | ... | ... |
+| Auth/credentials | ... | ... | ... |
+| Host policy/approval | ... | ... | ... |
+| Content/extension assumptions | ... | ... | ... |
+
+## 6. Успешный end-to-end trace
+
+Заполни конкретными событиями. Не копируй ID из урока: создай собственные и сохрани
+явное соответствие.
+
+| Шаг | Откуда → куда | Event / MCP method | Существенный input/output | Correlation ID |
+|---:|---|---|---|---|
+| 1 | host → client | выбрать server target | server config | — |
+| 2 | client → server | `server/discover` | per-request `_meta`: version + client capabilities | MCP request `...` |
+| 3 | server → client | discover result | supported versions + server capabilities | MCP response `...` |
+| 4 | client ↔ server | `*/list` | `_meta` + descriptor выбранного primitive | MCP request/response `...` |
+| 5 | host → model | provider request | user request + normalized specs/context | provider turn `...` |
+| 6 | model → host | provider tool call / выбор prompt/resource | ... | provider call `...` |
+| 7 | client ↔ server | `tools/call`, `resources/read` или `prompts/get` | `_meta` + params/result | MCP request/response `...` |
+| 8 | host → model | переведённый result/context | ... | provider result для call `...` |
+| 9 | model → user | финальный ответ | ... | — |
+
+### Карта двух ID
+
+| Provider call ID | MCP JSON-RPC request ID | Как host хранит соответствие |
+|---|---|---|
+| `...` | `...` | ... |
+
+Если выбран resource или prompt без model tool call, объясни, почему provider call ID на
+этом пути отсутствует и какой компонент инициировал получение.
+
+## 7. Failure trace и восстановление
+
+Выбери одно реалистичное нарушение: `server/discover` не объявил нужную capability,
+host не поддерживает primitive, request несёт несовместимую version/capabilities, не
+прошла auth/policy или routing выбрал неверный server.
+
+**Нарушенное условие:**
+
+&gt; ...
+
+| Шаг | Где обнаружено | Наблюдаемый сигнал | Почему исполнение ещё не произошло |
+|---:|---|---|---|
+| ... | ... | ... | ... |
+
+**Что увидит пользователь:**
+
+&gt; ...
+
+**Безопасное восстановление или fallback:**
+
+&gt; ...
+
+**Что нельзя делать автоматически:**
+
+&gt; ...
+
+## 8. Handoff в 6.3
+
+**Какой один server реализуем первым:** `...`
+
+**Какая одна capability будет первой:** `...`
+
+**Какие MCP methods потребуются:**
+
+- `server/discover`
+- `.../list`
+- `.../call`, `.../read` или `.../get`
+
+**Безопасная локальная фикстура для первого прогона:**
+
+&gt; ...
+
+**Что отложено до 6.4 и 6.5:**
+
+&gt; transport/Inspector/подключение; auth/approvals/least privilege/изоляция — уточни своё.
+
+## Рубрика приёмки
+
+- [ ] Пользователь, model, host, MCP clients и servers имеют разные ответственности.
+- [ ] Число MCP client targets соответствует числу servers и не подразумевает protocol session state.
+- [ ] Каждый primitive выбран по форме взаимодействия и владельцу инициативы.
+- [ ] Read-only tool не был ошибочно превращён в resource только из-за отсутствия записи.
+- [ ] Успешный trace включает `server/discover`, per-request metadata, listing и использование.
+- [ ] В основной ветке нет session state или обязательного `initialize` из старой ревизии.
+- [ ] Provider call ID и MCP JSON-RPC request ID не смешаны.
+- [ ] Failure trace называет точку отказа и доказывает отсутствие исполнения.
+- [ ] Условия совместимости перечислены без обещания “работает в любом host”.
+- [ ] Граница server связная и даёт конкретный первый шаг для 6.3.
+- [ ] В артефакте нет секретов, реальных персональных данных и подключения случайного server.
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> студент обоснованно классифицирует собственные возможности как tool/resource/prompt; корректно разделяет user/model/host/client/server, data и transport layers, <code>server/discover</code> и primitive listing; успешный trace связывает provider call с MCP request через два разных ID; failure trace показывает точку безопасного отказа; заполненная карта задаёт реализуемую server boundary для 6.3. ✅ <strong>Урок готов</strong></p></article>
     <div class="nav-prevnext" id="prevnext"><a href="../../lessons/tool-use-function-calling/"><small>← 6.1</small>Tool use / function calling изнутри</a><a href="../../lessons/build-mcp-server-fastmcp/" style="text-align:right"><small>6.3 →</small>Свой MCP-сервер на FastMCP</a></div>
   </section>
 
   <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
 
   <script>window.__BASE__="../../";</script>
-  <script src="../../data.js?v=e30ca2105d69"></script>
-  <script src="../../progress.js?v=e30ca2105d69"></script>
-  <script src="../../header.js?v=e30ca2105d69"></script>
-  <script src="../../app.js?v=e30ca2105d69"></script>
+  <script src="../../data.js?v=332582a8f676"></script>
+  <script src="../../progress.js?v=332582a8f676"></script>
+  <script src="../../header.js?v=332582a8f676"></script>
+  <script src="../../app.js?v=332582a8f676"></script>
 </body>
 </html>
