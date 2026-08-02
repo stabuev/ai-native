@@ -417,13 +417,21 @@ STDIO и воспроизводимое подключение к host.
 
 ## Дополнительное чтение
 
-- [MCP — Inspector](https://modelcontextprotocol.io/docs/tools/inspector) — визуальный тест-инструмент.
-- [modelcontextprotocol/inspector](https://github.com/modelcontextprotocol/inspector) — исходники и CLI-режим.
-- [MCP — Build an MCP server](https://modelcontextprotocol.io/docs/develop/build-server) — установка сервера в Claude Desktop.
-- [Claude Code — Connect via MCP](https://code.claude.com/docs/en/mcp) — подключение MCP-сервера к Claude Code (STDIO/HTTP, scopes).
-- [Cursor — Model Context Protocol](https://cursor.com/docs/mcp) — подключение сервера к Cursor через `mcp.json` (STDIO и Streamable HTTP).
-- [Integrating MCP with Cursor: A Comprehensive Guide (Medium)](https://medium.com/@UshioShizuku/integrating-model-context-protocol-mcp-with-cursor-a-comprehensive-guide-a3396e65c66b) — практическая настройка и подводные камни.
-- [MCP Inspector: Test and Debug your MCP Server Locally (YouTube)](https://www.youtube.com/watch?v=Y0tZ35dFFx4) — видео-прогон тестирования сервера через Inspector.
+Это факультативные маршруты, а не скрытые шаги практики. Для завершения урока достаточно
+инструкции выше; выбери только Inspector-ветку или документацию того одного host,
+который действительно подключаешь.
+
+**Углубить диагностику через Inspector**
+
+- [MCP — Inspector](https://modelcontextprotocol.io/docs/tools/inspector) — открой **Development workflow**, **Test edge cases** и вкладку своего primitive: это ближайшее продолжение диагностической лестницы урока.
+- [modelcontextprotocol/inspector](https://github.com/modelcontextprotocol/inspector) — переходи к разделам про **CLI mode** и config file, если интерактивный прогон нужно повторять командой или автоматизировать; исходники целиком читать не требуется.
+- [MCP — Debugging](https://modelcontextprotocol.io/docs/tools/debugging) — сопоставь разделы про connection, standalone server и logs с собственной локализацией controlled failure.
+
+**Подключить только выбранный host**
+
+- [MCP — Build an MCP server](https://modelcontextprotocol.io/docs/develop/build-server) — разделы **Testing your server with Claude for Desktop** и **Troubleshooting** показывают absolute path, restart и расположение logs на одном конкретном host.
+- [Claude Code — Connect via MCP](https://code.claude.com/docs/en/mcp) — если выбран Claude Code, открой **Add a local stdio server** и **Managing your servers**; не переноси его scopes и команды в другой продукт.
+- [Cursor — Model Context Protocol](https://cursor.com/docs/mcp) — если выбран Cursor, используй только актуальные разделы про локальный STDIO или remote HTTP server и сверяй фактический `mcp.json` с текущей версией продукта.
 
 ---
 **Часы:** ~3 · **DoD:** server из 6.3 остаётся зелёным in-memory; его отдельный process

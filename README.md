@@ -6,7 +6,7 @@
 
 - **Формат:** self-paced, без видео. Материалы текстовые и кодовые.
 - **Аудитория:** техническая (нужно уметь хотя бы немного программировать).
-- **Объём:** 13 фаз · 59 уроков · ~233 часа.
+- **Объём:** 13 фаз · 59 уроков · ~234 часа.
 
 ## Конструктор урока
 
@@ -83,7 +83,7 @@ CLAUDE.md                       инструкции проекта для Claud
 | 3 | Текст и документы | 5 | 20 | Строить пайплайны резюмирования и редактуры; собрать базовый RAG над своим корпусом. |
 | 4 | Скиллы, память и проекты (слой персистентности) | 5 | 20 | Упаковывать способности в SKILL.md, хранить контекст в памяти и собирать рабочие проекты. |
 | 5 | Данные и аналитика | 5 | 20 | Превращать бизнес-вопрос в проверяемый анализ и NL→SQL, проводить ограниченное BI-расследование и выпускать отчёт по решению quality gate. |
-| 6 | Инструменты и протоколы (MCP) | 5 | 18 | Объяснить tool use изнутри и поднять собственный MCP-сервер с контролем доступа. |
+| 6 | Инструменты и протоколы (MCP) | 5 | 19 | Объяснить tool use изнутри и поднять собственный MCP-сервер с контролем доступа. |
 | 7 | Agent Engineering | 6 | 26 | Собрать надёжного агента с памятью, планированием, human-in-the-loop и guardrails. |
 | 8 | Мульти-агенты и оркестрация | 4 | 18 | Построить мульти-агентный процесс с оркестратором и передачей контекста. |
 | 9 | Экономика и оркестрация моделей (FinOps) | 4 | 14 | Спроектировать маршрутизацию моделей и посчитать бюджет «до/после». |
@@ -317,7 +317,7 @@ gate → решение `publish / review / block` и проверенный о�
 
 **Результат фазы.** Объяснить tool use изнутри и поднять собственный MCP-сервер с контролем доступа.
 
-**Объём.** 5 уроков · ~18 часов
+**Объём.** 5 уроков · ~19 часов
 
 | # | Урок | Build It | Use It | Ship It | Папка |
 |---|---|---|---|---|---|
@@ -325,11 +325,19 @@ gate → решение `publish / review / block` и проверенный о�
 | 6.2 | Архитектура MCP | Карта user/model/host/client/server, stateless data/transport layers и два уровня correlation ID | `server/discover`, выбор tool/resource/prompt и compatibility preflight без подключения | Граница собственного MCP-server + успешный и отказной trace | `phases/06-tools-and-protocols-mcp/02-mcp-architecture` |
 | 6.3 | Свой MCP-сервер на Python SDK | Capability из 6.2 → `MCPServer` 2.x, generated schema и domain handler | In-memory `Client`: descriptor, успешный вызов и безопасный отказ | Проверенный MCP-сервер + build record | `phases/06-tools-and-protocols-mcp/03-build-mcp-server-fastmcp` |
 | 6.4 | От server object к Inspector и host | Реальный process/transport: descriptor, success и failure в MCP Inspector | Подключение той же capability к одному host и контролируемая диагностика | Connection and diagnostics record | `phases/06-tools-and-protocols-mcp/04-testing-and-connecting` |
-| 6.5 | Контроль доступа для своего MCP-сервера | Trusted context + capability-specific action/object policy до domain adapter | Allow/deny через личный transport; dangerous actions переданы в 7.3 | Access-control and residual-risk record | `phases/06-tools-and-protocols-mcp/05-security-and-access` |
+| 6.5 | Контроль доступа для своего MCP-сервера | Trusted context + capability-specific action/object policy до domain adapter | Allow/deny через личный transport; безопасная capability передана в 7.1, dangerous actions — в 7.3 | Access-control record + досье фазы | `phases/06-tools-and-protocols-mcp/05-security-and-access` |
 
-**Домашнее задание.** Собрать MCP-сервер, который ходит в БД/файлы, протестировать в Inspector и подключить к агенту.
+**Домашнее задание.** Скопировать
+[`phase-6-dossier.md`](phases/06-tools-and-protocols-mcp/05-security-and-access/outputs/phase-6-dossier.md)
+в `course-work/phase-6/phase-6-dossier.md` и связать одну собственную capability через
+всю фазу: public tool contract и два trace 6.1 → MCP boundary и primitive 6.2 →
+проверенный server 6.3 → Inspector, один host и восстановленный controlled failure 6.4 →
+trusted context, action/object policy, allow/deny evidence и residual risks 6.5.
+Завершить досье передачей безопасной capability в agent loop 7.1 и только действительно
+высокорискового действия — в human approval 7.3. Реальные БД, рабочие файлы и secrets
+для завершения фазы не требуются.
 
-**Ресурсы.** MCP Roadmap 2026; Building Your First MCP Server (Python); FastMCP tutorial
+**Ресурсы.** Дополнительное чтение находится в каждом уроке и остаётся факультативным.
 
 ## Фаза 7. Agent Engineering
 

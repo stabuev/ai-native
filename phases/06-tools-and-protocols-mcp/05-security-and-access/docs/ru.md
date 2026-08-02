@@ -368,11 +368,14 @@ Python-функции: нужно сохранить descriptor, MCP result enve
 ИИ не подтверждает безопасность фразой «реализован RBAC». Доказательство — конкретная
 policy, независимый denied path до side effect и явно названные остаточные риски.
 
-## SHIP IT — access-control and residual-risk record
+## SHIP IT — access-control record и досье Фазы 6
 
-Скопируй и заполни
-[`outputs/mcp-access-control-record.md`](../outputs/mcp-access-control-record.md). Положи
-его рядом с build record 6.3 и connection record 6.4:
+Скопируй и заполни два артефакта:
+
+- [`outputs/mcp-access-control-record.md`](../outputs/mcp-access-control-record.md) — доказательства policy и остаточные риски конкретного server;
+- [`outputs/phase-6-dossier.md`](../outputs/phase-6-dossier.md) — сквозная приёмка одной capability от 6.1 до handoff в Фазу 7.
+
+Access-control record положи рядом с build record 6.3 и connection record 6.4:
 
 ```text
 6.3-mcp-server/
@@ -386,10 +389,44 @@ policy, независимый denied path до side effect и явно назв
 └── mcp-access-control-record.md
 ```
 
+Досье фазы хранится уровнем выше:
+
+```text
+course-work/phase-6/
+├── 6.1-tool-use/...
+├── 6.2-mcp-architecture/...
+├── 6.3-mcp-server/...
+└── phase-6-dossier.md
+```
+
 Артефакт фиксирует не обещание «secure», а доказанную policy для конкретной surface,
 transport-specific trust source, allow/deny evidence и остаточные риски. Он передаёт в
 Фазу 7 инструменты, которыми агент может пользоваться сразу, и действия, где ему нужен
 human approval.
+
+## Как этим уроком закрывается Фаза 6
+
+Досье должно показать один непрерывный переход, а не пять независимых домашних работ:
+
+```text
+6.1 public contract + success/rejection trace
+  → 6.2 host/client/server boundary + primitive + compatibility failure
+  → 6.3 generated descriptor + in-memory behavioural evidence
+  → 6.4 process/transport + Inspector + один host + восстановленный config failure
+  → 6.5 trusted context + action/object policy + allow/deny + residual risks
+```
+
+Предметная задача, capability и ожидаемый успешный результат должны узнаваться на каждом
+шаге. Если контракт менялся, укажи точную причину и повторённые проверки. В досье не
+нужно вставлять все logs и исходники: дай короткие evidence и ссылки на заполненные
+records.
+
+Для 7.1 передай одну уже разрешённую read-only capability, её domain arguments и
+ожидаемую observation. Agent loop должен вызывать её через MCP adapter, а не импортировать
+domain handler в обход server policy. Для 7.3 передай только конкретное дорогое,
+необратимое или внешнее действие, которому после authorization действительно нужен
+human approval. Если такого действия у server нет, честно запиши «не требуется», а не
+добавляй опасный tool ради шаблона.
 
 ## Что теперь доказано — и чего нет
 
@@ -470,5 +507,6 @@ action-object policy, transport-specific access и безопасный audit.
 проверяет capability-specific action + object до domain adapter; allow, missing
 permission, out-of-scope object и попытка self-assigned context доказаны behavioural
 tests; allow/deny повторены через реальный transport; redacted access-control record
-фиксирует policy, audit evidence, residual risks и handoff действий с approval в 7.3. ✅
+фиксирует policy, audit evidence и residual risks; досье связывает evidence 6.1–6.5 и
+передаёт безопасную capability в 7.1, а применимое действие с approval — в 7.3. ✅
 **Урок готов**

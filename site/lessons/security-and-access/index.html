@@ -13,7 +13,7 @@
   <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
   <meta name="twitter:card" content="summary_large_image">
   <script>(function(){try{var t=localStorage.getItem("theme")||"light";document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
-  <link rel="stylesheet" href="../../style.css?v=9edc4b27021c">
+  <link rel="stylesheet" href="../../style.css?v=5e7f863cee11">
   <!-- Yandex.Metrika counter -->
   <script type="text/javascript">
       (function(m,e,t,r,i,k,a){
@@ -60,7 +60,7 @@ class AccessContext:
   "reason_code": "object_out_of_scope"
 }</code></pre><p>Reference использует in-memory list только для наблюдаемой практики. Production audit должен идти в защищённый structured logger и обычно дополняться server-generated timestamp и correlation ID. Не записывай access token, secret, полный документ, тело письма или все arguments «на всякий случай».</p><p>Важно: <code>allowed: true</code> означает <strong>решение policy</strong>, а не успешное выполнение handler. Domain adapter может упасть позже; execution outcome и access decision не следует сливать в одно поле.</p><h2>BUILD IT — защити capability из 6.3</h2><h3>1. Верни baseline и сделай прогноз</h3><p>Работай в том же личном проекте, который прошёл 6.3–6.4:</p><pre><code>cd ai-native-work/course-work/phase-6/6.3-mcp-server
 uv run pytest code -q</code></pre><p>До изменения ответь письменно:</p><ol><li>Дойдёт ли вызов до domain adapter, если schema корректна, но permission отсутствует?</li><li>Может ли поле <code>actor="admin"</code> в tool arguments изменить trusted context?</li><li>Достаточно ли read-only annotation, чтобы скрыть чувствительный объект?</li></ol><p>Правильные ответы будут доказаны тестами: <strong>нет, нет, нет</strong>.</p><p>Если используешь Git, зафиксируй зелёный baseline отдельным commit. Если нет — сохрани копию текущего server вне исполняемого <code>code/</code>, чтобы можно было сравнить изменения, но не оставляй два почти одинаковых production targets в host config.</p><h3>2. Прогони reference-механику</h3><p>Со страницы урока скопируй в <code>code/</code>:</p><ul><li><code>secured_release_decision_server.py</code> — защищённое продолжение reference-server 6.3;</li><li><code>test_secured_release_decision_server.py</code> — behavioural specification доступа.</li></ul><p>Запусти:</p><pre><code>uv run pytest code/test_secured_release_decision_server.py -q
-uv run python code/secured_release_decision_server.py</code></pre><p><strong>Готово, когда пять тестов зелёные:</strong></p><ol><li>public schema содержит только domain input и не публикует identity/permissions;</li><li>разрешённые action + object возвращают прежний structured result;</li><li>отсутствующий scope даёт tool error до domain lookup;</li><li>существующий, но out-of-scope object даёт тот же safe denial до lookup;</li><li>присланные client поля <code>actor/scopes</code> не заменяют trusted context server.</li></ol><p>Эталон специально не реализует filesystem path sandbox, OAuth server или универсальный RBAC framework. Он делает наблюдаемым центральный security invariant на уже знакомой capability.</p><h3>3. Перенеси policy на свой server</h3><p>Reference доказывает механизм, но не завершает урок. Открой раздел <code>Handoff в 6.5</code> своего connection record и сделай следующее:</p><ol><li>Назови одну реальную capability, одно действие и один объект или класс объектов.</li><li>Определи trusted source context для выбранного transport.</li><li>Удали <code>actor</code>, <code>role</code>, <code>tenant</code>, <code>scope</code> из public arguments, если caller мог назначить их себе сам.</li><li>Задай capability-specific permission: например, <code>report:read</code>, <code>dataset:query</code> или <code>release_decision:read</code>.</li><li>Добавь object bound: project ID, dataset allowlist, безопасный root/adapter или tenant binding.</li><li>Вызови policy до чтения, записи, сети или другого domain side effect.</li><li>Верни caller ограниченный denial, а в audit запиши безопасный reason code.</li><li>Перепиши reference-tests под свою capability и добейся red → green.</li></ol><p>Не переносись механически на <code>allowed_run_ids</code>, если твоя граница другая:</p><table><thead><tr><th>Primitive / действие</th><th>Action permission</th><th>Object boundary</th></tr></thead><tbody><tr><td>tool читает отчёт</td><td><code>report:read</code></td><td>project/report IDs, доступные deployment</td></tr><tr><td>tool выполняет SQL</td><td><code>dataset:query</code></td><td>allowlist datasets + только разрешённый query shape</td></tr><tr><td>resource отдаёт документ</td><td><code>document:read</code></td><td>owner/tenant binding или безопасный corpus</td></tr><tr><td>tool создаёт черновик письма</td><td><code>email:draft</code></td><td>разрешённые recipients/domains; отправка отдельно</td></tr><tr><td>tool изменяет состояние</td><td>capability-specific write permission</td><td>конкретный объект + отдельная отметка <code>approval_required</code> для 7.3</td></tr></tbody></table><p>Filesystem path — только один возможный object boundary. Если он действительно нужен, используй platform-aware path resolution, проверяй итоговый canonical target внутри разрешённого root, учитывай symbolic links и дополнительно ограничивай process на уровне ОС/sandbox. Проверка строки на <code>..</code> сама по себе недостаточна.</p><h3>4. Докажи deny на реальном transport</h3><p>После in-memory tests снова открой <strong>личный</strong> target через Inspector:</p><pre><code>uv run mcp dev code/&lt;your_server&gt;.py</code></pre><p>Повтори два сценария:</p><ul><li>разрешённые action + object дают прежний ожидаемый result;</li><li>запрещённый object или отсутствующий permission дают safe denial и audit event, а чувствительные данные не появляются в response.</li></ul><p>Если имя target изменилось, обнови STDIO command выбранного host, полностью перезапусти его и повтори тот же allow/deny. Не объявляй policy рабочей только по прямому вызову Python-функции: нужно сохранить descriptor, MCP result envelope и реальный transport.</p><h2>Самостоятельное решение: матрица доступа</h2><p>Минимальная policy — это не класс <code>Principal</code>, а принятое решение. Для своей capability заполни хотя бы две строки:</p><table><thead><tr><th>Trusted actor/context</th><th>Action</th><th>Object bound</th><th>Outcome</th><th>Почему</th></tr></thead><tbody><tr><td>...</td><td>...</td><td>...</td><td>allow</td><td>...</td></tr><tr><td>...</td><td>...</td><td>...</td><td>deny / approval required</td><td>...</td></tr></tbody></table><p>Сильная строка содержит предметную границу: «локальный deployment аналитика может читать только решения project A». Слабая строка повторяет код: «reader может read».</p><p>Если действие изменяет состояние или имеет дорогой внешний эффект, одной authorization может быть мало. Отметь <code>approval_required</code>, но не пиши собственный диалог подтверждения в этом уроке: пауза, approve/reject и восстановление agent state — результат 7.3.</p><h2>Как использовать ИИ: 4D для security-sensitive правки</h2><ul><li><strong>Delegation:</strong> отдай ИИ черновик policy helper, негативных tests или матрицы, но не решение о trusted identity и допустимых объектах.</li><li><strong>Description:</strong> передай connection record 6.4, transport, фактическую capability, asset, action/object bounds, ожидаемые allow/deny и запрет на secrets и новые production integrations.</li><li><strong>Discernment:</strong> ищи обход, а не только happy path: может ли caller назначить себе role, разрешает ли label вызвать несвязанную функцию, попадает ли deny в adapter, раскрывает ли error чужой объект.</li><li><strong>Diligence:</strong> прочитай diff, запусти все tests, повтори deny через Inspector/host, проверь audit и поиском убедись, что tokens и credentials не попали в code, schemas, responses или record.</li></ul><p>ИИ не подтверждает безопасность фразой «реализован RBAC». Доказательство — конкретная policy, независимый denied path до side effect и явно названные остаточные риски.</p><h2>SHIP IT — access-control and residual-risk record</h2><p>Скопируй и заполни <a href="#f-phases-06-tools-and-protocols-mcp-05-security-and-access-outputs-mcp-access-control-record-md"><code>outputs/mcp-access-control-record.md</code></a>. Положи его рядом с build record 6.3 и connection record 6.4:</p><pre><code>6.3-mcp-server/
+uv run python code/secured_release_decision_server.py</code></pre><p><strong>Готово, когда пять тестов зелёные:</strong></p><ol><li>public schema содержит только domain input и не публикует identity/permissions;</li><li>разрешённые action + object возвращают прежний structured result;</li><li>отсутствующий scope даёт tool error до domain lookup;</li><li>существующий, но out-of-scope object даёт тот же safe denial до lookup;</li><li>присланные client поля <code>actor/scopes</code> не заменяют trusted context server.</li></ol><p>Эталон специально не реализует filesystem path sandbox, OAuth server или универсальный RBAC framework. Он делает наблюдаемым центральный security invariant на уже знакомой capability.</p><h3>3. Перенеси policy на свой server</h3><p>Reference доказывает механизм, но не завершает урок. Открой раздел <code>Handoff в 6.5</code> своего connection record и сделай следующее:</p><ol><li>Назови одну реальную capability, одно действие и один объект или класс объектов.</li><li>Определи trusted source context для выбранного transport.</li><li>Удали <code>actor</code>, <code>role</code>, <code>tenant</code>, <code>scope</code> из public arguments, если caller мог назначить их себе сам.</li><li>Задай capability-specific permission: например, <code>report:read</code>, <code>dataset:query</code> или <code>release_decision:read</code>.</li><li>Добавь object bound: project ID, dataset allowlist, безопасный root/adapter или tenant binding.</li><li>Вызови policy до чтения, записи, сети или другого domain side effect.</li><li>Верни caller ограниченный denial, а в audit запиши безопасный reason code.</li><li>Перепиши reference-tests под свою capability и добейся red → green.</li></ol><p>Не переносись механически на <code>allowed_run_ids</code>, если твоя граница другая:</p><table><thead><tr><th>Primitive / действие</th><th>Action permission</th><th>Object boundary</th></tr></thead><tbody><tr><td>tool читает отчёт</td><td><code>report:read</code></td><td>project/report IDs, доступные deployment</td></tr><tr><td>tool выполняет SQL</td><td><code>dataset:query</code></td><td>allowlist datasets + только разрешённый query shape</td></tr><tr><td>resource отдаёт документ</td><td><code>document:read</code></td><td>owner/tenant binding или безопасный corpus</td></tr><tr><td>tool создаёт черновик письма</td><td><code>email:draft</code></td><td>разрешённые recipients/domains; отправка отдельно</td></tr><tr><td>tool изменяет состояние</td><td>capability-specific write permission</td><td>конкретный объект + отдельная отметка <code>approval_required</code> для 7.3</td></tr></tbody></table><p>Filesystem path — только один возможный object boundary. Если он действительно нужен, используй platform-aware path resolution, проверяй итоговый canonical target внутри разрешённого root, учитывай symbolic links и дополнительно ограничивай process на уровне ОС/sandbox. Проверка строки на <code>..</code> сама по себе недостаточна.</p><h3>4. Докажи deny на реальном transport</h3><p>После in-memory tests снова открой <strong>личный</strong> target через Inspector:</p><pre><code>uv run mcp dev code/&lt;your_server&gt;.py</code></pre><p>Повтори два сценария:</p><ul><li>разрешённые action + object дают прежний ожидаемый result;</li><li>запрещённый object или отсутствующий permission дают safe denial и audit event, а чувствительные данные не появляются в response.</li></ul><p>Если имя target изменилось, обнови STDIO command выбранного host, полностью перезапусти его и повтори тот же allow/deny. Не объявляй policy рабочей только по прямому вызову Python-функции: нужно сохранить descriptor, MCP result envelope и реальный transport.</p><h2>Самостоятельное решение: матрица доступа</h2><p>Минимальная policy — это не класс <code>Principal</code>, а принятое решение. Для своей capability заполни хотя бы две строки:</p><table><thead><tr><th>Trusted actor/context</th><th>Action</th><th>Object bound</th><th>Outcome</th><th>Почему</th></tr></thead><tbody><tr><td>...</td><td>...</td><td>...</td><td>allow</td><td>...</td></tr><tr><td>...</td><td>...</td><td>...</td><td>deny / approval required</td><td>...</td></tr></tbody></table><p>Сильная строка содержит предметную границу: «локальный deployment аналитика может читать только решения project A». Слабая строка повторяет код: «reader может read».</p><p>Если действие изменяет состояние или имеет дорогой внешний эффект, одной authorization может быть мало. Отметь <code>approval_required</code>, но не пиши собственный диалог подтверждения в этом уроке: пауза, approve/reject и восстановление agent state — результат 7.3.</p><h2>Как использовать ИИ: 4D для security-sensitive правки</h2><ul><li><strong>Delegation:</strong> отдай ИИ черновик policy helper, негативных tests или матрицы, но не решение о trusted identity и допустимых объектах.</li><li><strong>Description:</strong> передай connection record 6.4, transport, фактическую capability, asset, action/object bounds, ожидаемые allow/deny и запрет на secrets и новые production integrations.</li><li><strong>Discernment:</strong> ищи обход, а не только happy path: может ли caller назначить себе role, разрешает ли label вызвать несвязанную функцию, попадает ли deny в adapter, раскрывает ли error чужой объект.</li><li><strong>Diligence:</strong> прочитай diff, запусти все tests, повтори deny через Inspector/host, проверь audit и поиском убедись, что tokens и credentials не попали в code, schemas, responses или record.</li></ul><p>ИИ не подтверждает безопасность фразой «реализован RBAC». Доказательство — конкретная policy, независимый denied path до side effect и явно названные остаточные риски.</p><h2>SHIP IT — access-control record и досье Фазы 6</h2><p>Скопируй и заполни два артефакта:</p><ul><li><a href="#f-phases-06-tools-and-protocols-mcp-05-security-and-access-outputs-mcp-access-control-record-md"><code>outputs/mcp-access-control-record.md</code></a> — доказательства policy и остаточные риски конкретного server;</li><li><a href="#f-phases-06-tools-and-protocols-mcp-05-security-and-access-outputs-phase-6-dossier-md"><code>outputs/phase-6-dossier.md</code></a> — сквозная приёмка одной capability от 6.1 до handoff в Фазу 7.</li></ul><p>Access-control record положи рядом с build record 6.3 и connection record 6.4:</p><pre><code>6.3-mcp-server/
 ├── pyproject.toml
 ├── uv.lock
 ├── code/
@@ -68,7 +68,15 @@ uv run python code/secured_release_decision_server.py</code></pre><p><strong>Г�
 │   └── test_&lt;your_server&gt;.py
 ├── mcp-server-build-record.md
 ├── connection-and-diagnostics-record.md
-└── mcp-access-control-record.md</code></pre><p>Артефакт фиксирует не обещание «secure», а доказанную policy для конкретной surface, transport-specific trust source, allow/deny evidence и остаточные риски. Он передаёт в Фазу 7 инструменты, которыми агент может пользоваться сразу, и действия, где ему нужен human approval.</p><h2>Что теперь доказано — и чего нет</h2><p>После завершения можно утверждать:</p><ul><li>trusted context не выбирается моделью через public arguments;</li><li>одна реальная capability проверяет action + object до domain adapter;</li><li>разрешённый путь сохраняет предметное поведение 6.3–6.4;</li><li>два реалистичных deny-path наблюдаемы через MCP client;</li><li>audit отличает policy decision и не раскрывает secrets;</li><li>опасные действия, требующие approval, переданы в 7.3.</li></ul><p>Пока нельзя утверждать:</p><ul><li>что самостоятельно реализован корректный OAuth authorization server;</li><li>что local process изолирован от всей файловой системы и сети;</li><li>что проверены все capabilities, tenants и object relationships;</li><li>что policy защищает от всех видов prompt injection и tool poisoning;</li><li>что audit storage защищён от подмены и имеет production retention;</li><li>что server прошёл профессиональный security review или penetration test.</li></ul><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Брать actor или scopes из tool arguments.</strong> Это недоверенная самодекларация caller, а не authentication.</li><li><strong>Проверять только имя tool.</strong> Policy должна быть привязана к конкретному handler и проверять action + object до side effect.</li><li><strong>Считать read-only безопасным автоматически.</strong> Чтение может раскрыть чужой отчёт, персональные данные или secret.</li><li><strong>Путать schema validation и authorization.</strong> Корректный <code>run_id: str</code> всё ещё может быть вне разрешённой surface.</li><li><strong>Проверять policy после lookup или write.</strong> Deny после side effect ничего не защищает.</li><li><strong>Возвращать подробный denial caller.</strong> Список scopes, существование объекта и внутренние пути нужны защищённому audit, а не модели.</li><li><strong>Логировать полный input/output и tokens.</strong> Audit сам становится источником утечки.</li><li><strong>Применять HTTP OAuth recipe к локальному STDIO.</strong> Для STDIO важны command consent, OS/process permissions, sandbox и минимальная startup policy.</li><li><strong>Принимать token для чужого audience или пересылать его downstream.</strong> Remote server должен валидировать token для собственного resource и не использовать token passthrough.</li><li><strong>Считать authorization заменой approval.</strong> Разрешённое policy высокорисковое действие может всё равно требовать решения человека в 7.3.</li></ul><h2>ЧТО СОЗНАТЕЛЬНО НЕ ВХОДИТ В УРОК</h2><ul><li>самостоятельная реализация OAuth/OIDC server, JWT parser и token validation;</li><li>универсальный RBAC/ABAC framework для всех предметных областей;</li><li>полноценный filesystem sandbox, container profile и network policy;</li><li>human approval workflow и pause/resume agent state — 7.3;</li><li>глубокая защита от prompt injection, tool poisoning и data exfiltration — Фаза 11;</li><li>production SIEM, retention policy, incident response и penetration testing;</li><li>утверждение о полной безопасности server после одного упражнения.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Вопросы ниже проверяют trust source, различие validation/authorization/approval, action-object policy, transport-specific access и безопасный audit.</p><div class="quiz-section" data-lesson="6.5"></div><h2>Дополнительное чтение</h2><p>Это факультативная библиотека, а не продолжение обязательной части урока. Читать всё не требуется: выбери маршрут под свою задачу.</p><h3>Если нужен точный контракт MCP</h3><ul><li><a href="https://modelcontextprotocol.io/docs/tutorials/security/authorization" target="_blank" rel="noopener">MCP — Understanding Authorization</a> — начни с разделов <strong>When Should You Use Authorization?</strong> и <strong>Security Considerations</strong>: они объясняют, когда локальному STDIO-серверу достаточно trusted context, а когда удалённому HTTP-серверу нужен OAuth-поток.</li><li><a href="https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization" target="_blank" rel="noopener">MCP — Authorization specification</a> — обращайся к разделам <strong>Purpose and Scope</strong>, <strong>Scope Selection Strategy</strong>, <strong>Token Handling</strong> и <strong>Runtime Insufficient Scope Errors</strong>, когда проектируешь production HTTP-сервер; это нормативный источник, а не вводное чтение.</li><li><a href="https://modelcontextprotocol.io/docs/tutorials/security/security_best_practices" target="_blank" rel="noopener">MCP — Security Best Practices</a> — для продолжения этого урока особенно полезны <strong>State Handle Hijacking</strong>, <strong>Local MCP Server Compromise</strong>, <strong>stdio Transport Security in Proxy Scenarios</strong> и <strong>Scope Minimization</strong>.</li></ul><h3>Если нужен практический security review</h3><ul><li><a href="https://genai.owasp.org/resource/a-practical-guide-for-secure-mcp-server-development/" target="_blank" rel="noopener">OWASP GenAI — A Practical Guide for Secure MCP Server Development</a> — используй как внешний чек-лист для архитектуры, authentication/authorization, валидации, изоляции сессий и hardened deployment; сравни его пункты со своим access-control record.</li><li><a href="https://www.redhat.com/en/blog/model-context-protocol-mcp-understanding-security-risks-and-controls" target="_blank" rel="noopener">Red Hat — MCP: Understanding security risks and controls</a> — короткий независимый обзор confused deputy, least privilege и границ доверия; полезен, если официальный текст пока кажется слишком нормативным.</li></ul><h3>Если нужна модель угроз шире access control</h3><ul><li><a href="https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/" target="_blank" rel="noopener">Simon Willison — The lethal trifecta</a> — проверь, не совмещает ли система приватные данные, недоверенный контент и канал наружу; эта рамка понадобится глубже в фазе про prompt injection.</li><li><a href="https://invariantlabs.ai/blog/mcp-security-notification-tool-poisoning-attacks" target="_blank" rel="noopener">Invariant Labs — MCP Tool Poisoning Attacks</a> — показывает, почему опасность может находиться не в аргументах вызова, а в описании инструмента, и зачем контролировать происхождение и изменение MCP-серверов.</li></ul><h3>Если хочется hands-on практики</h3><ul><li><a href="https://github.com/harishsg993010/damn-vulnerable-MCP-server" target="_blank" rel="noopener">Damn Vulnerable MCP Server</a> — десять намеренно уязвимых сценариев: выбери один-два после урока и запускай только изолированно, на синтетических данных и без реальных секретов.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Если делегируешь ИИ, реши, что отдаёшь; опиши задачу и критерии; проверь результат; сохрани ответственность за итог.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-06-tools-and-protocols-mcp-05-security-and-access-code-test-secured-release-decision-server-py" open data-test="1"><summary><span class="fname">code/test_secured_release_decision_server.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Behavioural specification for access control integrated into the MCP capability."""
+└── mcp-access-control-record.md</code></pre><p>Досье фазы хранится уровнем выше:</p><pre><code>course-work/phase-6/
+├── 6.1-tool-use/...
+├── 6.2-mcp-architecture/...
+├── 6.3-mcp-server/...
+└── phase-6-dossier.md</code></pre><p>Артефакт фиксирует не обещание «secure», а доказанную policy для конкретной surface, transport-specific trust source, allow/deny evidence и остаточные риски. Он передаёт в Фазу 7 инструменты, которыми агент может пользоваться сразу, и действия, где ему нужен human approval.</p><h2>Как этим уроком закрывается Фаза 6</h2><p>Досье должно показать один непрерывный переход, а не пять независимых домашних работ:</p><pre><code>6.1 public contract + success/rejection trace
+  → 6.2 host/client/server boundary + primitive + compatibility failure
+  → 6.3 generated descriptor + in-memory behavioural evidence
+  → 6.4 process/transport + Inspector + один host + восстановленный config failure
+  → 6.5 trusted context + action/object policy + allow/deny + residual risks</code></pre><p>Предметная задача, capability и ожидаемый успешный результат должны узнаваться на каждом шаге. Если контракт менялся, укажи точную причину и повторённые проверки. В досье не нужно вставлять все logs и исходники: дай короткие evidence и ссылки на заполненные records.</p><p>Для 7.1 передай одну уже разрешённую read-only capability, её domain arguments и ожидаемую observation. Agent loop должен вызывать её через MCP adapter, а не импортировать domain handler в обход server policy. Для 7.3 передай только конкретное дорогое, необратимое или внешнее действие, которому после authorization действительно нужен human approval. Если такого действия у server нет, честно запиши «не требуется», а не добавляй опасный tool ради шаблона.</p><h2>Что теперь доказано — и чего нет</h2><p>После завершения можно утверждать:</p><ul><li>trusted context не выбирается моделью через public arguments;</li><li>одна реальная capability проверяет action + object до domain adapter;</li><li>разрешённый путь сохраняет предметное поведение 6.3–6.4;</li><li>два реалистичных deny-path наблюдаемы через MCP client;</li><li>audit отличает policy decision и не раскрывает secrets;</li><li>опасные действия, требующие approval, переданы в 7.3.</li></ul><p>Пока нельзя утверждать:</p><ul><li>что самостоятельно реализован корректный OAuth authorization server;</li><li>что local process изолирован от всей файловой системы и сети;</li><li>что проверены все capabilities, tenants и object relationships;</li><li>что policy защищает от всех видов prompt injection и tool poisoning;</li><li>что audit storage защищён от подмены и имеет production retention;</li><li>что server прошёл профессиональный security review или penetration test.</li></ul><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Брать actor или scopes из tool arguments.</strong> Это недоверенная самодекларация caller, а не authentication.</li><li><strong>Проверять только имя tool.</strong> Policy должна быть привязана к конкретному handler и проверять action + object до side effect.</li><li><strong>Считать read-only безопасным автоматически.</strong> Чтение может раскрыть чужой отчёт, персональные данные или secret.</li><li><strong>Путать schema validation и authorization.</strong> Корректный <code>run_id: str</code> всё ещё может быть вне разрешённой surface.</li><li><strong>Проверять policy после lookup или write.</strong> Deny после side effect ничего не защищает.</li><li><strong>Возвращать подробный denial caller.</strong> Список scopes, существование объекта и внутренние пути нужны защищённому audit, а не модели.</li><li><strong>Логировать полный input/output и tokens.</strong> Audit сам становится источником утечки.</li><li><strong>Применять HTTP OAuth recipe к локальному STDIO.</strong> Для STDIO важны command consent, OS/process permissions, sandbox и минимальная startup policy.</li><li><strong>Принимать token для чужого audience или пересылать его downstream.</strong> Remote server должен валидировать token для собственного resource и не использовать token passthrough.</li><li><strong>Считать authorization заменой approval.</strong> Разрешённое policy высокорисковое действие может всё равно требовать решения человека в 7.3.</li></ul><h2>ЧТО СОЗНАТЕЛЬНО НЕ ВХОДИТ В УРОК</h2><ul><li>самостоятельная реализация OAuth/OIDC server, JWT parser и token validation;</li><li>универсальный RBAC/ABAC framework для всех предметных областей;</li><li>полноценный filesystem sandbox, container profile и network policy;</li><li>human approval workflow и pause/resume agent state — 7.3;</li><li>глубокая защита от prompt injection, tool poisoning и data exfiltration — Фаза 11;</li><li>production SIEM, retention policy, incident response и penetration testing;</li><li>утверждение о полной безопасности server после одного упражнения.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Вопросы ниже проверяют trust source, различие validation/authorization/approval, action-object policy, transport-specific access и безопасный audit.</p><div class="quiz-section" data-lesson="6.5"></div><h2>Дополнительное чтение</h2><p>Это факультативная библиотека, а не продолжение обязательной части урока. Читать всё не требуется: выбери маршрут под свою задачу.</p><h3>Если нужен точный контракт MCP</h3><ul><li><a href="https://modelcontextprotocol.io/docs/tutorials/security/authorization" target="_blank" rel="noopener">MCP — Understanding Authorization</a> — начни с разделов <strong>When Should You Use Authorization?</strong> и <strong>Security Considerations</strong>: они объясняют, когда локальному STDIO-серверу достаточно trusted context, а когда удалённому HTTP-серверу нужен OAuth-поток.</li><li><a href="https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization" target="_blank" rel="noopener">MCP — Authorization specification</a> — обращайся к разделам <strong>Purpose and Scope</strong>, <strong>Scope Selection Strategy</strong>, <strong>Token Handling</strong> и <strong>Runtime Insufficient Scope Errors</strong>, когда проектируешь production HTTP-сервер; это нормативный источник, а не вводное чтение.</li><li><a href="https://modelcontextprotocol.io/docs/tutorials/security/security_best_practices" target="_blank" rel="noopener">MCP — Security Best Practices</a> — для продолжения этого урока особенно полезны <strong>State Handle Hijacking</strong>, <strong>Local MCP Server Compromise</strong>, <strong>stdio Transport Security in Proxy Scenarios</strong> и <strong>Scope Minimization</strong>.</li></ul><h3>Если нужен практический security review</h3><ul><li><a href="https://genai.owasp.org/resource/a-practical-guide-for-secure-mcp-server-development/" target="_blank" rel="noopener">OWASP GenAI — A Practical Guide for Secure MCP Server Development</a> — используй как внешний чек-лист для архитектуры, authentication/authorization, валидации, изоляции сессий и hardened deployment; сравни его пункты со своим access-control record.</li><li><a href="https://www.redhat.com/en/blog/model-context-protocol-mcp-understanding-security-risks-and-controls" target="_blank" rel="noopener">Red Hat — MCP: Understanding security risks and controls</a> — короткий независимый обзор confused deputy, least privilege и границ доверия; полезен, если официальный текст пока кажется слишком нормативным.</li></ul><h3>Если нужна модель угроз шире access control</h3><ul><li><a href="https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/" target="_blank" rel="noopener">Simon Willison — The lethal trifecta</a> — проверь, не совмещает ли система приватные данные, недоверенный контент и канал наружу; эта рамка понадобится глубже в фазе про prompt injection.</li><li><a href="https://invariantlabs.ai/blog/mcp-security-notification-tool-poisoning-attacks" target="_blank" rel="noopener">Invariant Labs — MCP Tool Poisoning Attacks</a> — показывает, почему опасность может находиться не в аргументах вызова, а в описании инструмента, и зачем контролировать происхождение и изменение MCP-серверов.</li></ul><h3>Если хочется hands-on практики</h3><ul><li><a href="https://github.com/harishsg993010/damn-vulnerable-MCP-server" target="_blank" rel="noopener">Damn Vulnerable MCP Server</a> — десять намеренно уязвимых сценариев: выбери один-два после урока и запускай только изолированно, на синтетических данных и без реальных секретов.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Если делегируешь ИИ, реши, что отдаёшь; опиши задачу и критерии; проверь результат; сохрани ответственность за итог.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-06-tools-and-protocols-mcp-05-security-and-access-code-test-secured-release-decision-server-py" open data-test="1"><summary><span class="fname">code/test_secured_release_decision_server.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Behavioural specification for access control integrated into the MCP capability."""
 
 import pytest
 from mcp import Client
@@ -572,11 +580,26 @@ canonical filesystem root / другое — ...
 
 ## 9. Residual risks и handoff
 
-### В Фазу 7
+### В 7.1 — безопасная capability для agent loop
+
+**Capability, которую агент может вызывать без дополнительного human approval:** ...
+
+**Domain arguments от модели:** ...
+
+**Ожидаемая observation для следующего шага agent loop:** ...
+
+**Как agent adapter вызывает MCP server, не импортируя domain handler напрямую:** ...
+
+**Какая server-side policy остаётся обязательной при любом вызове агента:** ...
+
+### В 7.3 — действия, которым нужен human approval
 
 | Action | Почему authorization недостаточно | Какой approval нужен в 7.3 |
 |---|---|---|
 | ... | ... | ... |
+
+Если у server нет дорогих, необратимых или внешних действий, запиши `не требуется` и не
+добавляй write-tool только ради заполнения строки.
 
 ### В Фазу 11
 
@@ -600,18 +623,193 @@ canonical filesystem root / другое — ...
 - [ ] Allow и deny повторены через выбранный transport.
 - [ ] Audit содержит достаточный reason code, но не secrets и полные sensitive payloads.
 - [ ] STDIO и HTTP controls описаны только для фактически выбранного transport.
+- [ ] Безопасная capability передана в 7.1 без обхода server policy.
 - [ ] Human approval и deep prompt-injection defense честно переданы в 7.3 и Фазу 11.
 - [ ] Residual risks конкретны; документ не заявляет production security без доказательств.
-</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> личная capability использует trusted server-side context и проверяет capability-specific action + object до domain adapter; allow, missing permission, out-of-scope object и попытка self-assigned context доказаны behavioural tests; allow/deny повторены через реальный transport; redacted access-control record фиксирует policy, audit evidence, residual risks и handoff действий с approval в 7.3. ✅ <strong>Урок готов</strong></p></article>
+</code></pre></details><details class="filebox" id="f-phases-06-tools-and-protocols-mcp-05-security-and-access-outputs-phase-6-dossier-md" open><summary><span class="fname">outputs/phase-6-dossier.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Досье завершения Фазы 6 · От tool call до защищённого MCP-сервера
+
+Скопируй шаблон в личное пространство — репозиторий курса клонировать не требуется:
+
+```text
+ai-native-work/course-work/phase-6/phase-6-dossier.md
+```
+
+Досье не заменяет артефакты уроков и не требует вставлять весь код или logs. Оно
+доказывает, что **одна и та же собственная capability** прошла путь 6.1–6.5 без скрытой
+подмены новым demo, а затем получила честный handoff в Agent Engineering.
+
+## 1. Индекс собственных результатов
+
+Укажи фактические пути внутри `ai-native-work`. Если что-то хранится иначе, объясни,
+как другому человеку найти результат.
+
+| Урок | Обязательный результат | Фактический путь | Готово |
+|---|---|---|---:|
+| 6.1 | tool contract + успешный и отклонённый trace | `course-work/phase-6/6.1-tool-use/tool-contract-and-trace.md` | да / нет |
+| 6.2 | MCP boundary + два уровня ID + compatibility failure | `course-work/phase-6/6.2-mcp-architecture/mcp-boundary-and-traces.md` | да / нет |
+| 6.3 | server, tests, lock-файл и build record | `course-work/phase-6/6.3-mcp-server/...` | да / нет |
+| 6.4 | connection and diagnostics record | `course-work/phase-6/6.3-mcp-server/connection-and-diagnostics-record.md` | да / нет |
+| 6.5 | access-control and residual-risk record | `course-work/phase-6/6.3-mcp-server/mcp-access-control-record.md` | да / нет |
+
+## 2. Сквозной контракт одной capability
+
+**Пользовательская задача:** ...
+
+**Почему обычного ответа модели недостаточно:** ...
+
+| Координата | Итоговое значение |
+|---|---|
+| Public capability name | `...` |
+| Primitive | tool / resource / prompt |
+| Кто инициирует использование | model / application / user |
+| Domain input | ... |
+| Structured output / content | ... |
+| Server boundary | ... |
+| Безопасный data adapter / fixture | ... |
+| Transport | STDIO / Streamable HTTP |
+| Проверенный host | ... |
+| Trusted context source | ... |
+| Action permission | ... |
+| Object boundary | ... |
+
+**Что сохранилось неизменным от 6.1 до 6.5:** ...
+
+**Что изменилось, почему и какие проверки после этого были повторены:** ...
+
+## 3. Матрица доказательств 6.1–6.5
+
+Ссылайся на короткий фрагмент собственного record, test name, command или redacted log.
+Фразы «работает» и «безопасно» без наблюдаемого evidence не считаются доказательством.
+
+| Переход | Что нужно доказать | Evidence | Вывод и его граница |
+|---|---|---|---|
+| 6.1 | модель видит public spec без callable; invalid call не исполняется | ... | ... |
+| 6.2 | роли и primitives не смешаны; provider call ID отделён от MCP request ID | ... | ... |
+| 6.3 | SDK публикует ожидаемый descriptor; success и два failure-path наблюдаемы in-memory | ... | ... |
+| 6.4 | отдельный process и transport работают; Inspector и один host видят ту же capability | ... | ... |
+| 6.4 | одна поломка config локализована, исправлена и перепроверена | ... | ... |
+| 6.5 | trusted context не назначается arguments; action + object проверяются до adapter | ... | ... |
+| 6.5 | allow сохраняет результат, deny не раскрывает объект, audit хранит reason code | ... | ... |
+
+## 4. Один end-to-end успешный trace
+
+Сократи trace до существенных событий и используй собственные значения:
+
+```text
+user request
+→ host передал модели public descriptor
+→ provider tool call / выбор resource или prompt: ...
+→ MCP client request ID: ...
+→ server schema validation
+→ trusted context + action/object policy: allow
+→ domain adapter
+→ structured MCP result / content: ...
+→ provider result / context
+→ финальный ответ пользователю: ...
+```
+
+**Как сопоставлены provider call ID и MCP request ID:** ...
+
+**Почему результат пришёл из adapter, а не был заново придуман моделью:** ...
+
+## 5. Отказ, локализация и восстановление
+
+Выбери один уже выполненный controlled failure из 6.4 или deny-path из 6.5. Не ломай
+рабочую среду повторно только ради досье.
+
+**Зелёный baseline:** ...
+
+**Одна изменённая координата или запрещённый запрос:** ...
+
+**Предсказанный слой отказа:** contract / process / transport / host / authorization — ...
+
+**Наблюдаемый сигнал:** ...
+
+**Почему domain side effect не произошёл:** ...
+
+**Исправление или безопасный отказ:** ...
+
+**Повторная проверка исходного успеха:** ...
+
+## 6. Граница результата фазы
+
+Теперь доказано:
+
+- [ ] client-side tool-use boundary понятна и проверена;
+- [ ] одна собственная capability спроектирована и реализована как MCP primitive;
+- [ ] server воспроизводится из lock-файла и проходит behavioural tests;
+- [ ] process/transport, Inspector и один конкретный host проверены;
+- [ ] одна capability защищена trusted context и action/object policy;
+- [ ] allow/deny evidence и redacted audit сохранены.
+
+Пока не доказано:
+
+- совместимость со всеми hosts, transports и protocol revisions;
+- безопасность реальной БД, рабочих файлов или production secrets;
+- корректность самостоятельно написанного OAuth/OIDC server;
+- approval workflow для необратимых действий;
+- защита от всех prompt-injection, tool-poisoning и exfiltration сценариев;
+- production deployment, observability, incident response и penetration testing.
+
+**Конкретные residual risks моего server:** ...
+
+## 7. Handoff в Agent Engineering
+
+### В 7.1 — reason → act → observe
+
+**Разрешённая capability:** ...
+
+**Какое действие сформирует agent policy:** ...
+
+**Какая observation вернётся в history:** ...
+
+**Как adapter вызывает MCP server, сохраняя server-side policy:** ...
+
+**Что агенту принципиально не передаётся:** callable, trusted identity/scopes, secrets — уточни своё.
+
+### В 7.3 — human-in-the-loop
+
+| Действие | Риск | Почему authorization недостаточно | Условие approval | Что при reject |
+|---|---|---|---|---|
+| ... / `не требуется` | ... | ... | ... | ... |
+
+### В Фазу 11 — недоверенный контент
+
+**Какие данные server может вернуть модели из внешнего или недоверенного источника:** ...
+
+**Какой канал наружу может превратить это в exfiltration risk:** ...
+
+## 8. Рефлексия
+
+Ответь конкретно по своему server:
+
+1. Какое решение предлагала модель, но не имела права исполнять сама?
+2. Что гарантировал MCP-протокол, а что осталось ответственностью host и server?
+3. Какая проверка поймала самый правдоподобный дефект?
+4. Какой вывод нельзя делать даже после всех зелёных тестов фазы?
+5. Какой один следующий шаг в Фазе 7 повышает полезность, не расширяя полномочия?
+
+## Рубрика приёмки
+
+- [ ] Все пять уроков связаны одной пользовательской задачей и узнаваемой capability.
+- [ ] Изменения контракта имеют причины и повторные evidence, а не скрыты новым demo.
+- [ ] Есть ссылка на фактический success и хотя бы один реалистичный failure/deny.
+- [ ] In-memory, Inspector, host и security evidence не выданы за взаимозаменяемые проверки.
+- [ ] Досье не содержит secrets, полных чувствительных arguments, персональных данных и неретушированных logs.
+- [ ] Результат фазы не обещает production security или универсальную совместимость.
+- [ ] Handoff в 7.1 сохраняет server-side policy и не импортирует domain handler напрямую.
+- [ ] В 7.3 передано только применимое высокорисковое действие; декоративный write-tool не добавлен.
+- [ ] Рефлексия разделяет ответственность модели, host, client, server, policy и человека.
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~4 · <strong>DoD:</strong> личная capability использует trusted server-side context и проверяет capability-specific action + object до domain adapter; allow, missing permission, out-of-scope object и попытка self-assigned context доказаны behavioural tests; allow/deny повторены через реальный transport; redacted access-control record фиксирует policy, audit evidence и residual risks; досье связывает evidence 6.1–6.5 и передаёт безопасную capability в 7.1, а применимое действие с approval — в 7.3. ✅ <strong>Урок готов</strong></p></article>
     <div class="nav-prevnext" id="prevnext"><a href="../../lessons/testing-and-connecting/"><small>← 6.4</small>От server object к Inspector и host</a><a href="../../lessons/reason-act-observe-loop/" style="text-align:right"><small>7.1 →</small>Цикл reason → act → observe</a></div>
   </section>
 
   <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
 
   <script>window.__BASE__="../../";</script>
-  <script src="../../data.js?v=9edc4b27021c"></script>
-  <script src="../../progress.js?v=9edc4b27021c"></script>
-  <script src="../../header.js?v=9edc4b27021c"></script>
-  <script src="../../app.js?v=9edc4b27021c"></script>
+  <script src="../../data.js?v=5e7f863cee11"></script>
+  <script src="../../progress.js?v=5e7f863cee11"></script>
+  <script src="../../header.js?v=5e7f863cee11"></script>
+  <script src="../../app.js?v=5e7f863cee11"></script>
 </body>
 </html>

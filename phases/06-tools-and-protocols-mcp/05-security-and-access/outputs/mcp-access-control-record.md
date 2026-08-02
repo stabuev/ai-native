@@ -171,11 +171,26 @@ canonical filesystem root / другое — ...
 
 ## 9. Residual risks и handoff
 
-### В Фазу 7
+### В 7.1 — безопасная capability для agent loop
+
+**Capability, которую агент может вызывать без дополнительного human approval:** ...
+
+**Domain arguments от модели:** ...
+
+**Ожидаемая observation для следующего шага agent loop:** ...
+
+**Как agent adapter вызывает MCP server, не импортируя domain handler напрямую:** ...
+
+**Какая server-side policy остаётся обязательной при любом вызове агента:** ...
+
+### В 7.3 — действия, которым нужен human approval
 
 | Action | Почему authorization недостаточно | Какой approval нужен в 7.3 |
 |---|---|---|
 | ... | ... | ... |
+
+Если у server нет дорогих, необратимых или внешних действий, запиши `не требуется` и не
+добавляй write-tool только ради заполнения строки.
 
 ### В Фазу 11
 
@@ -199,5 +214,6 @@ canonical filesystem root / другое — ...
 - [ ] Allow и deny повторены через выбранный transport.
 - [ ] Audit содержит достаточный reason code, но не secrets и полные sensitive payloads.
 - [ ] STDIO и HTTP controls описаны только для фактически выбранного transport.
+- [ ] Безопасная capability передана в 7.1 без обхода server policy.
 - [ ] Human approval и deep prompt-injection defense честно переданы в 7.3 и Фазу 11.
 - [ ] Residual risks конкретны; документ не заявляет production security без доказательств.
