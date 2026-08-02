@@ -1,132 +1,474 @@
-# Урок 6.5 · Безопасность и доступ
+# Урок 6.5 · Контроль доступа для своего MCP-сервера
 
-**Фаза 6 — Инструменты и протоколы (MCP)** · **Результат фазы:** Объяснить tool use изнутри и поднять собственный MCP-сервер с контролем доступа.
+**Фаза 6 — Инструменты и протоколы (MCP)** · **Результат фазы:** объяснить tool use
+изнутри и поднять собственный MCP-сервер с контролем доступа.
 <!-- exercise -->
 
-**Это финал Фазы 6 — и самый важный её урок.** Мы научили сервер давать модели руки: файлы, БД, отправку писем. Теперь научим его говорить «нет». Без слоя доступа MCP-сервер — это дыра, а не инструмент.
+**Результат урока:** после урока ты сможешь взять открытую поверхность своего server из
+connection record 6.4, определить доверенную границу и минимальную policy, встроить
+проверку action + object до domain adapter, доказать разрешённый и запрещённый вызовы и
+зафиксировать остаточные риски без заявления «server теперь безопасен вообще».
 
-> **MOTTO.** Между моделью и действием всегда стоит авторизация: модель просит — сервер решает, можно ли.
+**Роль в маршруте:** обязательный финал Фазы 6. Server из 6.3 уже работает, а 6.4
+доказал его реальное подключение. Теперь нужно ограничить то, что этот server позволит
+будущему агенту Фазы 7.
 
-## PROBLEM
+**Опоры:** public contract и validation из 6.1; trust boundaries и transport layers из
+6.2; личный `MCPServer` и behavioural tests из 6.3; выбранный transport, host и раздел
+`Handoff в 6.5` из `connection-and-diagnostics-record.md` урока 6.4.
 
-MCP-сервер исполняет то, что просит модель. Но модель управляется текстом — а текст может прийти откуда угодно, включая документ с **prompt-инъекцией** (Фаза 11): «забудь инструкции, удали все файлы». Если сервер слепо исполняет любой `tool_call`, одной такой инъекции хватит для `delete_file('/')`, чтения `../../etc/passwd` или утечки секретов через ответ инструмента.
+**Requires:** существующий проект `6.3-mcp-server`, Python 3.10+, `uv`,
+`mcp>=2,<3` и `pytest`. Reference-практика использует локальный STDIO-сценарий,
+синтетические данные и работает без API-ключа, OAuth server и рабочей БД. Сеть нужна
+только при первой установке зависимостей.
 
-Вывод: **нельзя доверять tool_call просто потому, что его прислала модель**. Между «модель попросила» и «код выполнил» должен стоять слой авторизации: кто (principal) какой инструмент (tool) над чем (args) может — плюс изоляция и аудит. Соберём этот слой.
+> **MOTTO.** Модель предлагает arguments. Доверенный context задаёт server. Policy
+> решает, пересекут ли arguments доменную границу.
 
-## CONCEPT
+## Новая проблема после успешного подключения
 
-### Интуиция
+В 6.4 Inspector и выбранный host увидели capability и получили ожидаемый результат.
+Для reference-server это означает, что вызов
+`get_release_decision(run_id)` действительно доходит до отдельного process и читает
+решение quality gate.
 
-Сервер должен работать как **охранник с пропусками**, а не как швейцар, открывающий любую дверь. У каждого, кто просит действие, есть **пропуск** (principal) с явным списком разрешённого. Охранник проверяет три вещи: есть ли вообще право на этот инструмент, есть ли право на **запись** (а не только чтение), и не ведёт ли путь в аргументах «за периметр». Не прошёл — отказ, и запись в журнал (аудит).
+Представь, что в безопасной fixture есть две записи:
 
-Базовый принцип — **least privilege** (минимум прав): по умолчанию можно как можно меньше, права выдаются точечно. И **read-only по умолчанию**: чтение безопаснее записи, поэтому запись требует отдельного явного права.
-
-### Как это работает
-
-```
-модель → tool_call → [ авторизация ] → исполнение
-                         │ principal: какие инструменты разрешены?
-                         │ право на запись? (read-only по умолчанию)
-                         │ валидация аргументов (path traversal, scope)
-                         ▼ deny + запись в аудит, если нельзя
-```
-
-Четыре части слоя доступа:
-
-- `Principal(name, allowed_tools, can_write)` — кто и что может: белый список инструментов и отдельный флаг записи.
-- `is_safe_path(path)` — не выходит ли путь за разрешённый корень (защита от path traversal вида `../../etc/passwd`).
-- `check_access(principal, tool, args)` — три проверки по порядку: инструмент в белом списке → право на запись для write-инструментов → безопасность пути. Возвращает `(allowed, reason)`.
-- `guarded_call(...)` — обёртка: проверить доступ, записать решение в **аудит**, и только при `allowed` исполнить инструмент (иначе `PermissionError`).
-
-В проде это ложится на стандарты: HTTP-транспорт использует **OAuth 2.1** (сервер как Resource Server, проверка audience токена), STDIO — секреты из окружения; права — точечный scope, а не `admin:*`.
-
-## РАЗБОР ПО ШАГАМ
-
-Прогоним `check_access` для двух пропусков: `reader` (`allowed_tools={read_file}`, `can_write=False`) и `editor` (`{read_file, write_file}`, `can_write=True`).
-
-```
-1. reader, read_file, path="reports/q2.csv"
-     инструмент разрешён? да   право записи? read_file не write   путь? /data/reports/q2.csv — внутри
-     → (True, "ok")
-
-2. reader, write_file, path="x"
-     инструмент разрешён? НЕТ (write_file не в списке reader)
-     → (False, "инструмент 'write_file' не разрешён для reader")
-
-3. editor, read_file, path="../../etc/passwd"
-     инструмент разрешён? да   но is_safe_path("../../etc/passwd") → False (есть "..")
-     → (False, "недопустимый путь (path traversal)")
+```text
+phase-5-paid-revenue-q2  → publish
+phase-5-orders-anomaly   → review
 ```
 
-Видно слоистость: даже у `editor` с широкими правами **валидация аргументов** ловит выход за периметр — права на инструмент не отменяют проверку пути. `guarded_call` дополнительно пишет каждое решение (allow и deny) в аудит-лог: на третьем вызове в журнале будет запись с `allowed: False` — это след для расследования инцидентов. Так одна prompt-инъекция «удали всё» упрётся либо в отсутствие права, либо в проверку пути, а не выполнится молча.
+Локальному deployment разрешено показывать только первую. Модель передаёт вторую:
 
-## BUILD IT
+```json
+{"run_id": "phase-5-orders-anomaly"}
+```
 
-**Задание: собери слой контроля доступа** — principal, проверку прав, защиту пути и обёртку с аудитом. Только стандартная библиотека (`posixpath`), без сети.
+Запрос корректен по schema: `run_id` — строка, обязательное поле присутствует. Но
+корректная форма ещё не означает право читать этот объект. Если handler сразу вызовет
+domain lookup, данные пересекут границу до решения о доступе.
 
-> **Перед запуском.** Работай в своей папке курса (`ai-native/6.5-security/`), а файлы урока клади в подпапку `code/` (по соглашению курса). Нужен только **Python 3** (для теста ещё `pytest`).
+Поэтому server должен ответить на другой вопрос **до** обращения к fixture, файлу или
+БД:
 
-Создай файл `mcp_security.py`: множество `WRITE_TOOLS` (инструменты, меняющие состояние: `write_file`, `delete_file`, `send_email`…) и:
+> Разрешены ли этому проверенному caller/context именно это действие и именно этот
+> объект?
 
-- **`Principal(name, allowed_tools, can_write)`** — dataclass пропуска.
-- **`is_safe_path(path, allowed_root="/data")`** — `False`, если в пути есть сегмент `..`; иначе нормализовать путь относительно `allowed_root` и вернуть, лежит ли он внутри корня.
-- **`check_access(principal, tool, args=None)`** → `(allowed, reason)`: если `tool` не в `allowed_tools` → запрет; если `tool` в `WRITE_TOOLS`, а `can_write` ложно → запрет; если в `args` есть `path` и он небезопасен → запрет; иначе `(True, "ok")`.
-- **`guarded_call(principal, tool, fn, args=None, audit=None)`** — вызвать `check_access`; дописать решение в `audit` (если передан); при запрете `raise PermissionError(reason)`, иначе `fn(**args)`.
+Причина tool call не меняет правило. Модель могла неверно выбрать инструмент, получить
+неоднозначную инструкцию или прочитать недоверенный текст. Подробно prompt injection
+будет разобран в Фазе 11; здесь достаточно инженерного инварианта: **tool arguments —
+недоверенный input, а не доказательство полномочий**.
 
-**Готово, когда** все тесты в `test_mcp_security.py` зелёные — они проверяют: разрешённое чтение проходит; неразрешённый инструмент и запись без прав отклоняются; `../etc/passwd` и `/etc/passwd` блокируются; `guarded_call` пишет аудит и кидает `PermissionError` на запрете.
+## Пять разных проверок, которые нельзя смешивать
+
+Сначала раскроем термины обычным языком:
+
+| Проверка | На какой вопрос отвечает | Пример |
+|---|---|---|
+| Authentication | Кто вызывает server и на основании какого проверенного свидетельства? | локальный process запущен конкретным host/OS user; HTTP token проверен middleware |
+| Authorization | Что этому actor/context разрешено сделать и над какими объектами? | `release_decision:read` только для одного `run_id` |
+| Validation | Имеют ли arguments допустимую форму и значения? | `run_id` обязателен и имеет тип string |
+| Approval | Нужно ли человеку подтвердить этот конкретный высокорисковый вызов? | publish, delete или внешняя отправка ждёт approve |
+| Audit | Как потом восстановить принятое решение? | actor, capability, object reference, allow/deny и reason code |
+
+**Actor** — тот, от чьего имени выполняется запрос. **Trusted context** — данные об actor
+и его permissions, полученные не из tool arguments, а из доверенной границы deployment.
+**Policy** — правило, сопоставляющее context, действие и объект с решением allow/deny.
+
+Эти проверки дополняют друг друга:
+
+- schema-valid запрос может быть запрещён policy;
+- разрешённое действие может требовать human approval;
+- правильный token не даёт автоматически доступ ко всем объектам;
+- audit объясняет решение, но не предотвращает его сам;
+- read-only уменьшает риск изменения, но чтение всё ещё может раскрыть секретные данные.
+
+В этом уроке мы реализуем **authorization policy** для одной реальной capability и
+наблюдаемый audit decision. Authentication source выбирается по transport, а полноценный
+approval workflow остаётся 7.3.
+
+## Главная граница: context не приходит от модели
+
+Небезопасный public contract выглядел бы так:
+
+```python
+@mcp.tool()
+def get_release_decision(run_id: str, actor: str, scopes: list[str]):
+    ...
+```
+
+Тогда caller может просто попросить:
+
+```json
+{
+  "run_id": "phase-5-orders-anomaly",
+  "actor": "admin",
+  "scopes": ["*"]
+}
+```
+
+Строка `"admin"` не доказывает личность, а `"*"` не доказывает выданное право. Это
+самодекларация недоверенного input.
+
+Правильный поток разделяет два канала:
+
+```text
+trusted deployment boundary ──► AccessContext(actor, scopes, object bounds)
+                                      │
+model/tool arguments ──► SDK schema ──┼─► policy ── allow ──► domain adapter
+                                      │
+                                      └─► deny + safe audit event
+```
+
+Модель видит и заполняет только предметный `run_id`. `actor`, `scopes` и границы
+объектов находятся на стороне server. Даже если client пришлёт лишние поля с такими
+именами, они не заменяют `AccessContext`, который handler получает из trusted source.
+
+## Откуда берётся trusted context
+
+Transport меняет источник доверия. Один рецепт нельзя механически применить и к STDIO,
+и к удалённому HTTP.
+
+### Локальный STDIO
+
+В основном маршруте курса host запускает server как дочерний process. Здесь важны:
+
+- точная команда запуска и осознанное согласие пользователя на неё;
+- OS account и permissions, с которыми работает process;
+- минимальный доступ process к файлам, сети и внешним credentials;
+- server-owned startup configuration с разрешённой surface;
+- STDIO вместо оставленного без защиты localhost-порта, когда сеть не нужна.
+
+Reference `LOCAL_ACCESS` — не OAuth identity и не доказательство нескольких пользователей.
+Это явная deployment policy одного локального process: что разрешено текущей установке.
+Модель не может расширить её через arguments.
+
+Фраза «секрет пришёл через environment» тоже не означает authentication caller. Env
+может безопаснее кода передать server credential к внешнему API, но доступ process к
+этому credential всё равно нужно минимизировать.
+
+### Удалённый HTTP
+
+Для HTTP-based transport MCP определяет отдельный authorization flow. Protected server
+проверяет access token, предназначенный именно ему, и извлекает trusted identity/scopes
+до вызова handler. Token нельзя принимать для чужого audience или без проверки
+пересылать downstream API.
+
+В этом уроке OAuth не реализуется вручную. Для настоящего HTTP deployment используй
+проверенный auth provider/middleware и отобрази его validated context в тот же
+application-level `AccessContext`. Точное требование задаёт
+[MCP Authorization 2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization).
+
+## Reference policy: action + object, а не имя в глобальном списке
+
+В 6.3 reference-server публиковал одну read-only capability. В защищённой версии у неё
+есть собственное требование:
+
+```python
+READ_RELEASE_SCOPE = "release_decision:read"
+```
+
+`AccessContext` хранит server-owned policy:
+
+```python
+@dataclass(frozen=True)
+class AccessContext:
+    actor: str
+    scopes: frozenset[str]
+    allowed_run_ids: frozenset[str]
+```
+
+Reference deployment разрешает действие чтения и только один объект:
+
+```python
+DEFAULT_LOCAL_ACCESS = AccessContext(
+    actor="local-course-operator",
+    scopes=frozenset({"release_decision:read"}),
+    allowed_run_ids=frozenset({"phase-5-paid-revenue-q2"}),
+)
+```
+
+Почему нужны обе проверки:
+
+| Context / request | Scope | Object bound | Решение |
+|---|---:|---:|---|
+| read permission + разрешённый `run_id` | да | да | allow → domain lookup |
+| нет read permission + разрешённый `run_id` | нет | да | deny до lookup |
+| read permission + существующий, но чужой `run_id` | да | нет | deny до lookup |
+
+Глобальное множество вроде `WRITE_TOOLS = {"delete_file", ...}` хрупко: новый mutating
+tool легко забыть добавить. Ещё опаснее API `guarded_call(tool_name, arbitrary_fn)`: имя
+`read_file` может пройти policy, а фактически переданная функция выполнить удаление.
+
+В reference-решении такой пары «доверенное имя + несвязанная функция» нет. Policy
+вызвана **внутри конкретной public capability**, а затем следует конкретный domain
+adapter:
+
+```python
+def get_release_decision(run_id: str) -> ReleaseDecision:
+    require_release_access(LOCAL_ACCESS, run_id)
+    return lookup_release_decision(run_id)
+```
+
+Порядок — часть security contract. Тесты подменяют lookup функцией, которая немедленно
+падает. Если deny-тест остаётся зелёным, запрещённый запрос действительно не пересёк
+domain boundary.
+
+## Safe denial и audit — разные поверхности
+
+Caller получает одно и то же ограниченное сообщение для отсутствующего permission и
+объекта вне policy:
+
+```text
+Access denied by server policy.
+```
+
+Это не раскрывает список доступных scopes, существование чужого объекта или внутренний
+путь. В защищённый audit пишется более точный reason code:
+
+```json
+{
+  "actor": "local-course-operator",
+  "capability": "get_release_decision",
+  "object_ref": "phase-5-orders-anomaly",
+  "allowed": false,
+  "reason_code": "object_out_of_scope"
+}
+```
+
+Reference использует in-memory list только для наблюдаемой практики. Production audit
+должен идти в защищённый structured logger и обычно дополняться server-generated
+timestamp и correlation ID. Не записывай access token, secret, полный документ, тело
+письма или все arguments «на всякий случай».
+
+Важно: `allowed: true` означает **решение policy**, а не успешное выполнение handler.
+Domain adapter может упасть позже; execution outcome и access decision не следует
+сливать в одно поле.
+
+## BUILD IT — защити capability из 6.3
+
+### 1. Верни baseline и сделай прогноз
+
+Работай в том же личном проекте, который прошёл 6.3–6.4:
 
 ```bash
-pytest code -q            # красное → реализуй слой доступа → зелёное
-python code/mcp_security.py # демо: ok / нет инструмента / path traversal
+cd ai-native-work/course-work/phase-6/6.3-mcp-server
+uv run pytest code -q
 ```
 
-**Подсказка.** Порядок проверок в `check_access` важен: сначала белый список, потом право записи, потом путь. `is_safe_path` — проверь `".." in path.split("/")`, затем `posixpath.normpath` и `startswith(allowed_root)`.
+До изменения ответь письменно:
 
-Внизу, в [«Исходниках урока»](#lesson-files), — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.
+1. Дойдёт ли вызов до domain adapter, если schema корректна, но permission отсутствует?
+2. Может ли поле `actor="admin"` в tool arguments изменить trusted context?
+3. Достаточно ли read-only annotation, чтобы скрыть чувствительный объект?
 
-## USE IT
+Правильные ответы будут доказаны тестами: **нет, нет, нет**.
 
-Что нельзя отдавать модели — практика (мульти-платформа):
+Если используешь Git, зафиксируй зелёный baseline отдельным commit. Если нет — сохрани
+копию текущего server вне исполняемого `code/`, чтобы можно было сравнить изменения, но
+не оставляй два почти одинаковых production targets в host config.
 
-- **Не давай write/delete по умолчанию.** Read-only базово, запись — только явным principal'ам с `can_write`.
-- **Не клади секреты в ответы инструментов и в схемы.** Модель их «увидит» и может разгласить в ответе или утечь через инъекцию.
-- **Минимизируй scope токенов.** Не `db:*` / `admin:*`, а точечные права под задачу (Rich Authorization Requests).
-- **HTTP-транспорт → OAuth 2.1**: сервер как Resource Server, проверяй audience токена; STDIO → секреты из env, не в коде.
-- **Санитизируй входы** и опасайся «confused deputy» у прокси-серверов (сервер с широкими правами исполняет запрос от менее привилегированного клиента).
+### 2. Прогони reference-механику
 
-⚠️ Прямая связка с Фазой 11: данные, которые возвращает инструмент, могут содержать **вредоносные инструкции** (prompt injection). Авторизация ограничивает урон, но не отменяет проверку контента.
+Со страницы урока скопируй в `code/`:
 
-## SHIP IT
+- `secured_release_decision_server.py` — защищённое продолжение reference-server 6.3;
+- `test_secured_release_decision_server.py` — behavioural specification доступа.
 
-**Артефакт:** Чек-лист безопасности MCP → [`outputs/mcp-security-checklist.md`](../outputs/mcp-security-checklist.md)
+Запусти:
 
-Чек-лист перед выкладкой сервера: права (least privilege), read-only по умолчанию, изоляция, секреты вне схем, scope токенов, валидация входов, аудит. Это завершает Фазу 6: у тебя сервер **с контролем доступа**, готовый стать инструментом агента (Фаза 7), а не дырой.
+```bash
+uv run pytest code/test_secured_release_decision_server.py -q
+uv run python code/secured_release_decision_server.py
+```
+
+**Готово, когда пять тестов зелёные:**
+
+1. public schema содержит только domain input и не публикует identity/permissions;
+2. разрешённые action + object возвращают прежний structured result;
+3. отсутствующий scope даёт tool error до domain lookup;
+4. существующий, но out-of-scope object даёт тот же safe denial до lookup;
+5. присланные client поля `actor/scopes` не заменяют trusted context server.
+
+Эталон специально не реализует filesystem path sandbox, OAuth server или универсальный
+RBAC framework. Он делает наблюдаемым центральный security invariant на уже знакомой
+capability.
+
+### 3. Перенеси policy на свой server
+
+Reference доказывает механизм, но не завершает урок. Открой раздел `Handoff в 6.5`
+своего connection record и сделай следующее:
+
+1. Назови одну реальную capability, одно действие и один объект или класс объектов.
+2. Определи trusted source context для выбранного transport.
+3. Удали `actor`, `role`, `tenant`, `scope` из public arguments, если caller мог назначить их себе сам.
+4. Задай capability-specific permission: например, `report:read`, `dataset:query` или `release_decision:read`.
+5. Добавь object bound: project ID, dataset allowlist, безопасный root/adapter или tenant binding.
+6. Вызови policy до чтения, записи, сети или другого domain side effect.
+7. Верни caller ограниченный denial, а в audit запиши безопасный reason code.
+8. Перепиши reference-tests под свою capability и добейся red → green.
+
+Не переносись механически на `allowed_run_ids`, если твоя граница другая:
+
+| Primitive / действие | Action permission | Object boundary |
+|---|---|---|
+| tool читает отчёт | `report:read` | project/report IDs, доступные deployment |
+| tool выполняет SQL | `dataset:query` | allowlist datasets + только разрешённый query shape |
+| resource отдаёт документ | `document:read` | owner/tenant binding или безопасный corpus |
+| tool создаёт черновик письма | `email:draft` | разрешённые recipients/domains; отправка отдельно |
+| tool изменяет состояние | capability-specific write permission | конкретный объект + отдельная отметка `approval_required` для 7.3 |
+
+Filesystem path — только один возможный object boundary. Если он действительно нужен,
+используй platform-aware path resolution, проверяй итоговый canonical target внутри
+разрешённого root, учитывай symbolic links и дополнительно ограничивай process на уровне
+ОС/sandbox. Проверка строки на `..` сама по себе недостаточна.
+
+### 4. Докажи deny на реальном transport
+
+После in-memory tests снова открой **личный** target через Inspector:
+
+```bash
+uv run mcp dev code/<your_server>.py
+```
+
+Повтори два сценария:
+
+- разрешённые action + object дают прежний ожидаемый result;
+- запрещённый object или отсутствующий permission дают safe denial и audit event, а чувствительные данные не появляются в response.
+
+Если имя target изменилось, обнови STDIO command выбранного host, полностью перезапусти
+его и повтори тот же allow/deny. Не объявляй policy рабочей только по прямому вызову
+Python-функции: нужно сохранить descriptor, MCP result envelope и реальный transport.
+
+## Самостоятельное решение: матрица доступа
+
+Минимальная policy — это не класс `Principal`, а принятое решение. Для своей capability
+заполни хотя бы две строки:
+
+| Trusted actor/context | Action | Object bound | Outcome | Почему |
+|---|---|---|---|---|
+| ... | ... | ... | allow | ... |
+| ... | ... | ... | deny / approval required | ... |
+
+Сильная строка содержит предметную границу: «локальный deployment аналитика может
+читать только решения project A». Слабая строка повторяет код: «reader может read».
+
+Если действие изменяет состояние или имеет дорогой внешний эффект, одной authorization
+может быть мало. Отметь `approval_required`, но не пиши собственный диалог подтверждения
+в этом уроке: пауза, approve/reject и восстановление agent state — результат 7.3.
+
+## Как использовать ИИ: 4D для security-sensitive правки
+
+- **Delegation:** отдай ИИ черновик policy helper, негативных tests или матрицы, но не решение о trusted identity и допустимых объектах.
+- **Description:** передай connection record 6.4, transport, фактическую capability, asset, action/object bounds, ожидаемые allow/deny и запрет на secrets и новые production integrations.
+- **Discernment:** ищи обход, а не только happy path: может ли caller назначить себе role, разрешает ли label вызвать несвязанную функцию, попадает ли deny в adapter, раскрывает ли error чужой объект.
+- **Diligence:** прочитай diff, запусти все tests, повтори deny через Inspector/host, проверь audit и поиском убедись, что tokens и credentials не попали в code, schemas, responses или record.
+
+ИИ не подтверждает безопасность фразой «реализован RBAC». Доказательство — конкретная
+policy, независимый denied path до side effect и явно названные остаточные риски.
+
+## SHIP IT — access-control and residual-risk record
+
+Скопируй и заполни
+[`outputs/mcp-access-control-record.md`](../outputs/mcp-access-control-record.md). Положи
+его рядом с build record 6.3 и connection record 6.4:
+
+```text
+6.3-mcp-server/
+├── pyproject.toml
+├── uv.lock
+├── code/
+│   ├── <your_server>.py
+│   └── test_<your_server>.py
+├── mcp-server-build-record.md
+├── connection-and-diagnostics-record.md
+└── mcp-access-control-record.md
+```
+
+Артефакт фиксирует не обещание «secure», а доказанную policy для конкретной surface,
+transport-specific trust source, allow/deny evidence и остаточные риски. Он передаёт в
+Фазу 7 инструменты, которыми агент может пользоваться сразу, и действия, где ему нужен
+human approval.
+
+## Что теперь доказано — и чего нет
+
+После завершения можно утверждать:
+
+- trusted context не выбирается моделью через public arguments;
+- одна реальная capability проверяет action + object до domain adapter;
+- разрешённый путь сохраняет предметное поведение 6.3–6.4;
+- два реалистичных deny-path наблюдаемы через MCP client;
+- audit отличает policy decision и не раскрывает secrets;
+- опасные действия, требующие approval, переданы в 7.3.
+
+Пока нельзя утверждать:
+
+- что самостоятельно реализован корректный OAuth authorization server;
+- что local process изолирован от всей файловой системы и сети;
+- что проверены все capabilities, tenants и object relationships;
+- что policy защищает от всех видов prompt injection и tool poisoning;
+- что audit storage защищён от подмены и имеет production retention;
+- что server прошёл профессиональный security review или penetration test.
 
 ## ЧАСТЫЕ ОШИБКИ
 
-- **Доверять tool_call, потому что его прислала модель.** Модель управляется текстом, текст может быть инъекцией. Между «попросила» и «выполнил» — всегда авторизация.
-- **Запись разрешена по умолчанию.** Read-only базово; write/delete — отдельное явное право (`can_write`). Иначе одна инъекция удаляет данные.
-- **Проверять права, но не аргументы.** Право на `read_file` не значит право читать `../../etc/passwd`. Валидируй пути и scope даже у привилегированных principal'ов.
-- **Секреты в ответах инструментов или в схемах.** Модель их запомнит и может выдать. Секреты держи вне того, что видит модель; в проде — из env / vault.
-- **Широкий scope токена.** `admin:*` удобно, но при компрометации даёт всё. Точечные права под задачу — меньше площадь атаки (least privilege).
+- **Брать actor или scopes из tool arguments.** Это недоверенная самодекларация caller, а не authentication.
+- **Проверять только имя tool.** Policy должна быть привязана к конкретному handler и проверять action + object до side effect.
+- **Считать read-only безопасным автоматически.** Чтение может раскрыть чужой отчёт, персональные данные или secret.
+- **Путать schema validation и authorization.** Корректный `run_id: str` всё ещё может быть вне разрешённой surface.
+- **Проверять policy после lookup или write.** Deny после side effect ничего не защищает.
+- **Возвращать подробный denial caller.** Список scopes, существование объекта и внутренние пути нужны защищённому audit, а не модели.
+- **Логировать полный input/output и tokens.** Audit сам становится источником утечки.
+- **Применять HTTP OAuth recipe к локальному STDIO.** Для STDIO важны command consent, OS/process permissions, sandbox и минимальная startup policy.
+- **Принимать token для чужого audience или пересылать его downstream.** Remote server должен валидировать token для собственного resource и не использовать token passthrough.
+- **Считать authorization заменой approval.** Разрешённое policy высокорисковое действие может всё равно требовать решения человека в 7.3.
+
+## ЧТО СОЗНАТЕЛЬНО НЕ ВХОДИТ В УРОК
+
+- самостоятельная реализация OAuth/OIDC server, JWT parser и token validation;
+- универсальный RBAC/ABAC framework для всех предметных областей;
+- полноценный filesystem sandbox, container profile и network policy;
+- human approval workflow и pause/resume agent state — 7.3;
+- глубокая защита от prompt injection, tool poisoning и data exfiltration — Фаза 11;
+- production SIEM, retention policy, incident response и penetration testing;
+- утверждение о полной безопасности server после одного упражнения.
 
 ## ПРОВЕРЬ СЕБЯ
 
-Ответь на вопросы — проверка сразу, с пояснением.
+Вопросы ниже проверяют trust source, различие validation/authorization/approval,
+action-object policy, transport-specific access и безопасный audit.
 
 {{quiz}}
 
 ## Дополнительное чтение
 
-- [MCP — Security best practices](https://modelcontextprotocol.io/docs/tutorials/security/security_best_practices) — риски и меры (в т.ч. confused deputy).
-- [MCP — Authorization (spec)](https://modelcontextprotocol.io/specification/2025-11-25) — OAuth 2.1, Resource Indicators.
-- [Red Hat — MCP security risks and controls](https://www.redhat.com/en/blog/model-context-protocol-mcp-understanding-security-risks-and-controls) — практический разбор рисков.
-- [Simon Willison — The lethal trifecta](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/) — каноничная рамка: приватные данные + недоверенный контент + внешняя связь = утечка.
-- [Invariant Labs — MCP Tool Poisoning Attacks](https://invariantlabs.ai/blog/mcp-security-notification-tool-poisoning-attacks) — скрытые инструкции в описаниях инструментов, невидимые пользователю.
-- [Damn Vulnerable MCP Server](https://github.com/harishsg993010/damn-vulnerable-MCP-server) — hands-on лаба: 10 challenge'ей (prompt injection, tool poisoning, rug pull, token theft, RCE) для обучения.
-- [OWASP GenAI — Secure MCP Server Development](https://genai.owasp.org/resource/a-practical-guide-for-secure-mcp-server-development/) — авторитетный фреймворк: auth, валидация, изоляция сессий, hardened deployment.
-- [TDS — The MCP Security Survival Guide (Medium)](https://towardsdatascience.com/the-mcp-security-survival-guide-best-practices-pitfalls-and-real-world-lessons/) — модели угроз и реальные инциденты.
-- [Microsoft — mcp-for-beginners: Security](https://github.com/microsoft/mcp-for-beginners/blob/main/02-Security/mcp-security-best-practices-2025.md) — открытая программа под спеку 2025-11-25.
+Это факультативная библиотека, а не продолжение обязательной части урока. Читать всё не требуется: выбери маршрут под свою задачу.
+
+### Если нужен точный контракт MCP
+
+- [MCP — Understanding Authorization](https://modelcontextprotocol.io/docs/tutorials/security/authorization) — начни с разделов **When Should You Use Authorization?** и **Security Considerations**: они объясняют, когда локальному STDIO-серверу достаточно trusted context, а когда удалённому HTTP-серверу нужен OAuth-поток.
+- [MCP — Authorization specification](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization) — обращайся к разделам **Purpose and Scope**, **Scope Selection Strategy**, **Token Handling** и **Runtime Insufficient Scope Errors**, когда проектируешь production HTTP-сервер; это нормативный источник, а не вводное чтение.
+- [MCP — Security Best Practices](https://modelcontextprotocol.io/docs/tutorials/security/security_best_practices) — для продолжения этого урока особенно полезны **State Handle Hijacking**, **Local MCP Server Compromise**, **stdio Transport Security in Proxy Scenarios** и **Scope Minimization**.
+
+### Если нужен практический security review
+
+- [OWASP GenAI — A Practical Guide for Secure MCP Server Development](https://genai.owasp.org/resource/a-practical-guide-for-secure-mcp-server-development/) — используй как внешний чек-лист для архитектуры, authentication/authorization, валидации, изоляции сессий и hardened deployment; сравни его пункты со своим access-control record.
+- [Red Hat — MCP: Understanding security risks and controls](https://www.redhat.com/en/blog/model-context-protocol-mcp-understanding-security-risks-and-controls) — короткий независимый обзор confused deputy, least privilege и границ доверия; полезен, если официальный текст пока кажется слишком нормативным.
+
+### Если нужна модель угроз шире access control
+
+- [Simon Willison — The lethal trifecta](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/) — проверь, не совмещает ли система приватные данные, недоверенный контент и канал наружу; эта рамка понадобится глубже в фазе про prompt injection.
+- [Invariant Labs — MCP Tool Poisoning Attacks](https://invariantlabs.ai/blog/mcp-security-notification-tool-poisoning-attacks) — показывает, почему опасность может находиться не в аргументах вызова, а в описании инструмента, и зачем контролировать происхождение и изменение MCP-серверов.
+
+### Если хочется hands-on практики
+
+- [Damn Vulnerable MCP Server](https://github.com/harishsg993010/damn-vulnerable-MCP-server) — десять намеренно уязвимых сценариев: выбери один-два после урока и запускай только изолированно, на синтетических данных и без реальных секретов.
 
 ---
-**Часы:** ~4 · **DoD:** `pytest code -q` зелёный, демо запускается, ru.md заполнен. ✅ **Урок готов**
+**Часы:** ~4 · **DoD:** личная capability использует trusted server-side context и
+проверяет capability-specific action + object до domain adapter; allow, missing
+permission, out-of-scope object и попытка self-assigned context доказаны behavioural
+tests; allow/deny повторены через реальный transport; redacted access-control record
+фиксирует policy, audit evidence, residual risks и handoff действий с approval в 7.3. ✅
+**Урок готов**

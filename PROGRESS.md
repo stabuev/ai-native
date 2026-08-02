@@ -55,7 +55,7 @@
 - [x] 6.2 Архитектура MCP
 - [x] 6.3 Свой MCP-сервер на Python SDK
 - [x] 6.4 От server object к Inspector и host
-- [x] 6.5 Безопасность и доступ
+- [x] 6.5 Контроль доступа для своего MCP-сервера
 
 ## Фаза 7. Agent Engineering
 
