@@ -352,7 +352,7 @@ trusted context, action/object policy, allow/deny evidence и residual risks 6.5
 | # | Урок | Build It | Use It | Ship It | Папка |
 |---|---|---|---|---|---|
 | 7.1 | Цикл reason → act → observe | Ограниченный agent runtime: branching, structured observations, budget | Model-backed policy + защищённая MCP capability через adapters | Контракт и доказательство agent loop | `phases/07-agent-engineering/01-reason-act-observe-loop` |
-| 7.2 | Память и планирование агента | Явная рабочая память между шагами + планировщик | Многошаговая задача в реальном инструменте | Агент с памятью и планом | `phases/07-agent-engineering/02-agent-memory-and-planning` |
+| 7.2 | Память и планирование агента | Версионируемый план + working state + checkpoint/resume | Model planner и реальная capability без подмены task state историей чата | Plan-and-state record | `phases/07-agent-engineering/02-agent-memory-and-planning` |
 | 7.3 | Human-in-the-loop и guardrails | Точки подтверждения и валидация действий | Контроль агента на критичных шагах | Шаблон guardrails | `phases/07-agent-engineering/03-human-in-the-loop-guardrails` |
 | 7.4 | Где агенты ломаются | Воспроизведение петель и дрейфа цели | Инженерные приёмы контроля и ограничения шагов | prompt-debug-agent | `phases/07-agent-engineering/04-where-agents-break` |
 | 7.5 | Evals агентов | Offline eval-harness агента на тест-сете + метрики | Online-evals в проде, регрессии | agent-eval skill | `phases/07-agent-engineering/05-agent-evals` |

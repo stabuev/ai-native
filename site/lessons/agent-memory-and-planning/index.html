@@ -4,16 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>7.2 Память и планирование агента — AI Native</title>
-  <meta name="description" content="Надёжный агент не импровизирует на каждом шаге: он строит план и несёт состояние в памяти.">
+  <meta name="description" content="Урок 7.2 курса AI Native: Память и планирование агента. Практический материал с проверяемым результатом.">
   <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/agent-memory-and-planning/">
   <meta property="og:type" content="article">
   <meta property="og:title" content="7.2 Память и планирование агента — AI Native">
-  <meta property="og:description" content="Надёжный агент не импровизирует на каждом шаге: он строит план и несёт состояние в памяти.">
+  <meta property="og:description" content="Урок 7.2 курса AI Native: Память и планирование агента. Практический материал с проверяемым результатом.">
   <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/agent-memory-and-planning/">
   <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
   <meta name="twitter:card" content="summary_large_image">
   <script>(function(){try{var t=localStorage.getItem("theme")||"light";document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
-  <link rel="stylesheet" href="../../style.css?v=866804a9482c">
+  <link rel="stylesheet" href="../../style.css?v=84744aaf587f">
   <!-- Yandex.Metrika counter -->
   <script type="text/javascript">
       (function(m,e,t,r,i,k,a){
@@ -31,160 +31,723 @@
   <section class="container" style="padding-top:24px">
     <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
     <div class="lessonbar" id="lessonbar"></div>
-    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 7.2 · Память и планирование агента</h1><p><strong>Фаза 7 — Agent Engineering</strong> · <strong>Результат фазы:</strong> Собрать надёжного агента с памятью, планированием, human-in-the-loop и guardrails.</p><p><strong>Requires (только для USE IT):</strong> платный API-ключ одного из провайдеров. BUILD IT работает офлайн, без ключей и без сети.</p><p><strong>Голый цикл из 7.1 умеет действовать, но не умеет вести длинную задачу.</strong> Добавим ему две вещи, которые делают агента надёжным: <strong>план</strong> (разбить цель на шаги) и <strong>память</strong> (нести состояние между шагами). Обе детали мы уже видели по отдельности — теперь соединим в агенте.</p><blockquote><strong>MOTTO.</strong> Надёжный агент не импровизирует на каждом шаге: он строит план и несёт состояние в памяти.</blockquote><h2>PROBLEM</h2><p>Цикл reason→act→observe (7.1) хорош для простого. Но на многошаговой задаче чистая импровизация «решаю на ходу, что делать дальше» спотыкается: агент забывает промежуточные результаты, теряет нить, повторяет уже сделанное.</p><p>Не хватает ровно двух вещей, и обе знакомы:</p><ul><li><strong>План</strong> — заранее разбить цель на упорядоченные шаги (это prompt chaining из 2.3, но внутри агента).</li><li><strong>Память</strong> — носить состояние между шагами, чтобы шаг N видел результат шага N−1 (это рабочая память из 4.2).</li></ul><p>Соединим их поверх цикла из 7.1 — и хаотичная импровизация превратится в управляемый процесс.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Сравни двух исполнителей. Первый делает задачу «по наитию»: сделал шаг, забыл, что делал, думает заново — и легко сбивается на длинной цепочке. Второй сначала <strong>набросал план</strong> на бумаге, а по ходу <strong>ведёт записи</strong> (что уже посчитано). Второй надёжнее именно потому, что не держит всё в голове: план задаёт маршрут, записи хранят состояние.</p><p>Агент с памятью и планом — это второй исполнитель. <code>plan</code> рисует маршрут из цели, <code>Memory</code> — это блокнот, куда каждый шаг пишет результат и откуда следующий его читает.</p><h3>Как это работает</h3><pre><code>цель → plan() → [шаг1, шаг2, шаг3]
-                   │ каждый шаг:
-                   │   recall(value)  ← читаем прошлое значение из памяти
-                   │   tool(...)      ← действуем
-                   │   remember(value)→ пишем новое значение в память
-                   ▼
-              итог + память (все промежуточные шаги) + трейс</code></pre><ul><li><code>Memory</code> — <code>remember(key, value)</code> / <code>recall(key)</code>: рабочая память «ключ → значение».</li><li><code>plan(goal)</code> — декомпозиция: цель <code>{start, ops}</code> → список упорядоченных шагов.</li><li><code>run(goal)</code> — исполнить план, <strong>неся состояние через память</strong>: положить <code>value = start</code>, на каждом шаге прочитать <code>value</code>, применить инструмент, записать новый <code>value</code> (и сохранить <code>step_i</code> для истории). Вернуть <code>(итог, память, трейс)</code>.</li></ul><p>Ключевая разница с 7.1: там состояние жило неявно в <code>history</code>, здесь оно <strong>явно</strong> в памяти под именами (<code>value</code>, <code>step_0</code>, …). Это делает процесс прозрачным и переиспользуемым — и масштабируется на настоящую долговременную память (4.2).</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Прогоним <code>run</code> на цели <code>(2 + 3) * 4 - 1</code> = <code>{start: 2, ops: [(add,3), (mul,4), (sub,1)]}</code>:</p><pre><code>plan(goal) → [ {op:add, operand:3}, {op:mul, operand:4}, {op:sub, operand:1} ]
-remember("value", 2)
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 7.2 · Память и планирование агента</h1><p><strong>Фаза 7 — Agent Engineering</strong> · <strong>Результат фазы:</strong> Собрать надёжного агента с памятью, планированием, human-in-the-loop и guardrails.</p><p><strong>Результат урока:</strong> построить сохраняемое в JSON состояние задачи с планом, номер версии которого меняется при пересмотре, именованными рабочими фактами и execution trace; изменить будущий маршрут после нового Observation; сохранить контрольную точку (checkpoint) и после перезапуска продолжить с первого допустимого шага, не повторив уже завершённый.</p><p><strong>Опоры:</strong> фиксированная цепочка и динамический выбор маршрута из 2.3; контекст, история и долговременная память из 4.2; <code>Action → Observation</code>, безопасный runtime и read-only capability из 7.1. BUILD IT работает офлайн, без API-ключа и сети. В необязательном USE IT ключ понадобится только для model-backed planner.</p><p>В 7.1 агент видел execution trace текущего запуска. Этого достаточно, пока процесс не падает, маршрут короткий, а все нужные результаты легко восстановить из последних наблюдений. Теперь задача переживёт несколько шагов и перезапуск процесса. Для этого историю действий нужно дополнить явным состоянием задачи.</p><p>Открой свой <code>agent-loop-contract.md</code> из 7.1 и найди раздел о передаче в 7.2. В нём уже есть цель, разрешённые capability, <code>Action</code>, <code>Observation</code>, trace, stop condition и step budget. В этом уроке мы не строим второй runtime: мы добавляем над ним слой, который отвечает на три новых вопроса — что ещё предстоит сделать, какие предметные факты уже установлены и откуда безопасно продолжить после остановки.</p><blockquote><strong>Главная мысль.</strong> План — это проверяемая гипотеза о будущих шагах, а не обещание выполнить заранее записанный сценарий. Observation меняет факты задачи, факты могут изменить план, а checkpoint сохраняет эту границу для безопасного продолжения.</blockquote><h2>PROBLEM</h2><p>Представь задачу «подготовить решение о готовности релиза». Сначала агент читает решение проверки. Если всё прошло, он может закончить. Если обнаружен сбой безопасности, нужно запросить диагностическую сводку. До первого результата второй шаг ещё не известен: это может быть security, quality, permissions или вообще ничего.</p><p>Одного списка сообщений здесь недостаточно. После падения процесса приложению нужно однозначно узнать:</p><ul><li>какой шаг уже завершён и подтверждён Observation;</li><li>какие предметные факты из результата сейчас считаются актуальными;</li><li>какой шаг ожидает выполнения и от чего он зависит;</li><li>менялась ли структура плана;</li><li>не остался ли вызов в опасном состоянии «начали выполнять, но результат не сохранили».</li></ul><p>Если вместо этого попросить модель «прочитай историю и продолжи», она будет заново интерпретировать сообщения. Она может повторить завершённый вызов, потерять критерий готовности или принять текст из tool output за инструкцию. Надёжность начинается с того, что переходами задачи между состояниями управляет приложение, а не восстанавливает модель догадкой.</p><h2>CONCEPT</h2><h3>Не одна «память», а разные виды состояния</h3><p>Слово «память» слишком широкое. В этом уроке мы разделим сущности по их назначению:</p><table><thead><tr><th>Сущность</th><th>Простой вопрос</th><th>Пример</th><th>Правило</th></tr></thead><tbody><tr><td><code>goal</code></td><td>Какого результата хотим?</td><td>Подготовить решение для <code>run-review</code></td><td>Не содержит готового списка tool calls</td></tr><tr><td><code>plan</code></td><td>Что предположительно делать дальше?</td><td>Прочитать решение; при необходимости диагностировать проверку</td><td>Может пересматриваться после Observation</td></tr><tr><td><code>working_facts</code></td><td>Что сейчас известно о конкретной задаче?</td><td><code>release.decision = review</code></td><td>Именованные предметные поля с понятным источником</td></tr><tr><td><code>execution_trace</code></td><td>Что фактически произошло?</td><td><code>Action(read-decision) ↔ Observation(...)</code></td><td>Журнал только с добавлением новых записей, а не список будущих шагов</td></tr><tr><td><code>checkpoint</code></td><td>Из какого состояния продолжать после restart?</td><td>Plan version, statuses, facts, trace</td><td>Сохраняемый снимок состояния задачи</td></tr><tr><td><code>long-term memory</code></td><td>Что стоит перенести между разными задачами?</td><td>Устойчивое предпочтение или проверенное знание</td><td>Отдельные правила доверия и срок жизни из 4.2</td></tr></tbody></table><p><strong>Рабочие факты</strong> — это не всё, что когда-либо увидел агент. Это минимальный набор именованных значений, нужных для текущего решения. Например, <code>release.failed_checks = ["security"]</code> полезно следующему шагу. Полный stack trace, случайный фрагмент ответа модели и имя пользователя, предложенное самой моделью, не становятся рабочими фактами автоматически.</p><p><strong>Execution trace</strong> тоже не является рабочей или долговременной памятью. Trace отвечает «что произошло и с каким ID», а working facts — «что мы из этого используем сейчас». Это append-only журнал: новые записи добавляются, а уже произошедшие действия не переписываются задним числом. Один и тот же Observation остаётся в trace как доказательство, но в рабочих фактах может быть представлен двумя проверенными полями.</p><p><strong>Checkpoint</strong> — не новая разновидность знания. Это способ сохранить состояние задачи на границе перехода: цель, текущую версию плана, статусы шагов, факты, trace и финальный статус. После загрузки приложение продолжает переходы из сохранённого <code>TaskState</code>, а не просит модель заново сочинить прошлое.</p><p><code>TaskState</code> — один объект, который объединяет goal, текущий plan, working facts, execution trace и общий статус <strong>одной</strong> задачи. Именно его сериализует checkpoint.</p><h3>Из чего состоит проверяемый план</h3><p>Пункт плана должен быть наблюдаемым и проверяемым. В reference-коде <code>PlanStep</code> содержит:</p><table><thead><tr><th>Поле</th><th>Зачем оно нужно</th></tr></thead><tbody><tr><td><code>step_id</code></td><td>Стабильно связать шаг, Action, Observation и checkpoint</td></tr><tr><td><code>objective</code></td><td>Объяснить предметную цель шага, а не только имя функции</td></tr><tr><td><code>tool</code> и <code>arguments</code></td><td>Подготовить конкретный вызов через runtime 7.1</td></tr><tr><td><code>success_criterion</code></td><td>Решить по structured result, выполнен ли шаг</td></tr><tr><td><code>depends_on</code></td><td>Не исполнить шаг раньше необходимых предшественников</td></tr><tr><td><code>status</code></td><td>Отделить ожидающее, начатое, завершённое и заблокированное</td></tr></tbody></table><p>Используем статусы <code>pending</code>, <code>in_progress</code>, <code>completed</code>, <code>blocked</code> и <code>skipped</code>. Новый шаг начинается как <code>pending</code>. Перед передачей Action исполнителю он становится <code>in_progress</code>. Только соответствующий валидный Observation переводит его в <code>completed</code>. Ошибка инструмента или нарушение схемы приводит к <code>blocked</code>, а не к правдоподобному вымышленному финалу.</p><p><code>plan_version</code> увеличивается, когда меняется <strong>структура будущего маршрута</strong>: например, после <code>decision=review</code> появляется новый диагностический шаг. Обычная смена статуса <code>pending → in_progress → completed</code> не создаёт новую версию плана. Иначе номер версии описывал бы каждое техническое сохранение, а не содержательный пересмотр.</p><h3>Переход состояния после Observation</h3><pre><code>goal + TaskState
+       │
+       ▼
+ decide_next() ──► PlanStep: pending → in_progress
+       │                          │
+       │                 checkpoint до вызова
+       ▼                          │
+ executor 7.1: проверка tool, args, access policy, budget
+       │
+       ▼
+ Observation(action_id, ok, output/error)
+       │
+       ▼
+ apply_observation()
+       ├── дополнить append-only trace
+       ├── проверить structured result по success criterion
+       ├── обновить именованные working facts
+       ├── завершить или заблокировать текущий шаг
+       ├── при новых фактах пересмотреть будущий plan
+       └── сохранить checkpoint после результата</code></pre><p>Слой состояния (state layer) 7.2 не должен повторять защиту 7.1. <code>decide_next</code> предлагает <code>Action</code>, но именно инъецированный executor проверяет allowlist, named arguments, trusted context, server-side authorization и step budget. Если новый слой напрямую импортирует domain handler, он обходит проверенную в 6.5 границу.</p><h3>Почему checkpoint нужен до и после вызова</h3><p>Сохранение только после инструмента оставляет опасное окно. Процесс может упасть после побочного эффекта (side effect), но до записи Observation. Поэтому reference сохраняет шаг как <code>in_progress</code> <strong>до</strong> исполнения, а затем сохраняет Observation и новый статус.</p><p>Есть три разных случая:</p><ol><li><code>completed</code> и Observation сохранены — шаг доказан, при resume повторять его нельзя.</li><li><code>pending</code> — Action ещё не начинался, шаг можно выбрать после проверки зависимостей.</li><li><code>in_progress</code>, но Observation отсутствует — результат неоднозначен: side effect мог произойти. Автоматический повтор запрещён до сверки факта во внешней системе (reconciliation) или проверки ключа идемпотентности, по которому система узнаёт тот же запрос.</li></ol><p>Checkpoint сам по себе не гарантирует «выполнить ровно один раз» (exactly-once). Для write-capability нужны идемпотентность, стабильный ID запроса для корреляции и способ сверить фактическое состояние внешней системы. В BUILD IT инструменты read-only, но мы всё равно блокируем неоднозначный повтор: так одна и та же модель состояния останется безопасной, когда в 7.3 появятся подтверждаемые действия.</p><h2>РАЗБОР ПО ШАГАМ</h2><p>Перед чтением трасс предположи: сколько tool calls понадобится для <code>run-ready</code> и <code>run-review</code>? В хорошем плане ответ зависит не от длины заранее выданного <code>ops</code>, а от первого Observation.</p><h3>Ветка <code>run-ready</code>: план не расширяется</h3><p>Начальная цель высокоуровневая:</p><pre><code>goal = {
+    "objective": "prepare_release_readiness",
+    "run_id": "run-ready",
+}</code></pre><p>В ней нет <code>ops</code>. Детерминированный planner создаёт короткую первую версию:</p><pre><code>plan_version = 1
+read-decision: pending</code></pre><p><code>decide_next</code> отмечает шаг <code>in_progress</code>, executor возвращает <code>{decision: "publish", failed_checks: []}</code>, а <code>apply_observation</code> проверяет обязательные поля. После этого:</p><pre><code>read-decision: completed
+working_facts:
+  release.decision = publish
+  release.failed_checks = []
+status = completed
+plan_version = 1</code></pre><p>Новый шаг не нужен, поэтому версия остаётся первой. Один tool call приводит к финалу.</p><h3>Ветка <code>run-review</code>: Observation меняет план</h3><p>Первая версия такая же, но Observation другой:</p><pre><code>read-decision
+← {decision: "review", failed_checks: ["security"]}</code></pre><p>Текущий шаг завершается, два поля становятся рабочими фактами, а planner добавляет зависимый шаг:</p><pre><code>plan_version = 2
+read-decision:       completed
+diagnose-security:  pending, depends_on=[read-decision]</code></pre><p>Следующий Action вызывает <code>get_check_report</code> только для найденной проверки. Валидный ответ сохраняет <code>release.diagnostic_status</code> и <code>release.diagnostic_summary</code>, завершает второй шаг и всю задачу. Так plan остаётся гипотезой: его будущая часть уточнилась из данных среды, а уже произошедшая часть не была переписана.</p><h3>Restart между двумя шагами</h3><pre><code>process 1:
+  save read-decision=in_progress
+  execute get_release_decision
+  save read-decision=completed, diagnose-security=pending, plan_version=2
 
-шаг 0: recall("value")=2 → add(2,3)=5  → remember value=5,  step_0=5
-шаг 1: recall("value")=5 → mul(5,4)=20 → remember value=20, step_1=20
-шаг 2: recall("value")=20→ sub(20,1)=19→ remember value=19, step_2=19
+restart
 
-итог = recall("value") = 19
-память = {value: 19, step_0: 5, step_1: 20, step_2: 19}</code></pre><p>Видно две роли. <strong>План</strong> задал, что и в каком порядке делать (три шага из <code>ops</code>). <strong>Память</strong> связала шаги: каждый читает <code>value</code> предыдущего и пишет свой. В отличие от 7.1, в памяти остаются <strong>все</strong> промежуточные результаты (<code>step_0..step_2</code>) — это трейс для отладки и основа для возврата к прошлому шагу. Поменяй <code>plan</code> на LLM-планировщик — каркас «recall → tool → remember» не изменится.</p><h2>BUILD IT</h2><p><strong>Задание: собери агента с планом и памятью</strong> поверх идеи цикла из 7.1. Только стандартная библиотека, без сети.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/7.2-planner-agent/</code>), а файлы урока клади в подпапку <code>code/</code> (по соглашению курса). Нужен только <strong>Python 3</strong> (для теста ещё <code>pytest</code>).</blockquote><p>Создай файл <code>planner_agent.py</code>:</p><ul><li><strong><code>Memory</code></strong> — класс с <code>store = {}</code>, методами <code>remember(key, value)</code> и <code>recall(key, default=None)</code>.</li><li><strong><code>TOOLS</code></strong> — <code>{"add", "sub", "mul"}</code> (функции двух аргументов).</li><li><strong><code>plan(goal)</code></strong> — вернуть список шагов <code>{"op", "operand"}</code> из <code>goal["ops"]</code>.</li><li><strong><code>run(goal, memory=None)</code></strong> — создать память (если не передана), положить <code>value = goal["start"]</code>; для каждого шага плана: <code>recall("value")</code> → применить инструмент → <code>remember("value", result)</code> и <code>remember(f"step_{i}", result)</code>; копить трейс. Вернуть <code>(итог, memory, trace)</code>.</li></ul><p><strong>Готово, когда</strong> все тесты в <code>test_planner_agent.py</code> зелёные — они проверяют: <code>plan</code> даёт 3 шага; <code>run</code> считает 19 через память (трейс из 3 шагов, итоговое <code>value</code> = 19); в памяти лежат промежуточные <code>step_0</code> = 5, <code>step_1</code> = 20; <code>Memory.remember</code>/<code>recall</code> работают (с дефолтом).</p><pre><code>pytest code -q             # красное → реализуй Memory/plan/run → зелёное
-python code/planner_agent.py # демо: (2+3)*4-1 = 19, видны шаги и память</code></pre><p><strong>Подсказка.</strong> Индекс шага бери из <code>enumerate(plan(goal))</code>. «Текущее значение» всегда живёт под ключом <code>"value"</code>: прочитал → посчитал → записал обратно. <code>step_i</code> — для истории, не для вычисления.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>В реальности план строит LLM, а память — платформенная или своя (мульти-провайдер):</p><ul><li><strong>Claude Agent SDK</strong> — agent loop + memory tool (<code>/memories</code>) или managed memory stores; план — через промптинг или субагентов.</li><li><strong>OpenAI Agents SDK</strong> — sessions хранят историю диалога; планирование — через инструкции агенту.</li><li>Свой вариант: <code>MemoryStore</code> из урока 4.2 как долговременная память + LLM-планировщик поверх <code>run</code>.</li></ul><p>⚠️ Память, в которую пишет агент, — это поверхность для prompt-инъекций: справочные (reference) данные держи read-only, отделяй их от того, что агент записал сам (6.5, 11.5).</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> Агент с памятью и планом → <a href="#f-phases-07-agent-engineering-02-agent-memory-and-planning-outputs-planner-agent-py"><code>outputs/planner_agent.py</code></a></p><p>Переиспользуемый каркас «план + память»: подставляешь свои инструменты и цель. Дальше в фазе — заслоны и подтверждения на опасных шагах (7.3), разбор поломок (7.4) и оценка качества (7.5).</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Импровизировать вместо плана на длинной задаче.</strong> Без декомпозиции агент теряет нить и повторяет шаги. План задаёт маршрут — особенно важно, когда шагов много.</li><li><strong>Не нести состояние через память.</strong> Если шаг не пишет результат в память, следующий его не увидит — цепочка рвётся. Контракт «recall → tool → remember» обязателен.</li><li><strong>Хранить только итог, теряя промежуточное.</strong> Сохраняй <code>step_i</code>: это трейс для отладки и возможность вернуться к прошлому шагу. Один итог не даёт понять, где сломалось.</li><li><strong>Смешивать память агента и доверенные данные.</strong> То, что агент записал сам, и справочные данные — разные уровни доверия. Reference держи read-only, иначе инъекция через память (6.5/11.5).</li><li><strong>План «намертво» в коде.</strong> Здесь <code>plan</code> детерминирован для наглядности; в проде его строит LLM. Не хардкодь шаги, если задачи разные — планируй под цель.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="7.2"></div><h2>Дополнительное чтение</h2><ul><li><a href="https://platform.claude.com/docs/en/agent-sdk/overview" target="_blank" rel="noopener">Anthropic — Agent SDK overview</a> — agent loop, контекст, инструменты.</li><li><a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool" target="_blank" rel="noopener">Anthropic — Memory tool</a> — память агента между сессиями.</li><li><a href="https://arxiv.org/abs/2210.03629" target="_blank" rel="noopener">ReAct (arXiv 2210.03629)</a> — рассуждение и действие как основа агента.</li><li><a href="https://arxiv.org/abs/2402.02716" target="_blank" rel="noopener">Huang et al., 2024 — Understanding the Planning of LLM Agents: A Survey</a> — таксономия планирования: декомпозиция, выбор плана, рефлексия, память.</li><li><a href="https://docs.langchain.com/oss/python/langgraph/persistence" target="_blank" rel="noopener">LangGraph — Persistence</a> — checkpointers (короткая память) + stores (длинная), resume / HITL / fault-tolerance в реальном фреймворке.</li><li><a href="https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents" target="_blank" rel="noopener">Anthropic — Effective harnesses for long-running agents (2025)</a> — многосессионность, трекинг прогресса, восстановление контекста.</li><li><a href="https://www.deeplearning.ai/courses/agentic-ai" target="_blank" rel="noopener">DeepLearning.AI — Agentic AI (Andrew Ng, 2025)</a> — паттерны Reflection / Tool / Planning / Multi-agent на чистом Python.</li><li><a href="https://pub.towardsai.net/understanding-memory-management-in-langgraph-a-practical-guide-for-genai-students-b3642c9ea7e1" target="_blank" rel="noopener">Towards AI — Memory Management in LangGraph (Medium)</a> — практический разбор памяти агента.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Если делегируешь ИИ, реши, что отдаёшь; опиши задачу и критерии; проверь результат; сохрани ответственность за итог.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-07-agent-engineering-02-agent-memory-and-planning-code-test-planner-agent-py" open data-test="1"><summary><span class="fname">code/test_planner_agent.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>from planner_agent import Memory, plan, run
+process 2:
+  load TaskState
+  skip completed read-decision
+  execute pending diagnose-security</code></pre><p>Тест записывает имена фактически вызванных tools и получает ровно <code>["get_release_decision", "get_check_report"]</code>. Первый вызов после restart не повторяется. Отдельный failure test сохраняет <code>read-decision=in_progress</code> без Observation и убеждается, что resume требует reconciliation вместо слепого повтора.</p><h2>BUILD IT</h2><p><strong>Задание:</strong> поверх контракта 7.1 собери state layer, который различает план, рабочие факты и trace, пересматривает маршрут после Observation и продолжает задачу из JSON checkpoint. Только стандартная библиотека и <code>pytest</code>; сеть и LLM не нужны.</p><blockquote><strong>Перед запуском.</strong> Сам курс клонировать не нужно. Создай личную папку <code>ai-native-work/course-work/phase-7/7.2-planning-state/</code> и внутри неё <code>code/</code>. Перенеси из своей работы 7.1 только контракты <code>Action</code>, <code>Observation</code> и безопасный executor либо временно используй офлайн test double этого урока.</blockquote><p>Сначала скопируй тесты со страницы урока и запусти их красными. Затем реализуй:</p><ul><li><code>PlanStep</code> с ID, целью, tool, именованными аргументами, success criterion, dependencies и status;</li><li><code>TaskState</code> с высокоуровневой goal, <code>plan_version</code>, plan, working facts, execution trace, status и final answer;</li><li><code>create_initial_state(goal)</code>, который принимает цель без <code>ops</code> и создаёт только первый необходимый шаг;</li><li><code>decide_next(state)</code>, который выбирает допустимый <code>pending</code> step, проверяет зависимости и не повторяет <code>completed</code>/неоднозначный <code>in_progress</code>;</li><li><code>apply_observation(state, observation)</code>, который проверяет корреляцию и схему результата, обновляет trace и факты, а при необходимости создаёт новую версию плана;</li><li><code>JsonCheckpointStore</code>, который сначала целиком пишет временный JSON-файл, а затем одной операцией заменяет старый checkpoint: читатель увидит старую или новую полную версию, но не половину записи;</li><li><code>advance_task(...)</code>, сохраняющий checkpoint до и после вызова executor;</li><li><code>reference_executor</code> как офлайн test double среды, а не как production security boundary.</li></ul><p>Не копируй в state весь provider response. Сначала назови предметные поля, которые потребуются следующему решению, затем проверяй их схему и сохраняй только их. Tool error и невалидный structured result — наблюдаемые данные о неуспехе, а не повод выдумать <code>publish</code>.</p><pre><code>cd ai-native-work/course-work/phase-7/7.2-planning-state
+pytest code -q
+python code/planner_agent.py</code></pre><p><strong>Готово, когда восемь поведенческих проверок доказывают:</strong></p><ul><li>goal остаётся высокоуровневой и не содержит готовых операций;</li><li>разные первые Observation ведут к короткой и расширенной веткам плана;</li><li>пересмотр структуры увеличивает <code>plan_version</code> и создаёт dependency;</li><li>рабочие факты имеют предметные имена и не подменяются <code>step_0</code>;</li><li>невалидный result и tool error блокируют задачу без сфабрикованного ответа;</li><li>шаг с невыполненной зависимостью не исполняется;</li><li>после checkpoint/restart завершённый tool не вызывается повторно;</li><li><code>in_progress</code> без сохранённого Observation требует reconciliation.</li></ul><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, есть тесты-ТЗ, reference-реализация и шаблон итогового record. Сначала добейся red → green в своей папке; эталон используй для сверки контракта, а не как замену собственной диагностике.</p><h3>Самостоятельный перенос из 7.1</h3><p>Возьми одну <strong>read-only capability</strong> из своего <code>agent-loop-contract.md</code>. Не импортируй её domain handler прямо в planner. Передай в <code>advance_task</code> executor из 7.1, который вызывает MCP client adapter, а server применяет access policy.</p><p>Самостоятельно определи высокоуровневую цель, первый минимальный шаг, именованные рабочие факты и критерий завершения. Затем придумай два валидных Observation, которые должны дать разные маршруты. Повтори allow- и deny-сценарии 6.5 на настоящем transport и убедись, что model-controlled state не содержит actor, roles или scopes из trusted context.</p><h2>USE IT</h2><p>В production первый план и его пересмотр может предлагать модель. Но модель не становится владельцем жизненного цикла задачи. Приложение валидирует её ответ в строгую структуру <code>PlanStep</code>, проверяет доступные capability и dependencies, меняет version, сохраняет checkpoint и решает, можно ли продолжать.</p><p>Концептуальная граница выглядит так:</p><pre><code>proposal = provider_adapter.propose_plan(
+    goal=state.goal,
+    working_facts=state.working_facts,
+    current_plan=state.plan,
+    tool_schemas=TOOL_SCHEMAS,
+)
 
-GOAL = {"start": 2, "ops": [("add", 3), ("mul", 4), ("sub", 1)]}   # (2+3)*4-1 = 19
+validated_steps = validate_plan_proposal(proposal)
+state.plan = merge_future_steps(state.plan, validated_steps)
+state.plan_version += 1
+checkpoint.save(state)</code></pre><p>Модель может предложить декомпозицию, но не должна самостоятельно объявлять прошлый шаг выполненным, менять append-only trace, подставлять trusted identity или обходить executor 7.1. Success criteria и допустимые side effects остаются решением владельца системы.</p><p>Важно не спутать платформенные механизмы с domain-specific TaskState:</p><ul><li><a href="https://openai.github.io/openai-agents-python/sessions/" target="_blank" rel="noopener">OpenAI Agents SDK Sessions</a> сохраняют историю диалога между runs, но не определяют ваши статусы шагов, success criteria, рабочие факты и правила resume.</li><li><a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool" target="_blank" rel="noopener">Anthropic memory tool</a> даёт модели клиентский интерфейс чтения и записи файлов в <code>/memories</code>; операции исполняет приложение, а содержимое не становится автоматически проверенным планом или checkpoint задачи.</li><li>Long-term memory из 4.2 переносит отобранное знание между задачами; working facts этого урока живут внутри одной задачи и имеют другой жизненный цикл.</li></ul><p>Необязательный реальный эксперимент: подключи model-backed planner только к read-only capability, выполни первый шаг, сохрани checkpoint, полностью останови процесс и запусти его снова. Критерий успеха — второй процесс продолжает pending-ветку, а trace и журнал MCP подтверждают, что completed call не повторился.</p><h3>Как использовать ИИ: 4D</h3><ul><li><strong>Delegation:</strong> поручай ИИ черновик dataclass, JSON-схемы plan proposal, тестов ветвления или adapter к провайдеру; критерии завершения, жизненный цикл фактов и допустимые side effects определяй сам.</li><li><strong>Description:</strong> передай высокоуровневую goal, capability schemas, контракт Observation, step budget 7.1, поля checkpoint и правило «completed не повторять, ambiguous in_progress не replay».</li><li><strong>Discernment:</strong> ищи готовый <code>ops</code> внутри goal, неизменяемый «план-истину», смешение trace с рабочими фактами, доверие ко всей истории чата и повтор вызова после restart.</li><li><strong>Diligence:</strong> проверь diff, получи red → green, запусти обе ветки, открой JSON checkpoint, смоделируй restart и повтори allow/deny через MCP; уверенный текст модели не заменяет эти доказательства.</li></ul><h2>SHIP IT</h2><p><strong>Артефакт:</strong> план, состояние и доказательство resume → <a href="#f-phases-07-agent-engineering-02-agent-memory-and-planning-outputs-plan-and-state-record-md"><code>outputs/plan-and-state-record.md</code></a></p><p>Заполни record на своей capability: высокоуровневая цель, success criterion, две версии плана, источник (provenance) рабочих фактов, trace до и после restart, доказательство отсутствия повтора completed step и способ сверки для <code>in_progress</code>.</p><p>В конце назови один потенциально опасный шаг, которому нужен <code>approval_required</code>. В 7.3 этот сериализуемый TaskState станет точкой pause: приложение сохранит запрос на подтверждение, человек примет решение, а агент продолжит тот же план, не восстанавливая его из чата.</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Передать <code>goal["ops"]</code>.</strong> Тогда planner только переупаковывает заранее заданный workflow и не демонстрирует пересмотр маршрута по Observation.</li><li><strong>Считать начальный план окончательной истиной.</strong> План описывает предполагаемое будущее; новые проверенные факты должны иметь возможность изменить его невыполненную часть.</li><li><strong>Смешать план, trace и working facts.</strong> Список будущих шагов, журнал произошедшего и текущее предметное состояние отвечают на разные вопросы и имеют разный жизненный цикл.</li><li><strong>Назвать историю чата TaskState.</strong> История помогает модели держать контекст, но сама не задаёт statuses, dependencies, критерий завершения и правила безопасного resume.</li><li><strong>Доверять <code>ok=True</code> без проверки output.</strong> Транспортный успех не доказывает предметный контракт; отсутствующие обязательные поля должны блокировать переход.</li><li><strong>Повторить <code>in_progress</code> после restart.</strong> Процесс мог упасть после side effect; сначала сверяй внешнее состояние или idempotency key.</li><li><strong>Сохранять всё в long-term memory.</strong> Tool output может содержать недоверенный текст, секреты и устаревающие данные; рабочие факты задачи не получают вечный срок жизни автоматически.</li><li><strong>Обойти runtime 7.1.</strong> Planner выбирает шаг, но allowlist, schema, budget, trusted context и access policy остаются на границе исполнения.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="7.2"></div><h2>Дополнительное чтение</h2><ul><li><a href="https://platform.claude.com/docs/en/agent-sdk/overview" target="_blank" rel="noopener">Anthropic — Agent SDK overview</a> — agent loop, контекст, инструменты.</li><li><a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool" target="_blank" rel="noopener">Anthropic — Memory tool</a> — память агента между сессиями.</li><li><a href="https://arxiv.org/abs/2210.03629" target="_blank" rel="noopener">ReAct (arXiv 2210.03629)</a> — рассуждение и действие как основа агента.</li><li><a href="https://arxiv.org/abs/2402.02716" target="_blank" rel="noopener">Huang et al., 2024 — Understanding the Planning of LLM Agents: A Survey</a> — таксономия планирования: декомпозиция, выбор плана, рефлексия, память.</li><li><a href="https://docs.langchain.com/oss/python/langgraph/persistence" target="_blank" rel="noopener">LangGraph — Persistence</a> — checkpointers (короткая память) + stores (длинная), resume / HITL / fault-tolerance в реальном фреймворке.</li><li><a href="https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents" target="_blank" rel="noopener">Anthropic — Effective harnesses for long-running agents (2025)</a> — многосессионность, трекинг прогресса, восстановление контекста.</li><li><a href="https://www.deeplearning.ai/courses/agentic-ai" target="_blank" rel="noopener">DeepLearning.AI — Agentic AI (Andrew Ng, 2025)</a> — паттерны Reflection / Tool / Planning / Multi-agent на чистом Python.</li><li><a href="https://pub.towardsai.net/understanding-memory-management-in-langgraph-a-practical-guide-for-genai-students-b3642c9ea7e1" target="_blank" rel="noopener">Towards AI — Memory Management in LangGraph (Medium)</a> — практический разбор памяти агента.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Если делегируешь ИИ, реши, что отдаёшь; опиши задачу и критерии; проверь результат; сохрани ответственность за итог.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-07-agent-engineering-02-agent-memory-and-planning-code-test-planner-agent-py" open data-test="1"><summary><span class="fname">code/test_planner_agent.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>import pytest
+
+from planner_agent import (
+    JsonCheckpointStore,
+    Observation,
+    TaskStateError,
+    advance_task,
+    apply_observation,
+    create_initial_state,
+    decide_next,
+    reference_executor,
+    run_to_completion,
+)
 
 
-def test_plan_decomposes_into_steps():
-    steps = plan(GOAL)
-    assert len(steps) == 3
-    assert steps[0] == {"op": "add", "operand": 3}
+def goal(run_id="run-review"):
+    return {"objective": "prepare_release_readiness", "run_id": run_id}
 
 
-def test_run_computes_through_memory():
-    answer, memory, trace = run(GOAL)
-    assert answer == 19
-    assert len(trace) == 3
-    assert memory.recall("value") == 19
+def test_initial_plan_comes_from_high_level_goal_without_prescribed_operations():
+    state = create_initial_state(goal())
+
+    assert "ops" not in state.goal
+    assert state.plan_version == 1
+    assert [step.step_id for step in state.plan] == ["read-decision"]
+    assert state.working_facts == {}
 
 
-def test_memory_holds_intermediate_steps():
-    _, memory, _ = run(GOAL)
-    assert memory.recall("step_0") == 5      # 2+3
-    assert memory.recall("step_1") == 20     # *4
+def test_observation_changes_the_plan_and_named_working_state():
+    state = create_initial_state(goal())
+    action = decide_next(state)
+    observation = Observation(
+        action_id=action.action_id,
+        ok=True,
+        output={"decision": "review", "failed_checks": ["security"]},
+    )
+
+    apply_observation(state, observation)
+
+    assert state.plan_version == 2
+    assert [(step.step_id, step.status) for step in state.plan] == [
+        ("read-decision", "completed"),
+        ("diagnose-security", "pending"),
+    ]
+    assert state.working_facts == {
+        "release.decision": "review",
+        "release.failed_checks": ["security"],
+    }
+    assert state.execution_trace[0].observation.action_id == action.action_id
 
 
-def test_memory_remember_recall():
-    m = Memory()
-    m.remember("k", 42)
-    assert m.recall("k") == 42
-    assert m.recall("missing", "def") == "def"
-</code></pre></details><h3>Эталонное решение</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-07-agent-engineering-02-agent-memory-and-planning-code-planner-agent-py"><summary><span class="fname">code/planner_agent.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Память и планирование агента — Build It для урока 7.2.
+def test_publish_and_review_take_different_plan_routes():
+    ready = create_initial_state(goal("run-ready"))
+    review = create_initial_state(goal("run-review"))
 
-Без зависимостей. Поверх цикла из 7.1 добавляем две вещи: ПЛАН (декомпозиция
-цели на шаги, как в 2.3) и ПАМЯТЬ (промежуточные результаты переживают шаги, как
-в 4.2). Каждый шаг читает прошлое значение из памяти и пишет новое — так агент
-ведёт многошаговую задачу, не теряя состояние.
+    ready_answer = run_to_completion(ready, reference_executor)
+    review_answer = run_to_completion(review, reference_executor)
+
+    assert ready_answer["decision"] == "publish"
+    assert len(ready.plan) == 1
+    assert len(ready.execution_trace) == 1
+    assert review_answer["decision"] == "review"
+    assert len(review.plan) == 2
+    assert len(review.execution_trace) == 2
+    assert review.working_facts["release.diagnostic_status"] == "failed"
+
+
+def test_invalid_observation_blocks_instead_of_fabricating_final_answer():
+    state = create_initial_state(goal())
+    action = decide_next(state)
+
+    apply_observation(
+        state,
+        Observation(action_id=action.action_id, ok=True, output={"message": "looks ok"}),
+    )
+
+    assert state.status == "blocked"
+    assert state.final_answer is None
+    assert state.plan[0].status == "blocked"
+    assert state.working_facts["task.last_error"] == "invalid_decision_result"
+
+
+def test_unmet_dependency_cannot_execute():
+    state = create_initial_state(goal())
+    state.plan[0].status = "skipped"
+    state.plan.append(
+        type(state.plan[0])(
+            step_id="diagnose-security",
+            objective="diagnose",
+            tool="get_check_report",
+            arguments={"run_id": "run-review", "check": "security"},
+            success_criterion="report exists",
+            depends_on=["read-decision"],
+        )
+    )
+
+    with pytest.raises(TaskStateError, match="unmet dependencies"):
+        decide_next(state)
+
+    assert state.status == "blocked"
+
+
+def test_checkpoint_resume_does_not_repeat_completed_step(tmp_path):
+    calls = []
+
+    def recording_executor(action):
+        calls.append(action.tool)
+        return reference_executor(action)
+
+    store = JsonCheckpointStore(tmp_path / "task.json")
+    state = create_initial_state(goal())
+    advance_task(state, recording_executor, store)
+
+    resumed = store.load()
+    assert resumed.plan_version == 2
+    assert [(step.step_id, step.status) for step in resumed.plan] == [
+        ("read-decision", "completed"),
+        ("diagnose-security", "pending"),
+    ]
+    assert resumed.working_facts["release.failed_checks"] == ["security"]
+    assert len(resumed.execution_trace) == 1
+
+    answer = run_to_completion(resumed, recording_executor, store)
+
+    assert answer["decision"] == "review"
+    assert calls == ["get_release_decision", "get_check_report"]
+    assert [step.status for step in resumed.plan] == ["completed", "completed"]
+
+
+def test_in_progress_checkpoint_requires_reconciliation_before_resume(tmp_path):
+    store = JsonCheckpointStore(tmp_path / "ambiguous.json")
+    state = create_initial_state(goal())
+    decide_next(state)  # checkpoint между выбором Action и получением Observation
+    store.save(state)
+
+    resumed = store.load()
+    with pytest.raises(TaskStateError, match="requires reconciliation"):
+        decide_next(resumed)
+
+
+def test_tool_error_is_evidence_and_blocks_automatic_continuation():
+    state = create_initial_state(goal())
+    action = decide_next(state)
+    apply_observation(
+        state,
+        Observation(action_id=action.action_id, ok=False, error_code="tool_error"),
+    )
+
+    assert state.status == "blocked"
+    assert state.working_facts["task.last_error"] == "tool_error"
+    assert state.execution_trace[-1].observation.error_code == "tool_error"
+</code></pre></details><h3>Эталонное решение</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-07-agent-engineering-02-agent-memory-and-planning-code-planner-agent-py"><summary><span class="fname">code/planner_agent.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Явный план, рабочее состояние и checkpoint для урока 7.2.
+
+Модуль не заменяет безопасный runtime из 7.1. Он добавляет слой управления
+задачей вокруг контракта Action -&gt; Observation: строит начальный план из цели,
+обновляет именованные факты, пересматривает будущие шаги и сохраняет состояние
+так, чтобы завершённый шаг не повторялся после перезапуска.
 """
 
-
-class Memory:
-    """Простейшая рабочая память агента (ключ → значение)."""
-
-    def __init__(self):
-        self.store = {}
-
-    def remember(self, key, value):
-        self.store[key] = value
-
-    def recall(self, key, default=None):
-        return self.store.get(key, default)
+from dataclasses import asdict, dataclass, field
+import json
+from pathlib import Path
+from typing import Callable
 
 
-TOOLS = {"add": lambda a, b: a + b, "sub": lambda a, b: a - b, "mul": lambda a, b: a * b}
+@dataclass(frozen=True)
+class Action:
+    """Тот же наблюдаемый контракт решения, что и в 7.1."""
+
+    kind: str  # "tool" | "final"
+    action_id: str | None = None
+    tool: str | None = None
+    arguments: dict[str, object] = field(default_factory=dict)
+    answer: object = None
 
 
-def plan(goal):
-    """Декомпозиция цели в упорядоченные шаги. goal = {start, ops:[(op, operand)]}."""
-    return [{"op": op, "operand": operand} for op, operand in goal["ops"]]
+@dataclass(frozen=True)
+class Observation:
+    """Связанный с Action результат безопасного runtime из 7.1."""
+
+    action_id: str
+    ok: bool
+    output: object = None
+    error_code: str | None = None
 
 
-def run(goal, memory=None):
-    """Выполнить план, неся состояние через память. Возвращает (итог, память, трейс)."""
-    memory = memory or Memory()
-    memory.remember("value", goal["start"])
-    trace = []
-    for i, step in enumerate(plan(goal)):
-        prev = memory.recall("value")                      # читаем из памяти
-        result = TOOLS[step["op"]](prev, step["operand"])
-        memory.remember("value", result)                   # пишем в память
-        memory.remember(f"step_{i}", result)               # история шагов
-        trace.append({"step": i, "op": step["op"], "operand": step["operand"], "result": result})
-    return memory.recall("value"), memory, trace
+@dataclass(frozen=True)
+class TraceStep:
+    action: Action
+    observation: Observation
+
+
+@dataclass
+class PlanStep:
+    """Один проверяемый пункт текущей версии плана."""
+
+    step_id: str
+    objective: str
+    tool: str
+    arguments: dict[str, object]
+    success_criterion: str
+    depends_on: list[str] = field(default_factory=list)
+    status: str = "pending"  # pending | in_progress | completed | blocked | skipped
+
+
+@dataclass
+class TaskState:
+    """Checkpointable state одной задачи, а не долговременная память пользователя."""
+
+    goal: dict[str, object]
+    plan_version: int
+    plan: list[PlanStep]
+    working_facts: dict[str, object] = field(default_factory=dict)
+    execution_trace: list[TraceStep] = field(default_factory=list)
+    status: str = "running"  # running | completed | blocked
+    final_answer: object = None
+
+
+class TaskStateError(Exception):
+    """План или checkpoint нельзя безопасно продолжить автоматически."""
+
+
+def create_initial_state(goal: dict[str, object]) -&gt; TaskState:
+    """Создать первый короткий план из высокоуровневой цели.
+
+    Детерминированный planner — test double для офлайн-урока. В goal нет готового
+    списка tool calls: дальнейшая ветка появится только после Observation.
+    """
+
+    if goal.get("objective") != "prepare_release_readiness":
+        raise TaskStateError("unsupported objective")
+    run_id = goal.get("run_id")
+    if not isinstance(run_id, str) or not run_id:
+        raise TaskStateError("goal requires non-empty run_id")
+
+    return TaskState(
+        goal=dict(goal),
+        plan_version=1,
+        plan=[
+            PlanStep(
+                step_id="read-decision",
+                objective="Получить защищённое решение по прогону",
+                tool="get_release_decision",
+                arguments={"run_id": run_id},
+                success_criterion="Получен decision и список failed_checks",
+            )
+        ],
+    )
+
+
+def _completed_ids(state: TaskState) -&gt; set[str]:
+    return {step.step_id for step in state.plan if step.status == "completed"}
+
+
+def decide_next(state: TaskState) -&gt; Action:
+    """Вернуть следующий Action и пометить выбранный шаг как in_progress."""
+
+    if state.status == "completed":
+        return Action(kind="final", answer=state.final_answer)
+    if state.status == "blocked":
+        raise TaskStateError("task is blocked; inspect state before continuing")
+
+    in_progress = [step.step_id for step in state.plan if step.status == "in_progress"]
+    if in_progress:
+        raise TaskStateError(
+            f"in-progress step requires reconciliation before resume: {in_progress[0]}"
+        )
+
+    completed = _completed_ids(state)
+    for step in state.plan:
+        if step.status == "pending" and set(step.depends_on) &lt;= completed:
+            step.status = "in_progress"
+            return Action(
+                kind="tool",
+                action_id=step.step_id,
+                tool=step.tool,
+                arguments=dict(step.arguments),
+            )
+
+    state.status = "blocked"
+    raise TaskStateError("no executable step: plan has unmet dependencies")
+
+
+def _in_progress_step(state: TaskState, action_id: str) -&gt; PlanStep:
+    matches = [
+        step
+        for step in state.plan
+        if step.step_id == action_id and step.status == "in_progress"
+    ]
+    if len(matches) != 1:
+        raise TaskStateError(f"observation does not match in-progress step: {action_id}")
+    return matches[0]
+
+
+def _action_from_step(step: PlanStep) -&gt; Action:
+    return Action(
+        kind="tool",
+        action_id=step.step_id,
+        tool=step.tool,
+        arguments=dict(step.arguments),
+    )
+
+
+def _block(
+    state: TaskState,
+    step: PlanStep,
+    observation: Observation,
+    reason: str,
+) -&gt; None:
+    step.status = "blocked"
+    state.status = "blocked"
+    state.working_facts["task.last_error"] = reason
+    state.execution_trace.append(
+        TraceStep(action=_action_from_step(step), observation=observation)
+    )
+
+
+def _valid_decision_output(output: object) -&gt; bool:
+    if not isinstance(output, dict):
+        return False
+    if output.get("decision") not in {"publish", "review", "block"}:
+        return False
+    failed_checks = output.get("failed_checks")
+    return isinstance(failed_checks, list) and all(
+        isinstance(check, str) and check for check in failed_checks
+    )
+
+
+def _valid_report_output(output: object) -&gt; bool:
+    return (
+        isinstance(output, dict)
+        and output.get("status") in {"passed", "failed"}
+        and isinstance(output.get("summary"), str)
+        and bool(output["summary"])
+    )
+
+
+def apply_observation(state: TaskState, observation: Observation) -&gt; None:
+    """Обновить trace, working state и будущий план после одного Observation."""
+
+    step = _in_progress_step(state, observation.action_id)
+
+    if not observation.ok:
+        _block(state, step, observation, observation.error_code or "tool_error")
+        return
+
+    if step.tool == "get_release_decision":
+        if not _valid_decision_output(observation.output):
+            _block(state, step, observation, "invalid_decision_result")
+            return
+
+        result = observation.output
+        step.status = "completed"
+        state.execution_trace.append(
+            TraceStep(action=_action_from_step(step), observation=observation)
+        )
+        state.working_facts["release.decision"] = result["decision"]
+        state.working_facts["release.failed_checks"] = list(result["failed_checks"])
+
+        if result["decision"] == "publish":
+            state.status = "completed"
+            state.final_answer = {
+                "run_id": state.goal["run_id"],
+                "decision": "publish",
+                "summary": "all required checks passed",
+            }
+            return
+
+        if not result["failed_checks"]:
+            state.status = "blocked"
+            state.working_facts["task.last_error"] = "missing_failed_check"
+            return
+
+        check = result["failed_checks"][0]
+        state.plan.append(
+            PlanStep(
+                step_id=f"diagnose-{check}",
+                objective=f"Получить безопасную сводку проверки {check}",
+                tool="get_check_report",
+                arguments={"run_id": state.goal["run_id"], "check": check},
+                success_criterion="Получены status и непустой summary",
+                depends_on=["read-decision"],
+            )
+        )
+        state.plan_version += 1
+        return
+
+    if step.tool == "get_check_report":
+        if not _valid_report_output(observation.output):
+            _block(state, step, observation, "invalid_report_result")
+            return
+
+        result = observation.output
+        step.status = "completed"
+        state.execution_trace.append(
+            TraceStep(action=_action_from_step(step), observation=observation)
+        )
+        state.working_facts["release.diagnostic_status"] = result["status"]
+        state.working_facts["release.diagnostic_summary"] = result["summary"]
+        state.status = "completed"
+        state.final_answer = {
+            "run_id": state.goal["run_id"],
+            "decision": state.working_facts["release.decision"],
+            "summary": result["summary"],
+        }
+        return
+
+    _block(state, step, observation, "unsupported_plan_step")
+
+
+class JsonCheckpointStore:
+    """Файловый checkpoint с атомарной заменой готового JSON."""
+
+    def __init__(self, path: str | Path):
+        self.path = Path(path)
+
+    def save(self, state: TaskState) -&gt; None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self.path.with_suffix(self.path.suffix + ".tmp")
+        temporary.write_text(
+            json.dumps(asdict(state), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        temporary.replace(self.path)
+
+    def load(self) -&gt; TaskState:
+        raw = json.loads(self.path.read_text(encoding="utf-8"))
+        return TaskState(
+            goal=raw["goal"],
+            plan_version=raw["plan_version"],
+            plan=[PlanStep(**step) for step in raw["plan"]],
+            working_facts=raw["working_facts"],
+            execution_trace=[
+                TraceStep(
+                    action=Action(**item["action"]),
+                    observation=Observation(**item["observation"]),
+                )
+                for item in raw["execution_trace"]
+            ],
+            status=raw["status"],
+            final_answer=raw["final_answer"],
+        )
+
+
+Executor = Callable[[Action], Observation]
+
+
+def advance_task(
+    state: TaskState,
+    execute_action: Executor,
+    checkpoint: JsonCheckpointStore | None = None,
+) -&gt; Action:
+    """Выполнить один переход, сохранив checkpoint до и после tool call."""
+
+    action = decide_next(state)
+    if action.kind == "final":
+        if checkpoint:
+            checkpoint.save(state)
+        return action
+
+    # Если процесс упадёт после side effect, останется in_progress. Такой шаг нельзя
+    # бездумно повторять: следующий resume потребует reconciliation.
+    if checkpoint:
+        checkpoint.save(state)
+
+    observation = execute_action(action)
+    if not isinstance(observation, Observation):
+        raise TaskStateError("executor must return Observation")
+    apply_observation(state, observation)
+
+    if checkpoint:
+        checkpoint.save(state)
+    return action
+
+
+def run_to_completion(
+    state: TaskState,
+    execute_action: Executor,
+    checkpoint: JsonCheckpointStore | None = None,
+) -&gt; object:
+    """Повторять переходы до final; budget и tool guardrails остаются в executor 7.1."""
+
+    while True:
+        action = advance_task(state, execute_action, checkpoint)
+        if action.kind == "final":
+            return action.answer
+
+
+def reference_executor(action: Action) -&gt; Observation:
+    """Офлайн test double среды; в переносе его заменяет runtime/MCP adapter 7.1."""
+
+    decisions = {
+        "run-ready": {"decision": "publish", "failed_checks": []},
+        "run-review": {"decision": "review", "failed_checks": ["security"]},
+    }
+    reports = {
+        ("run-review", "security"): {
+            "status": "failed",
+            "summary": "dependency scan requires a human review",
+        }
+    }
+
+    if action.tool == "get_release_decision":
+        output = decisions.get(action.arguments["run_id"])
+    elif action.tool == "get_check_report":
+        output = reports.get(
+            (action.arguments["run_id"], action.arguments["check"])
+        )
+    else:
+        output = None
+
+    if output is None:
+        return Observation(
+            action_id=action.action_id or "",
+            ok=False,
+            error_code="not_found",
+        )
+    return Observation(
+        action_id=action.action_id or "",
+        ok=True,
+        output=output,
+    )
 
 
 if __name__ == "__main__":
-    goal = {"start": 2, "ops": [("add", 3), ("mul", 4), ("sub", 1)]}   # (2+3)*4-1
-    answer, memory, trace = run(goal)
-    for t in trace:
-        print(t)
-    print("Итог:", answer, "| память:", memory.store)
-</code></pre></details><h3>Артефакт</h3><details class="filebox" id="f-phases-07-agent-engineering-02-agent-memory-and-planning-outputs-planner-agent-py" open><summary><span class="fname">outputs/planner_agent.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Память и планирование агента — Build It для урока 7.2.
+    for run_id in ("run-ready", "run-review"):
+        task = create_initial_state(
+            {"objective": "prepare_release_readiness", "run_id": run_id}
+        )
+        answer = run_to_completion(task, reference_executor)
+        print(f"{run_id}: {answer}")
+        print(
+            "plan:",
+            [(step.step_id, step.status) for step in task.plan],
+            "version:",
+            task.plan_version,
+        )
+        print("working facts:", task.working_facts)
+        print("trace steps:", len(task.execution_trace), "\n")
+</code></pre></details><h3>Артефакт</h3><details class="filebox" id="f-phases-07-agent-engineering-02-agent-memory-and-planning-outputs-plan-and-state-record-md" open><summary><span class="fname">outputs/plan-and-state-record.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: план, состояние и доказательство resume
 
-Без зависимостей. Поверх цикла из 7.1 добавляем две вещи: ПЛАН (декомпозиция
-цели на шаги, как в 2.3) и ПАМЯТЬ (промежуточные результаты переживают шаги, как
-в 4.2). Каждый шаг читает прошлое значение из памяти и пишет новое — так агент
-ведёт многошаговую задачу, не теряя состояние.
-"""
+Этот отчёт (record) фиксирует не наличие класса `Memory`, а способность агента
+пересматривать план по Observation и продолжать задачу из checkpoint без повторения
+завершённого шага. Скопируй файл в свою рабочую папку и замени эталонный
+(reference) сценарий личной read-only capability, переданной из 7.1.
 
+## 1. Цель и критерий завершения
 
-class Memory:
-    """Простейшая рабочая память агента (ключ → значение)."""
+| Поле | Reference | Мой перенос |
+|---|---|---|
+| Высокоуровневая цель | Подготовить решение о готовности `run_id` | ... |
+| Что намеренно отсутствует в goal | Готовый список tool calls | ... |
+| Success criterion | Есть решение и достаточное объяснение `review/block` | ... |
+| Разрешённые capability | `get_release_decision`, `get_check_report` | ... |
+| Step budget из runtime 7.1 | 6 попыток tool action | ... |
 
-    def __init__(self):
-        self.store = {}
+Почему маршрут нельзя надёжно задать заранее: ...
 
-    def remember(self, key, value):
-        self.store[key] = value
+## 2. Четыре разных вида состояния
 
-    def recall(self, key, default=None):
-        return self.store.get(key, default)
+| Сущность | Назначение | Reference | Нужно сохранять? |
+|---|---|---|---|
+| Plan | Предполагаемые будущие шаги и их status | `read-decision`, затем условный `diagnose-*` | В checkpoint задачи |
+| Execution trace | Append-only доказательство Action ↔ Observation | Вызов решения и его structured result | В checkpoint/audit |
+| Working facts | Актуальные именованные факты текущей задачи | `release.decision`, `release.failed_checks` | До завершения/TTL |
+| Long-term memory | Отобранные сведения между задачами | В reference не используется | Только по policy 4.2 |
 
+Что нельзя автоматически переносить в long-term memory: ...
 
-TOOLS = {"add": lambda a, b: a + b, "sub": lambda a, b: a - b, "mul": lambda a, b: a * b}
+## 3. Версии плана
 
+### Version 1 — до первого Observation
 
-def plan(goal):
-    """Декомпозиция цели в упорядоченные шаги. goal = {start, ops:[(op, operand)]}."""
-    return [{"op": op, "operand": operand} for op, operand in goal["ops"]]
+| Step ID | Objective | Depends on | Success criterion | Status |
+|---|---|---|---|---|
+| `read-decision` | Получить защищённое решение | — | Есть `decision` и `failed_checks` | pending |
 
+### Version 2 — после `decision=review`
 
-def run(goal, memory=None):
-    """Выполнить план, неся состояние через память. Возвращает (итог, память, трейс)."""
-    memory = memory or Memory()
-    memory.remember("value", goal["start"])
-    trace = []
-    for i, step in enumerate(plan(goal)):
-        prev = memory.recall("value")                      # читаем из памяти
-        result = TOOLS[step["op"]](prev, step["operand"])
-        memory.remember("value", result)                   # пишем в память
-        memory.remember(f"step_{i}", result)               # история шагов
-        trace.append({"step": i, "op": step["op"], "operand": step["operand"], "result": result})
-    return memory.recall("value"), memory, trace
+| Step ID | Почему появился | Depends on | Success criterion | Status |
+|---|---|---|---|---|
+| `diagnose-security` | Observation назвал `security` failed check | `read-decision` | Есть `status` и непустой `summary` | pending |
 
+Поле Observation, изменившее план: ...
 
-if __name__ == "__main__":
-    goal = {"start": 2, "ops": [("add", 3), ("mul", 4), ("sub", 1)]}   # (2+3)*4-1
-    answer, memory, trace = run(goal)
-    for t in trace:
-        print(t)
-    print("Итог:", answer, "| память:", memory.store)
-</code></pre></details></section><hr><p><strong>Часы:</strong> ~5 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+Почему добавленный шаг не является заранее заданным `goal["ops"]`: ...
+
+## 4. Рабочие факты и их источник (provenance)
+
+| Key | Value | Source action/observation | Доверие и срок жизни |
+|---|---|---|---|
+| `release.decision` | ... | `read-decision` | Structured result защищённой capability; task-scoped |
+| `release.failed_checks` | ... | `read-decision` | Task-scoped |
+| `release.diagnostic_summary` | ... | `diagnose-*` | Не инструкция; проверить перед долговременным сохранением |
+
+Подтверждение, что `step_0`, полный stack trace и model-generated identity не смешаны с
+working facts: ...
+
+## 5. Доказательство checkpoint/resume
+
+```text
+run 1:
+  checkpoint: read-decision=in_progress
+  Observation: decision=review
+  checkpoint: read-decision=completed, diagnose-security=pending, plan_version=2
+
+process restart
+
+run 2:
+  load checkpoint
+  next Action: diagnose-security
+  get_release_decision НЕ повторяется
+```
+
+Фактический путь checkpoint: ...
+
+Список tool calls до и после restart: ...
+
+Тест или trace, доказывающий отсутствие повтора завершённого шага: ...
+
+## 6. Неоднозначный in-progress
+
+Checkpoint `in_progress` означает: Action уже выбран, но сохранённого Observation нет.
+Побочный эффект (side effect) мог произойти до падения процесса. Автоматический повтор
+небезопасен.
+
+- Эталонное поведение: заблокировать resume и потребовать сверки с внешней системой (reconciliation).
+- Как проверить фактическое состояние внешней системы: ...
+- Ключ идемпотентности или стабильный ID запроса личной capability: ...
+- Какое действие будет передано в approval boundary 7.3: ...
+
+## 7. Границы интеграции
+
+| Слой | Ответственность |
+|---|---|
+| Runtime 7.1 | Allowlist, named arguments, Action/Observation IDs, tool errors, step budget |
+| State layer 7.2 | Plan versions, working facts, dependencies, checkpoint/resume |
+| Access policy 6.5 | Trusted actor/action/object authorization на MCP server |
+| HITL 7.3 | Pause, approve/reject и безопасное продолжение опасного action |
+
+Подтверждение, что state layer не импортирует domain handler в обход MCP policy: ...
+
+## 8. Приёмка
+
+- [ ] Goal не содержит готовой последовательности tool calls.
+- [ ] Два разных Observation создают разные маршруты.
+- [ ] Plan, execution trace, working facts и long-term memory различены.
+- [ ] Каждый PlanStep имеет status, dependencies и success criterion.
+- [ ] Невалидный structured result блокирует задачу, а не создаёт финальный ответ.
+- [ ] Checkpoint восстанавливает plan version, facts, trace и statuses.
+- [ ] Завершённый шаг не повторяется после restart.
+- [ ] `in_progress` без Observation требует сверки с внешней системой.
+- [ ] Trusted identity/scopes не попадают в model-controlled state.
+- [ ] Назван опасный шаг, который получит approval boundary в 7.3.
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~7 · <strong>DoD:</strong> 8 поведенческих тестов зелёные; <code>run-ready</code> и <code>run-review</code> дают разные версии плана; checkpoint/restart не повторяет completed step; неоднозначный <code>in_progress</code> требует reconciliation; личная read-only capability проходит через runtime/MCP 7.1; <code>plan-and-state-record.md</code> заполнен и содержит handoff в 7.3. ✅ <strong>Урок готов</strong></p></article>
     <div class="nav-prevnext" id="prevnext"><a href="../../lessons/reason-act-observe-loop/"><small>← 7.1</small>Цикл reason → act → observe</a><a href="../../lessons/human-in-the-loop-guardrails/" style="text-align:right"><small>7.3 →</small>Human-in-the-loop и guardrails</a></div>
   </section>
 
   <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
 
   <script>window.__BASE__="../../";</script>
-  <script src="../../data.js?v=866804a9482c"></script>
-  <script src="../../progress.js?v=866804a9482c"></script>
-  <script src="../../header.js?v=866804a9482c"></script>
-  <script src="../../app.js?v=866804a9482c"></script>
+  <script src="../../data.js?v=84744aaf587f"></script>
+  <script src="../../progress.js?v=84744aaf587f"></script>
+  <script src="../../header.js?v=84744aaf587f"></script>
+  <script src="../../app.js?v=84744aaf587f"></script>
 </body>
 </html>
