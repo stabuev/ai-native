@@ -4,16 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>7.1 Цикл reason → act → observe — AI Native</title>
-  <meta name="description" content="Агент — это не модель, а цикл: подумал → сделал → посмотрел на результат → повторил.">
+  <meta name="description" content="Урок 7.1 курса AI Native: Цикл reason → act → observe. Практический материал с проверяемым результатом.">
   <link rel="canonical" href="https://datascience.xyz/courses/ainative/lessons/reason-act-observe-loop/">
   <meta property="og:type" content="article">
   <meta property="og:title" content="7.1 Цикл reason → act → observe — AI Native">
-  <meta property="og:description" content="Агент — это не модель, а цикл: подумал → сделал → посмотрел на результат → повторил.">
+  <meta property="og:description" content="Урок 7.1 курса AI Native: Цикл reason → act → observe. Практический материал с проверяемым результатом.">
   <meta property="og:url" content="https://datascience.xyz/courses/ainative/lessons/reason-act-observe-loop/">
   <meta property="og:image" content="https://datascience.xyz/courses/ainative/og-image.png">
   <meta name="twitter:card" content="summary_large_image">
   <script>(function(){try{var t=localStorage.getItem("theme")||"light";document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
-  <link rel="stylesheet" href="../../style.css?v=5e7f863cee11">
+  <link rel="stylesheet" href="../../style.css?v=866804a9482c">
   <!-- Yandex.Metrika counter -->
   <script type="text/javascript">
       (function(m,e,t,r,i,k,a){
@@ -31,194 +31,658 @@
   <section class="container" style="padding-top:24px">
     <p class="muted" style="margin:0"><a href="../../catalog.html">← Каталог</a></p>
     <div class="lessonbar" id="lessonbar"></div>
-    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 7.1 · Цикл reason → act → observe</h1><p><strong>Фаза 7 — Agent Engineering</strong> · <strong>Результат фазы:</strong> Собрать надёжного агента с памятью, планированием, human-in-the-loop и guardrails.</p><p><strong>Это вход в Фазу 7 — момент, когда ИИ начинает действовать сам.</strong> Всё, что мы строили (промпты, RAG, память, инструменты, MCP), сходится здесь в одну конструкцию — <strong>агента</strong>. И в основе агента не модель, а простой цикл, который мы разберём до винтика.</p><p>Если Фаза 6 уже пройдена, открой раздел <code>В 7.1 — reason → act → observe</code> своего <code>phase-6-dossier.md</code>. Офлайн-калькулятор ниже нужен, чтобы изолированно понять цикл, а при самостоятельном переносе возьми оттуда одну разрешённую capability и оберни её MCP client adapter. Не импортируй domain handler напрямую: иначе agent loop обойдёт server-side access policy, доказанную в 6.5.</p><blockquote><strong>MOTTO.</strong> Агент — это не модель, а цикл: подумал → сделал → посмотрел на результат → повторил.</blockquote><h2>PROBLEM</h2><p>«Агент» звучит как магия, пока не видишь цикл изнутри. И эта непрозрачность стоит дорого: нельзя отладить зависание, понять, почему агент крутится в петле или зовёт несуществующий инструмент. А ещё кажется, будто для агента обязателен дорогой LLM с API-ключом.</p><p>На деле «агентность» — это <strong>инженерия цикла</strong>, а не сама модель. Модель лишь играет роль «того, кто решает, что делать дальше». Сам механизм — выбрать действие, выполнить, посмотреть на результат, повторить — от модели не зависит и собирается на голом Python. Соберём его, и магия исчезнет.</p><h2>CONCEPT</h2><h3>Интуиция</h3><p>Агент работает как человек, решающий задачу с <strong>калькулятором и блокнотом</strong>. Он не выдаёт ответ мгновенно — он действует шагами: смотрит, что уже посчитано (блокнот), решает следующее действие (reason), нажимает кнопку калькулятора (act), записывает результат в блокнот (observe) — и снова смотрит. Так до готового ответа.</p><p>Два участника: <strong>policy</strong> — «мозг», который на каждом шаге решает, что делать (это и есть роль модели); <strong>инструменты</strong> — «руки», которые делают конкретное (посчитать, сходить в БД, отправить письмо). Ключевой момент: результат каждого шага дописывается в историю — и это <strong>память</strong> агента в простейшем виде.</p><h3>Как это работает</h3><pre><code>        ┌──────────────────────────────────────┐
-        │                                       │
-   goal ▼            (reason)                    │
-        policy ── Action(tool, args) ──► tool ──┘
-        ▲                                  │
-        │            (observe)             │ (act)
-        └────────── observation ◄──────────┘
-                         │
-              Action(final) ──► ответ</code></pre><ul><li><strong>reason</strong> — <code>policy(goal, history)</code> смотрит на цель и историю и возвращает <code>Action</code>: либо вызвать инструмент (<code>tool</code> + аргументы), либо завершить (<code>final</code> + ответ).</li><li><strong>act</strong> — если <code>Action</code> это вызов, выполняется <code>tool(*args)</code>.</li><li><strong>observe</strong> — результат (<code>observation</code>) дописывается в <code>history</code>; на следующем витке policy его уже «видит».</li></ul><p>Петля крутится до финала или до лимита шагов. Два <strong>guardrail</strong> встроены сразу: лимит <code>max_steps</code> (защита от бесконечной петли → <code>AgentError</code>) и проверка неизвестного инструмента. Это не украшение — без них агент зависает или зовёт несуществующее.</p><p>Именно этот цикл отличает <strong>агента</strong> от <strong>workflow</strong>. Anthropic проводит границу так: workflow — это «системы, где LLM и инструменты оркестрируются по заранее заданным путям в коде», а агент — «системы, где LLM сам динамически направляет свой процесс и использование инструментов». В нашем <code>run_agent</code> путь не зашит: его на каждом витке выбирает <code>policy</code>. Плата за автономию реальна — Anthropic прямо предупреждает, что «агентные системы обычно меняют задержку и стоимость на качество решения», поэтому начинают с простого, а агента берут под открытые задачи, где число шагов нельзя предсказать заранее.</p><blockquote><strong>Врезка: три режима человек–ИИ (AI Fluency).</strong> <strong>Automation</strong> — ИИ делает задачу по чётким инструкциям; <strong>Augmentation</strong> — человек и ИИ работают итеративно как партнёры; <strong>Agency</strong> — ИИ действует автономно по заданным правилам и целям. Агент из этого урока — переход к <strong>Agency</strong>: ты задаёшь цель, инструменты и guardrails, а не каждый шаг. Чем выше автономия, тем важнее подтверждения и заслоны (урок 7.3).</blockquote><h2>РАЗБОР ПО ШАГАМ</h2><p>Прогоним цикл на цели <code>(2 + 3) * 4 - 1</code> — это <code>{start: 2, ops: [(add,3), (mul,4), (sub,1)]}</code>. <code>RuleBasedPolicy</code> на каждом шаге берёт текущее значение и применяет следующую операцию:</p><pre><code>шаг 0: history пуст → value = start = 2; op = (add, 3)
-        reason → Action(tool=add, args=(2,3));  act → 5;  observe → history=[5]
-шаг 1: value = 5 (прошлый результат); op = (mul, 4)
-        reason → Action(tool=mul, args=(5,4));  act → 20; observe → history=[5,20]
-шаг 2: value = 20; op = (sub, 1)
-        reason → Action(tool=sub, args=(20,1)); act → 19; observe → history=[5,20,19]
-шаг 3: операции кончились (i=3 ≥ 3) → Action(final, answer=19)</code></pre><p>Итог: <code>19</code> за <strong>три вызова инструментов</strong>. Главное здесь — <code>observation</code> каждого шага становится <code>value</code> следующего: 2 → 5 → 20 → 19. Это и есть «память в цикле»: policy не держит состояние в себе, оно живёт в <code>history</code>. Поменяй <code>RuleBasedPolicy</code> на LLM — структура витка не изменится ни на байт.</p><h2>BUILD IT</h2><p><strong>Задание: собери цикл агента reason→act→observe с нуля</strong> — с guardrails. Только стандартная библиотека, без сети и без LLM.</p><blockquote><strong>Перед запуском.</strong> Работай в своей папке курса (<code>ai-native/7.1-agent-loop/</code>), а файлы урока клади в подпапку <code>code/</code> (по соглашению курса). Нужен только <strong>Python 3</strong> (для теста ещё <code>pytest</code>).</blockquote><p>Создай файл <code>agent_loop.py</code>:</p><ul><li><strong><code>Action</code></strong> — dataclass решения: <code>kind</code> (<code>"tool"</code> | <code>"final"</code>), <code>tool</code>, <code>args</code>, <code>answer</code>.</li><li><strong><code>run_agent(goal, tools, policy, max_steps=10)</code></strong> — цикл до <code>max_steps</code>: вызвать <code>policy(goal, history)</code>; если <code>kind == "final"</code> → вернуть <code>(answer, history)</code>; если инструмент не в <code>tools</code> → <code>raise AgentError</code> (guardrail); иначе выполнить <code>tools[tool](*args)</code>, дописать <code>Step(action, observation)</code> в <code>history</code>. Не пришли к финалу за <code>max_steps</code> → <code>raise AgentError</code> (guardrail против петель).</li><li><strong><code>TOOLS</code></strong> — <code>{"add", "sub", "mul"}</code> (простые функции двух аргументов).</li><li><strong><code>RuleBasedPolicy</code></strong> — детерминированная policy для цели <code>{start, ops}</code>: берёт текущее значение (<code>start</code> или прошлый <code>observation</code>), применяет <code>ops[i]</code>; когда операции кончились — <code>Action(final)</code>.</li></ul><p><strong>Готово, когда</strong> все тесты в <code>test_agent_loop.py</code> зелёные — они проверяют: цепочку операций (<code>(2+3)*4</code> = 20 за 2 шага); что <code>observation</code> кормит следующий шаг; пустые <code>ops</code> → возврат <code>start</code>; срабатывание guardrail по <code>max_steps</code>; ошибку на неизвестном инструменте.</p><pre><code>pytest code -q          # красное → реализуй цикл → зелёное
-python code/agent_loop.py # демо: (2 + 3) * 4 - 1 = 19 за три вызова</code></pre><p><strong>Подсказка.</strong> <code>history</code> — список <code>Step</code>. В <code>RuleBasedPolicy</code> индекс шага = <code>len(history)</code>; текущее значение = <code>goal["start"]</code> при пустой истории, иначе <code>history[-1].observation</code>. Guardrail max_steps — это просто выход из <code>for</code>-цикла в <code>raise</code>.</p><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — три способа пройти упражнение (собрать самому · подсмотреть эталон · делегировать ИИ) и тесты-ТЗ.</p><h2>USE IT</h2><p>То же самое — с настоящей моделью. Меняется <strong>только policy</strong>: вместо правил решения принимает LLM через function calling (6.1), а форма <code>Action</code> и сам <code>run_agent</code> остаются (мульти-провайдер).</p><pre><code># набросок LLM-policy под тот же run_agent(...)  — Requires: API-ключ
-def llm_policy(goal, history):
-    resp = client.messages.create(
-        model="claude-haiku-4-5",      # дешёвая модель на роль «рассуждателя»
-        tools=TOOL_SCHEMAS,             # схемы add/sub/mul (как в 6.1)
-        messages=build_messages(goal, history),
+    <article class="lesson" id="lesson" data-ssr="1"><h1>Урок 7.1 · Цикл reason → act → observe</h1><p><strong>Фаза 7 — Agent Engineering</strong> · <strong>Результат фазы:</strong> Собрать надёжного агента с памятью, планированием, human-in-the-loop и guardrails.</p><p><strong>Результат урока:</strong> собрать ограниченный agent runtime, в котором decision policy выбирает следующее действие из цели и видимого execution trace, runtime проверяет инструмент и именованные аргументы, сопоставляет действие с результатом, позволяет policy исправиться после безопасной ошибки и останавливает новый side effect после исчерпания бюджета.</p><p><strong>Опоры:</strong> цикл tool use и structured result из 6.1; защищённая read-only capability, trusted context и server-side access policy из 6.5. BUILD IT работает офлайн, без API-ключа и сети. Для необязательного переноса на LLM в USE IT понадобится ключ выбранного провайдера.</p><p><strong>Это вход в Фазу 7.</strong> В Фазе 6 программа научилась безопасно вызывать отдельный инструмент. Теперь она должна сама решать, достаточно ли результата, какой разрешённый инструмент вызвать следующим и когда остановиться. План и отдельную память добавим в 7.2, подтверждение опасных действий — в 7.3.</p><p>Открой раздел <code>В 7.1 — reason → act → observe</code> своего <code>phase-6-dossier.md</code>. Для личного переноса выбери оттуда <strong>одну разрешённую read-only capability</strong>. Agent runtime должен обращаться к ней через MCP client adapter, а не импортировать domain handler: иначе он обойдёт server-side policy, которую ты доказывал в 6.5.</p><blockquote><strong>Главная мысль.</strong> Агент — не «особая модель», а управляемый цикл: выбрать следующее действие → выполнить его через ограниченный runtime → увидеть результат → скорректировать следующий шаг или завершить задачу.</blockquote><h2>PROBLEM</h2><p>Слово «агент» легко превращает обычную программу в магию: кажется, будто достаточно подключить LLM к нескольким функциям — и она сама надёжно доведёт любую цель до результата. Но между ответом модели и реальным действием остаются инженерные вопросы:</p><ul><li>что именно модель имеет право вернуть;</li><li>кто проверит имя инструмента и его аргументы;</li><li>как связать вызов с соответствующим результатом;</li><li>увидит ли policy ошибку и сможет ли изменить решение;</li><li>что остановит следующий вызов, если цикл застрял;</li><li>где находится доверенная identity и кто применяет access policy.</li></ul><p>Если ответы не зафиксированы, «агент» либо остаётся чатом, либо становится неограниченным циклом побочных эффектов. Поэтому сначала соберём маленький runtime на чистом Python и проверим его детерминированной policy. LLM подключим только после того, как контракт цикла станет видимым и тестируемым.</p><h2>CONCEPT</h2><h3>Семь частей одного витка</h3><table><thead><tr><th>Часть</th><th>Что это</th><th>Кто контролирует</th></tr></thead><tbody><tr><td><code>goal</code></td><td>Наблюдаемый результат, которого нужно достичь</td><td>Пользователь или приложение</td></tr><tr><td><code>decision_policy</code></td><td>Выбор следующего действия по цели и уже видимым результатам</td><td>Детерминированный код или модель</td></tr><tr><td><code>Action</code></td><td>Команда <code>tool</code> либо завершение <code>final</code></td><td>Возвращает policy, проверяет runtime</td></tr><tr><td><code>tool</code></td><td>Ограниченная capability с именованным контрактом</td><td>Приложение / MCP server</td></tr><tr><td><code>Observation</code></td><td>Структурированный успех или безопасная ошибка</td><td>Формирует runtime</td></tr><tr><td><code>execution_trace</code></td><td>Последовательность <code>Action ↔ Observation</code> текущего запуска</td><td>Runtime</td></tr><tr><td><code>step budget</code></td><td>Максимум попыток действия до остановки</td><td>Владелец приложения</td></tr></tbody></table><p>Здесь <strong>decision policy</strong> означает политику выбора следующего шага. Это не то же самое, что <strong>access policy</strong> из 6.5: первая предлагает действие, вторая решает, разрешено ли его выполнять для доверенного субъекта и объекта. Decision policy не может отменить server-side authorization.</p><h3>Что означают reason, act и observe</h3><pre><code>goal + execution_trace
+          │
+          ▼
+  decision_policy                 reason: выбрать следующий наблюдаемый шаг
+          │
+          ├── Action(final, answer) ───────────────► результат
+          │
+          └── Action(tool, action_id, arguments)
+                              │
+                              ▼
+                     runtime checks                 граница исполнения
+                              │
+                              ▼
+                         tool / adapter              act
+                              │
+                              ▼
+             Observation(action_id, ok, output/error)
+                              │
+                              └──────────────► execution_trace ──┐
+                                                                └─ новый виток</code></pre><ul><li><strong>Reason</strong> в этом уроке — не просьба раскрыть скрытую цепочку мыслей модели. Это наблюдаемое решение: <code>final</code> или конкретный <code>tool action</code> с ID и аргументами.</li><li><strong>Act</strong> начинается только после проверок runtime. Модель не получает прямой callable и не исполняет код сама.</li><li><strong>Observe</strong> означает, что успех или ошибка превращаются в данные и возвращаются decision policy. Сырой exception не должен автоматически попадать в контекст или лог.</li></ul><p><code>execution_trace</code> — журнал одного запуска, а не полноценная память агента. Он нужен, чтобы следующий шаг видел предыдущие действия и результаты. Именованную рабочую и долговременную память, которая переживает отдельные шаги или запуски, добавим в 7.2.</p><h3>Workflow, agent runtime и агент — не одно и то же</h3><p>В workflow маршрут заранее задан кодом: сначала A, затем B, затем C. Агент выбирает маршрут во время исполнения по цели и промежуточным результатам. Это не означает, что агент всегда лучше: фиксированный путь проще проверять и обычно правильнее для предсказуемой задачи.</p><p>BUILD IT использует <code>ReleaseDecisionPolicy</code> — детерминированный <strong>test double</strong> вместо модели. В нём всё ещё описаны допустимые ветки, поэтому офлайн-демо само по себе не доказывает автономность LLM. Оно доказывает более важную инженерную часть: runtime не зашивает последовательность вызовов и способен выполнить разные маршруты, выбранные policy после наблюдения. В USE IT тот же контракт получает model-backed policy.</p><p>Сравни две цели:</p><pre><code>Плохо: {ops: [get_release_decision, get_check_report, final]}
+       Маршрут уже передан исполнителю — это последовательный workflow.
+
+Хорошо: {run_id: "run-review"}
+        Policy сначала читает решение, а следующий шаг выбирает по Observation.</code></pre><blockquote><strong>Врезка: три режима человек–ИИ (AI Fluency).</strong> В <strong>Automation</strong> человек задаёт конкретный повторяемый путь. В <strong>Augmentation</strong> человек и ИИ итеративно выбирают шаги вместе. В <strong>Agency</strong> человек задаёт цель, доступные capability и границы, а система выбирает следующий шаг внутри этих границ. Переход к Agency не отменяет ответственность человека: чем больше свобода выбора, тем важнее наблюдаемый trace, budgets и подтверждения из 7.3.</blockquote><h3>Инварианты минимального runtime</h3><ol><li>Аргументы инструмента остаются объектом с именованными полями. Нельзя превращать <code>{"run_id": "run-42"}</code> в tuple значений: порядок не является контрактом.</li><li>Каждый tool action имеет уникальный <code>action_id</code>; observation содержит тот же ID.</li><li>Неизвестный инструмент и неверные аргументы не приводят к вызову callable.</li><li>Ошибка инструмента становится безопасным observation, чтобы policy могла изменить следующий шаг. Внутренний текст исключения в trace не копируется.</li><li>Каждая попытка tool action расходует шаг бюджета, даже если runtime её отклонил.</li><li>После последнего observation policy может завершить задачу, но новый tool action при исчерпанном бюджете блокируется <strong>до</strong> side effect.</li><li>Identity, роли и scopes поступают в MCP adapter из доверенного контекста приложения, а не из аргументов, предложенных моделью.</li></ol><h2>РАЗБОР ПО ШАГАМ</h2><p>Референсная цель содержит только идентификатор прогона:</p><pre><code>goal = {"run_id": "run-review"}</code></pre><p>Она не содержит готового плана. Policy должна увидеть результат первой capability и только после этого выбрать маршрут.</p><h3>Ветка 1: релиз готов</h3><pre><code>trace пуст
+reason  → Action("tool", id="decision-1",
+                 tool="get_release_decision",
+                 arguments={"run_id": "run-ready"})
+act     → adapter/server применяет access policy и читает решение
+observe → Observation(id="decision-1", ok=True,
+                      output={"decision": "publish", "failed_checks": []})
+reason  → Action("final", answer={"decision": "publish", ...})</code></pre><p>Один tool step: дополнительная диагностика не нужна.</p><h3>Ветка 2: нужна проверка человеком</h3><pre><code>decision-1 → get_release_decision({run_id: "run-review"})
+           ← {decision: "review", failed_checks: ["security"]}
+
+report-security → get_check_report({run_id: "run-review", check: "security"})
+                ← {status: "failed", summary: "...human review"}
+
+final → {decision: "review", summary: "...human review"}</code></pre><p>Здесь два tool step. Второго вызова нет в <code>goal</code>: он появился после первого observation. Это и есть ключевая петля урока.</p><h3>Ветка 3: исправимая ошибка</h3><p>Если первый вызов временно завершается ошибкой, runtime не падает и не переносит сырой exception в trace:</p><pre><code>decision-1 → Observation(ok=False, error_code="tool_error")
+decision-2 → повторный get_release_decision(...)
+           ← Observation(ok=True, output={decision: "publish", ...})
+final</code></pre><p>Референсная policy допускает только одну повторную попытку. Retry без границы создал бы новую петлю, поэтому более сложную retry/backoff policy отложим до урока 7.4.</p><h2>BUILD IT</h2><p><strong>Задание:</strong> собери минимальный agent runtime и докажи три маршрута — быстрый финал, диагностическую ветку и восстановление после одной безопасной ошибки. Только стандартная библиотека, без сети и LLM.</p><blockquote><strong>Перед запуском.</strong> Сам курс клонировать не нужно. Работай в личной папке <code>ai-native-work/course-work/phase-7/7.1-agent-loop/</code>, создай внутри <code>code/</code> и скопируй туда тесты со страницы урока. Нужны Python 3 и <code>pytest</code>.</blockquote><p>Сначала создай <code>code/agent_loop.py</code> по контракту:</p><ul><li><code>Action(kind, action_id, tool, arguments, answer)</code> — решение policy;</li><li><code>Observation(action_id, ok, output, error_code)</code> — результат попытки;</li><li><code>Step(action, observation)</code> — одна коррелированная запись trace;</li><li><code>run_agent(goal, tools, decision_policy, max_steps)</code> — цикл до <code>final</code> или бюджета;</li><li><code>_execute(...)</code> — проверка allowlist, объектных аргументов и сигнатуры до вызова;</li><li><code>ReleaseDecisionPolicy</code> — офлайн test double с ветками <code>publish</code>, <code>review</code> и одной повторной попыткой после <code>tool_error</code>;</li><li><code>make_release_decision_adapter(...)</code> — граница между публичными аргументами action и trusted context MCP-клиента.</li></ul><p>Не начинай с эталона. Скопируй <code>test_agent_loop.py</code>, запусти красные тесты и реализуй контракт по одному наблюдаемому свойству.</p><pre><code>cd ai-native-work/course-work/phase-7/7.1-agent-loop
+pytest code -q
+python code/agent_loop.py</code></pre><p><strong>Готово, когда тесты доказывают:</strong></p><ul><li><code>publish</code> заканчивается после одного tool step, а <code>review</code> выбирает второй инструмент;</li><li><code>action_id</code> совпадает с <code>observation.action_id</code>, аргументы остаются именованными;</li><li>неизвестный tool и неверная схема аргументов не вызывают защищённую функцию;</li><li>ошибка tool становится <code>tool_error</code>, после чего policy один раз исправляется;</li><li>исчерпанный budget не допускает следующий side effect;</li><li>повторный <code>action_id</code> отклоняется до второго исполнения;</li><li>MCP adapter передаёт модели только <code>run_id</code>, а actor/scopes получает из trusted context приложения.</li></ul><p>Внизу, в <a href="#lesson-files">«Исходниках урока»</a>, — тесты-ТЗ, эталон и заготовка итогового артефакта. Можно собрать самому, свериться после попытки или делегировать реализацию ИИ, но критерий приёмки остаётся одним и тем же.</p><h3>Самостоятельный перенос capability из 6.5</h3><p>Офлайн-функции — только учебная среда. После зелёных тестов возьми одну read-only capability из <code>phase-6-dossier.md</code> и замени соответствующую функцию adapter-ом:</p><pre><code>protected_tool = make_release_decision_adapter(
+    call_capability=mcp_client_call,
+    trusted_context=current_session_context,  # не приходит от модели
+)
+
+tools = {"get_release_decision": protected_tool}</code></pre><p>Сопоставь своё имя capability, public argument schema и structured result. Не копируй пример <code>run_id</code>, если твоя граница — dataset, document или project. Сначала повтори allow/deny проверки 6.5 на реальном transport, затем запусти agent loop. Dangerous capability, помеченную <code>approval_required</code>, пока не подключай — её место в 7.3.</p><h2>USE IT</h2><p>С настоящей моделью стабильными остаются runtime, <code>Action</code>, <code>Observation</code> и domain tools. Добавляется <strong>provider adapter</strong>, который переводит нативный ответ API в Action и observation обратно в формат следующего запроса. Это важнее формулы «меняется только policy»: у провайдеров различаются content blocks, stop reasons и формат tool result.</p><p>Концептуальный adapter выглядит так:</p><pre><code>def model_decision_policy(goal, execution_trace):
+    response = provider_adapter.decide(
+        goal=goal,
+        execution_trace=execution_trace,
+        tool_schemas=TOOL_SCHEMAS,
     )
-    block = resp.content[0]
-    if block.type == "tool_use":
-        return Action("tool", block.name, tuple(block.input.values()))
-    return Action("final", answer=block.text)</code></pre><p>Вывод урока: агентность — это инженерия цикла и инструментов, а модель — <strong>заменяемая деталь</strong> на роли policy. Отсюда мост к Фазе 9: на «рассуждателя» часто берут модель подешевле.</p><p>Для переноса результата Фазы 6 adapter должен превращать <code>Action(tool, args)</code> в вызов защищённой MCP capability и возвращать её structured result как <code>observation</code>. В agent history попадает результат, но не trusted identity/scopes и не server callable. Действия, отмеченные в досье как <code>approval required</code>, пока не подключай: они получат pause/approve/reject boundary только в 7.3.</p><h2>SHIP IT</h2><p><strong>Артефакт:</strong> <code>agent-loop</code> (skill) → <a href="#f-phases-07-agent-engineering-01-reason-act-observe-loop-outputs-skill-agent-loop-md"><code>outputs/skill-agent-loop.md</code></a></p><p>Переиспользуемый каркас цикла с guardrails: подставляешь свои инструменты и policy. Дальше в фазе наращиваем память и планирование (7.2), human-in-the-loop и guardrails (7.3), разбор поломок (7.4), evals (7.5).</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Считать агентом саму модель.</strong> Агент — это цикл вокруг policy и инструментов. Модель лишь играет policy; без цикла, инструментов и guardrails это просто чат.</li><li><strong>Цикл без лимита шагов.</strong> Policy может никогда не вернуть <code>final</code> — нужен <code>max_steps</code>, иначе агент крутится в петле бесконечно (и жжёт токены). Лимит — обязательный guardrail.</li><li><strong>Не проверять имя инструмента.</strong> Policy (особенно LLM) может назвать несуществующий инструмент. Без проверки — падение посреди цикла; лови и возвращай понятную ошибку.</li><li><strong>Не возвращать observation в историю.</strong> Если результат шага не дописать в <code>history</code>, policy его «не увидит» и будет повторять вызов или галлюцинировать — цепочка рассыпется.</li><li><strong>Сразу брать фреймворк, не поняв цикл.</strong> LangGraph/CrewAI удобны, но если не понимаешь reason→act→observe, отладить зависание в них невозможно. Сначала механизм, потом фреймворк (8.4).</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="7.1"></div><h2>Дополнительное чтение</h2><ul><li><a href="https://arxiv.org/abs/2210.03629" target="_blank" rel="noopener">ReAct: Reasoning + Acting (arXiv 2210.03629)</a> — первоисточник цикла reason→act→observe.</li><li><a href="https://www.anthropic.com/research/building-effective-agents" target="_blank" rel="noopener">Anthropic — Building Effective Agents</a> — агент как LLM с инструментами в цикле; когда он вообще нужен.</li><li><a href="https://www.anthropic.com/engineering/writing-tools-for-agents" target="_blank" rel="noopener">Anthropic — Writing effective tools for agents</a> — как проектировать инструменты и интерфейс агент↔среда.</li><li><a href="https://ampcode.com/how-to-build-an-agent" target="_blank" rel="noopener">Thorsten Ball — How to Build an Agent</a> — агент-редактор кода в ~300 строк на голом reason-act цикле (ровно Build It урока).</li><li><a href="https://www.anthropic.com/engineering/building-agents-with-the-claude-agent-sdk" target="_blank" rel="noopener">Anthropic — Building agents with the Claude Agent SDK</a> — «тот же агент через фреймворк»: встроенный agent loop, tools, контекст.</li><li><a href="https://lilianweng.github.io/posts/2023-06-23-agent/" target="_blank" rel="noopener">Lilian Weng — LLM Powered Autonomous Agents (2023)</a> — каноничная карта агента: planning + memory + tool use.</li><li><a href="https://huyenchip.com/2025/01/07/agents.html" target="_blank" rel="noopener">Chip Huyen — Agents (эссе, 2025)</a> — обстоятельный разбор: планирование, инструменты, типичные провалы.</li><li><a href="https://github.com/humanlayer/12-factor-agents" target="_blank" rel="noopener">12-factor agents (HumanLayer)</a> — принципы надёжных агентов для прода (own your context / loop / prompts).</li><li><a href="https://huggingface.co/learn/agents-course/en/unit0/introduction" target="_blank" rel="noopener">Hugging Face — AI Agents Course</a> — бесплатный курс с практикой (smolagents / LangGraph / LlamaIndex), финал на GAIA.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Если делегируешь ИИ, реши, что отдаёшь; опиши задачу и критерии; проверь результат; сохрани ответственность за итог.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-07-agent-engineering-01-reason-act-observe-loop-code-test-agent-loop-py" open data-test="1"><summary><span class="fname">code/test_agent_loop.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>import pytest
-from agent_loop import run_agent, RuleBasedPolicy, Action, AgentError, TOOLS
+
+    if response.kind == "tool":
+        return Action(
+            kind="tool",
+            action_id=response.call_id,
+            tool=response.name,
+            arguments=response.arguments,  # dict, не tuple(values)
+        )
+    if response.kind == "final":
+        return Action(kind="final", answer=response.text)
+    raise AgentError(f"unsupported provider outcome: {response.kind}")</code></pre><p>Внутри конкретного adapter нужно проверить stop reason, найти все tool-use blocks, сохранить provider call ID, передать <code>input</code> как объект и вернуть соответствующий tool result. Нельзя брать <code>response.content[0]</code> без проверки: первым блоком может быть текст, а tool-вызовов может оказаться несколько. Для первого упражнения либо явно запрещай несколько одновременных вызовов понятной ошибкой, либо расширяй контракт — не теряй молча лишние blocks.</p><p>Модель по-прежнему не получает trusted identity, scopes или MCP server callable. Provider adapter предлагает Action, agent runtime проверяет локальный контракт, MCP adapter вызывает capability, а server снова применяет access policy.</p><h3>Как использовать ИИ: 4D</h3><ul><li><strong>Delegation:</strong> можно поручить ИИ черновик dataclass, provider adapter или тестов. Нельзя делегировать решение о том, какие capability и side effects допустимы.</li><li><strong>Description:</strong> передай контракт <code>Action ↔ Observation</code>, tool schemas, budget, ожидаемые ветки и запрет на identity/scopes в model-controlled arguments.</li><li><strong>Discernment:</strong> проверь, выбирается ли маршрут после observation или уже зашит в goal; может ли неизвестный tool выполнить код; совпадают ли call IDs; не потерялись ли аргументы при преобразовании ответа провайдера.</li><li><strong>Diligence:</strong> прочитай diff, добейся red → green, запусти обе ветки демо, затем повтори allow и deny через настоящий MCP transport. Фраза ИИ «guardrails добавлены» не является доказательством.</li></ul><h2>SHIP IT</h2><p><strong>Артефакт:</strong> контракт и доказательство agent loop → <a href="#f-phases-07-agent-engineering-01-reason-act-observe-loop-outputs-agent-loop-contract-md"><code>outputs/agent-loop-contract.md</code></a></p><p>В артефакте зафиксируй цель, разрешённые capability, Action/Observation contract, успешную и ошибочную трассы, stop condition, budget и MCP boundary. Это не <code>skill</code> из Фазы 4: обычный Markdown-файл не становится skill без <code>SKILL.md</code> и его контракта.</p><p>В 7.2 передай execution trace и явно назови, какого состояния не хватает для длинной задачи. Не называй trace долговременной памятью: следующий урок введёт отдельные working memory и plan.</p><h2>ЧАСТЫЕ ОШИБКИ</h2><ul><li><strong>Передать готовый список шагов в goal.</strong> Тогда policy исполняет workflow, а не выбирает маршрут по наблюдениям.</li><li><strong>Называть reason скрытым рассуждением.</strong> Runtime нужен наблюдаемый Action, а не внутренний монолог модели.</li><li><strong>Превратить object arguments в positional tuple.</strong> Теряются имена и надёжная проверка tool schema.</li><li><strong>Поднять exception на любой ошибке инструмента.</strong> Исправимая ошибка должна стать безопасным observation. Ошибка контракта самого runtime может останавливать запуск.</li><li><strong>Считать отклонённый action бесплатным.</strong> Он тоже расходует шаг: иначе policy может бесконечно отправлять невалидные вызовы.</li><li><strong>Проверить budget после вызова.</strong> Guardrail должен остановить следующий side effect до исполнения инструмента.</li><li><strong>Смешать decision policy и access policy.</strong> Первая предлагает шаг; только вторая, работающая на доверенной границе, разрешает доступ.</li><li><strong>Назвать trace памятью.</strong> Trace объясняет один запуск; план и отдельную память для длинной задачи добавим в 7.2.</li></ul><h2>ПРОВЕРЬ СЕБЯ</h2><p>Ответь на вопросы — проверка сразу, с пояснением.</p><div class="quiz-section" data-lesson="7.1"></div><h2>Дополнительное чтение</h2><p>Это факультативный раздел: для завершения урока не нужно читать ни одного материала и тем более весь список. Выбери одну ветку по своему вопросу — понять границу «workflow или agent», сопоставить учебный runtime с API одного провайдера, посмотреть независимую реализацию или заглянуть в следующие уроки.</p><p><strong>Понять механизм и границу применимости</strong></p><ul><li><a href="https://www.anthropic.com/engineering/building-effective-agents" target="_blank" rel="noopener">Anthropic — Building effective agents</a> — прочитай только <code>What are agents?</code>, <code>When (and when not) to use agents</code> и <code>Agents</code>: сопоставь фиксированный workflow, динамический маршрут, environmental feedback и stopping conditions с контрактом урока.</li><li><a href="https://arxiv.org/abs/2210.03629" target="_blank" rel="noopener">Yao et al. — ReAct (arXiv 2210.03629)</a> — начни с abstract и схемы чередования reasoning/action/observation; это исследовательский первоисточник паттерна, а не требование сохранять скрытые рассуждения модели в production trace.</li></ul><p><strong>Сопоставить runtime с API одного провайдера</strong></p><ul><li><a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/how-tool-use-works" target="_blank" rel="noopener">Claude Platform — How tool use works</a> и <a href="https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls" target="_blank" rel="noopener">Handle tool calls</a> — открой <code>The agentic loop</code> и <code>Handling results from client tools</code>: проследи <code>stop_reason</code>, один или несколько <code>tool_use</code>, объект <code>input</code>, ID вызова и связанный <code>tool_result</code>.</li><li><a href="https://developers.openai.com/api/docs/guides/function-calling" target="_blank" rel="noopener">OpenAI — Function calling</a> — прочитай <code>How it works</code> и <code>Handling function calls</code>: сопоставь <code>call_id</code> и <code>function_call_output</code> с <code>Action.action_id</code> и <code>Observation</code>, не перенося в код названия полей другого API.</li><li><a href="https://ai.google.dev/gemini-api/docs/function-calling" target="_blank" rel="noopener">Google Gemini — Function calling</a> — изучи manual function calling loop и сравни <code>functionCall</code>/<code>functionResponse</code> с тем же provider-neutral контрактом; automatic calling оставь как альтернативу после того, как понимаешь ручной цикл.</li></ul><p><strong>Посмотреть независимую реализацию и production-паттерны</strong></p><ul><li><a href="https://ampcode.com/notes/how-to-build-an-agent" target="_blank" rel="noopener">Thorsten Ball — How to Build an Agent</a> — дойди от краткого контракта tool use до цикла <code>Run</code> и <code>executeTool</code>: это подробная реализация coding agent на Go без агентного фреймворка, а не эталон security boundary.</li><li><a href="https://github.com/humanlayer/12-factor-agents/blob/main/content/factor-08-own-your-control-flow.md" target="_blank" rel="noopener">HumanLayer — Own your control flow</a> и <a href="https://github.com/humanlayer/12-factor-agents/blob/main/content/factor-09-compact-errors.md" target="_blank" rel="noopener">Compact Errors into Context Window</a> — сравни собственный loop, break/continue, error counter и передачу ошибки обратно модели с budget и безопасным <code>error_code</code> урока; сырой stack trace копировать не нужно.</li><li><a href="https://huyenchip.com/2025/01/07/agents.html#agent-failure-modes-and-evaluation" target="_blank" rel="noopener">Chip Huyen — Agent Failure Modes and Evaluation</a> — сосредоточься на invalid tool, invalid parameters, tool failures и efficiency: список помогает превратить ещё не покрытые риски в будущие тесты 7.4–7.5.</li></ul><p><strong>Заглянуть в 7.2, не превращая материал в пререквизит</strong></p><ul><li><a href="https://lilianweng.github.io/posts/2023-06-23-agent/#agent-system-overview" target="_blank" rel="noopener">Lilian Weng — Agent System Overview</a> — прочитай обзор planning, memory и tool use, чтобы увидеть, какие компоненты будут нарастать поверх loop; подробности planning и memory относятся уже к следующему уроку.</li></ul><section class="lesson-files" id="lesson-files"><h2>Исходники урока</h2><p class="muted">Код и артефакт встроены прямо здесь — открывать GitHub не нужно.</p><div class="three-ways"><h3>Три пути пройти упражнение</h3><ol><li><strong>Собери сам</strong> — так глубже всего поймёшь, как это работает.</li><li><strong>Подсмотри эталон</strong> ниже, если застрял.</li><li><strong>Делегируй ИИ</strong> — напиши промпт и <strong>сам проверь</strong> результат тестами и глазами. <button type="button" class="ai-prompt-btn">Скопировать промпт для ИИ</button></li></ol><p class="muted">Тесты — общий критерий приёмки на любом пути. Если делегируешь ИИ, реши, что отдаёшь; опиши задачу и критерии; проверь результат; сохрани ответственность за итог.</p></div><h3>Тесты — это твоё ТЗ</h3><details class="filebox" id="f-phases-07-agent-engineering-01-reason-act-observe-loop-code-test-agent-loop-py" open data-test="1"><summary><span class="fname">code/test_agent_loop.py</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>import pytest
+
+from agent_loop import (
+    Action,
+    AgentError,
+    ReleaseDecisionPolicy,
+    TOOLS,
+    make_release_decision_adapter,
+    run_agent,
+)
 
 
-def test_chains_operations():
-    goal = {"start": 2, "ops": [("add", 3), ("mul", 4)]}
-    answer, history = run_agent(goal, TOOLS, RuleBasedPolicy())
-    assert answer == 20            # (2 + 3) * 4
-    assert len(history) == 2       # ровно два вызова инструментов
+def test_observation_changes_the_route():
+    ready_answer, ready_trace = run_agent(
+        {"run_id": "run-ready"}, TOOLS, ReleaseDecisionPolicy()
+    )
+    review_answer, review_trace = run_agent(
+        {"run_id": "run-review"}, TOOLS, ReleaseDecisionPolicy()
+    )
+
+    assert ready_answer["decision"] == "publish"
+    assert [step.action.tool for step in ready_trace] == ["get_release_decision"]
+    assert review_answer["decision"] == "review"
+    assert [step.action.tool for step in review_trace] == [
+        "get_release_decision",
+        "get_check_report",
+    ]
 
 
-def test_observation_feeds_next_step():
-    goal = {"start": 10, "ops": [("sub", 4), ("mul", 2)]}
-    answer, history = run_agent(goal, TOOLS, RuleBasedPolicy())
-    assert history[0].observation == 6     # 10 - 4
-    assert answer == 12                    # 6 * 2
+def test_action_and_observation_are_correlated_and_keep_named_arguments():
+    _, execution_trace = run_agent(
+        {"run_id": "run-review"}, TOOLS, ReleaseDecisionPolicy()
+    )
+
+    for step in execution_trace:
+        assert step.observation.action_id == step.action.action_id
+        assert isinstance(step.action.arguments, dict)
+    assert execution_trace[1].action.arguments == {
+        "run_id": "run-review",
+        "check": "security",
+    }
 
 
-def test_no_ops_returns_start():
-    answer, history = run_agent({"start": 7, "ops": []}, TOOLS, RuleBasedPolicy())
-    assert answer == 7
-    assert history == []
+@pytest.mark.parametrize(
+    ("tool_name", "arguments", "error_code"),
+    [
+        ("delete_release", {"run_id": "run-ready"}, "unknown_tool"),
+        ("get_release_decision", {"wrong_name": "run-ready"}, "invalid_arguments"),
+    ],
+)
+def test_rejected_action_does_not_execute_tool(tool_name, arguments, error_code):
+    calls = []
+
+    def protected_tool(*, run_id):
+        calls.append(run_id)
+        return {"decision": "publish", "failed_checks": []}
+
+    def correcting_policy(goal, execution_trace):
+        if not execution_trace:
+            return Action(
+                kind="tool",
+                action_id="bad-1",
+                tool=tool_name,
+                arguments=arguments,
+            )
+        assert execution_trace[-1].observation.error_code == error_code
+        return Action(kind="final", answer="stopped safely")
+
+    answer, execution_trace = run_agent(
+        {}, {"get_release_decision": protected_tool}, correcting_policy
+    )
+
+    assert answer == "stopped safely"
+    assert execution_trace[0].observation.ok is False
+    assert calls == []
 
 
-def test_max_steps_guardrail():
-    # policy, которая никогда не финиширует -&gt; должен сработать guardrail
-    loop_policy = lambda goal, history: Action(kind="tool", tool="add", args=(1, 1))
-    with pytest.raises(AgentError):
-        run_agent({"start": 0, "ops": []}, TOOLS, loop_policy, max_steps=3)
+def test_tool_failure_becomes_observation_and_policy_recovers_once():
+    calls = 0
+
+    def flaky_decision(*, run_id):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise TimeoutError("internal address must not enter the trace")
+        return {"decision": "publish", "failed_checks": []}
+
+    answer, execution_trace = run_agent(
+        {"run_id": "run-ready"},
+        {
+            "get_release_decision": flaky_decision,
+            "get_check_report": TOOLS["get_check_report"],
+        },
+        ReleaseDecisionPolicy(),
+    )
+
+    assert answer["decision"] == "publish"
+    assert calls == 2
+    assert execution_trace[0].observation.error_code == "tool_error"
+    assert "internal address" not in repr(execution_trace)
+    assert execution_trace[1].observation.ok is True
 
 
-def test_unknown_tool_raises():
-    bad = lambda goal, history: Action(kind="tool", tool="divide", args=(1, 1))
-    with pytest.raises(AgentError):
-        run_agent({"start": 0, "ops": []}, TOOLS, bad)
-</code></pre></details><h3>Эталонное решение</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-07-agent-engineering-01-reason-act-observe-loop-code-agent-loop-py"><summary><span class="fname">code/agent_loop.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Цикл агента reason -&gt; act -&gt; observe с нуля — Build It для урока 7.1.
+def test_budget_blocks_the_next_side_effect():
+    calls = []
 
-Без внешних зависимостей. Показывает суть любого агента: модель (policy)
-на каждом шаге выбирает действие — вызвать инструмент или дать финальный
-ответ; результат инструмента возвращается в историю, и шаг повторяется.
+    def record_call(*, value):
+        calls.append(value)
+        return value
 
-Здесь policy детерминированная (RuleBasedPolicy), чтобы урок запускался
-офлайн и тесты были воспроизводимы. В USE IT та же policy заменяется на
-вызов LLM через function calling — форма Action не меняется.
+    def endless_policy(goal, execution_trace):
+        step = len(execution_trace) + 1
+        return Action(
+            kind="tool",
+            action_id=f"call-{step}",
+            tool="record_call",
+            arguments={"value": step},
+        )
+
+    with pytest.raises(AgentError, match="step budget exhausted"):
+        run_agent({}, {"record_call": record_call}, endless_policy, max_steps=2)
+
+    assert calls == [1, 2]
+
+
+def test_duplicate_action_id_is_rejected_before_second_execution():
+    calls = []
+
+    def record_call(*, value):
+        calls.append(value)
+        return value
+
+    policy = lambda goal, execution_trace: Action(
+        kind="tool",
+        action_id="same-id",
+        tool="record_call",
+        arguments={"value": len(execution_trace)},
+    )
+
+    with pytest.raises(AgentError, match="duplicate action_id"):
+        run_agent({}, {"record_call": record_call}, policy)
+
+    assert calls == [0]
+
+
+def test_mcp_adapter_keeps_trusted_context_outside_model_arguments():
+    captured = {}
+
+    def fake_transport(**request):
+        captured.update(request)
+        return {"decision": "publish", "failed_checks": []}
+
+    adapter = make_release_decision_adapter(
+        fake_transport,
+        trusted_context={"actor": "local-user", "scopes": ["release_decision:read"]},
+    )
+    answer, execution_trace = run_agent(
+        {"run_id": "run-ready"},
+        {"get_release_decision": adapter},
+        ReleaseDecisionPolicy(),
+    )
+
+    assert answer["decision"] == "publish"
+    assert execution_trace[0].action.arguments == {"run_id": "run-ready"}
+    assert captured["arguments"] == {"run_id": "run-ready"}
+    assert captured["trusted_context"] == {
+        "actor": "local-user",
+        "scopes": ["release_decision:read"],
+    }
+</code></pre></details><h3>Эталонное решение</h3><p class="muted files-note">Сначала попробуй написать сам по спеке и тестам выше — потом раскрой и сверься.</p><details class="filebox" id="f-phases-07-agent-engineering-01-reason-act-observe-loop-code-agent-loop-py"><summary><span class="fname">code/agent_loop.py</span><span class="reveal">Показать решение</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code>"""Минимальный agent runtime для урока 7.1.
+
+Decision policy выбирает следующее наблюдаемое действие из цели и execution
+trace. Runtime проверяет действие, вызывает разрешённый инструмент и возвращает
+policy структурированный результат. Внешняя модель для этого механизма не нужна:
+в уроке её заменяет детерминированный test double с настоящим ветвлением.
 """
+
 from dataclasses import dataclass, field
+from inspect import signature
 from typing import Callable
 
 
-# ---- Действие, которое выбирает policy на каждом шаге ----
-@dataclass
+Tool = Callable[..., object]
+DecisionPolicy = Callable[[dict, list["Step"]], "Action"]
+
+
+@dataclass(frozen=True)
 class Action:
-    kind: str                 # "tool" | "final"
-    tool: str | None = None   # имя инструмента, если kind == "tool"
-    args: tuple = ()          # аргументы инструмента
-    answer: object = None     # ответ, если kind == "final"
+    """Наблюдаемое решение policy: вызвать tool или завершить задачу."""
+
+    kind: str  # "tool" | "final"
+    action_id: str | None = None
+    tool: str | None = None
+    arguments: dict[str, object] = field(default_factory=dict)
+    answer: object = None
 
 
-# ---- Запись одного витка цикла (для истории и трейса) ----
-@dataclass
+@dataclass(frozen=True)
+class Observation:
+    """Структурированный результат одной попытки выполнить Action."""
+
+    action_id: str
+    ok: bool
+    output: object = None
+    error_code: str | None = None
+
+
+@dataclass(frozen=True)
 class Step:
     action: Action
-    observation: object = None
+    observation: Observation
 
 
 class AgentError(Exception):
-    pass
+    """Ошибка самого runtime: нарушен контракт или исчерпан бюджет."""
 
 
-def run_agent(goal: dict, tools: dict[str, Callable], policy: Callable,
-              max_steps: int = 10, trace: bool = False) -&gt; tuple[object, list[Step]]:
-    """Главный цикл: reason (policy) -&gt; act (tool) -&gt; observe (result).
+def _failure(action_id: str, error_code: str) -&gt; Observation:
+    return Observation(action_id=action_id, ok=False, error_code=error_code)
 
-    Возвращает (финальный_ответ, история_шагов). Если за max_steps агент не
-    пришёл к финалу — поднимает AgentError (guardrail против петель).
+
+def _execute(action: Action, tools: dict[str, Tool]) -&gt; Observation:
+    """Проверить Action и безопасно превратить результат в Observation."""
+
+    action_id = action.action_id or ""
+    if not action.tool or action.tool not in tools:
+        return _failure(action_id, "unknown_tool")
+    if not isinstance(action.arguments, dict):
+        return _failure(action_id, "invalid_arguments")
+
+    tool = tools[action.tool]
+    try:
+        signature(tool).bind(**action.arguments)
+    except (TypeError, ValueError):
+        return _failure(action_id, "invalid_arguments")
+
+    try:
+        output = tool(**action.arguments)
+    except Exception:
+        # В trace попадает стабильный безопасный код, а не сырой exception,
+        # который может содержать внутренние данные инструмента.
+        return _failure(action_id, "tool_error")
+    return Observation(action_id=action_id, ok=True, output=output)
+
+
+def run_agent(
+    goal: dict,
+    tools: dict[str, Tool],
+    decision_policy: DecisionPolicy,
+    max_steps: int = 6,
+    trace: bool = False,
+) -&gt; tuple[object, list[Step]]:
+    """Выполнить reason -&gt; act -&gt; observe до final или исчерпания бюджета.
+
+    ``max_steps`` ограничивает попытки действий, а не финальное решение. После
+    последнего разрешённого observation policy ещё может вернуть final, но новый
+    tool action будет остановлен до side effect.
     """
-    history: list[Step] = []
-    for _ in range(max_steps):
-        action = policy(goal, history)              # reason
-        if action.kind == "final":                  # агент решил завершить
+
+    if max_steps &lt; 0:
+        raise AgentError("max_steps must be non-negative")
+
+    execution_trace: list[Step] = []
+    seen_action_ids: set[str] = set()
+
+    while True:
+        action = decision_policy(goal, execution_trace)  # reason: выбрать действие
+        if not isinstance(action, Action):
+            raise AgentError("decision policy must return Action")
+
+        if action.kind == "final":
+            if action.tool is not None or action.arguments:
+                raise AgentError("final action cannot contain tool arguments")
             if trace:
                 print(f"FINAL -&gt; {action.answer}")
-            return action.answer, history
-        if action.tool not in tools:                # guardrail: неизвестный инструмент
-            raise AgentError(f"unknown tool: {action.tool}")
-        observation = tools[action.tool](*action.args)   # act
-        history.append(Step(action, observation))        # observe
+            return action.answer, execution_trace
+
+        if action.kind != "tool":
+            raise AgentError(f"unknown action kind: {action.kind}")
+        if len(execution_trace) &gt;= max_steps:
+            raise AgentError(f"step budget exhausted: {max_steps}")
+        if not action.action_id:
+            raise AgentError("tool action requires action_id")
+        if action.action_id in seen_action_ids:
+            raise AgentError(f"duplicate action_id: {action.action_id}")
+
+        seen_action_ids.add(action.action_id)
+        observation = _execute(action, tools)  # act; ошибка тоже становится результатом
+        execution_trace.append(Step(action, observation))  # observe
+
         if trace:
-            print(f"{action.tool}{action.args} -&gt; {observation}")
-    raise AgentError(f"no final answer in {max_steps} steps (возможная петля)")
+            result = observation.output if observation.ok else observation.error_code
+            print(f"{action.action_id}: {action.tool} -&gt; {result}")
 
 
-# ---- Инструменты (то, что агент умеет делать руками) ----
-def add(x, y): return x + y
-def sub(x, y): return x - y
-def mul(x, y): return x * y
+# Офлайн-среда: две read-only capability для воспроизводимого упражнения.
+_RELEASE_DECISIONS = {
+    "run-ready": {"decision": "publish", "failed_checks": []},
+    "run-review": {"decision": "review", "failed_checks": ["security"]},
+}
 
-TOOLS = {"add": add, "sub": sub, "mul": mul}
+_CHECK_REPORTS = {
+    ("run-review", "security"): {
+        "status": "failed",
+        "summary": "dependency scan requires a human review",
+    }
+}
 
 
-# ---- Детерминированная policy: цепочка операций над текущим значением ----
-class RuleBasedPolicy:
-    """Решает goal вида {"start": 2, "ops": [("add", 3), ("mul", 4)]}.
+def get_release_decision(*, run_id: str) -&gt; dict:
+    """Вернуть сохранённое решение по прогону или сигнализировать об ошибке."""
 
-    На каждом шаге берёт текущее значение (start или результат прошлого
-    шага), применяет следующую операцию через инструмент, а когда операции
-    кончились — отдаёт финальный ответ. Это и есть reason-&gt;act-&gt;observe.
+    if run_id not in _RELEASE_DECISIONS:
+        raise LookupError("run is unavailable")
+    return dict(_RELEASE_DECISIONS[run_id])
+
+
+def get_check_report(*, run_id: str, check: str) -&gt; dict:
+    """Вернуть безопасную сводку по одной неуспешной проверке."""
+
+    key = (run_id, check)
+    if key not in _CHECK_REPORTS:
+        raise LookupError("check report is unavailable")
+    return dict(_CHECK_REPORTS[key])
+
+
+TOOLS: dict[str, Tool] = {
+    "get_release_decision": get_release_decision,
+    "get_check_report": get_check_report,
+}
+
+
+class ReleaseDecisionPolicy:
+    """Детерминированный test double для decision policy.
+
+    Маршрут не передаётся в goal. Policy выбирает его после каждого observation:
+    успешный publish завершает задачу, review открывает диагностическую ветку,
+    а временная ошибка первого чтения допускает одну повторную попытку.
     """
-    def __call__(self, goal: dict, history: list[Step]) -&gt; Action:
-        ops = goal["ops"]
-        i = len(history)
-        value = goal["start"] if i == 0 else history[-1].observation
-        if i &gt;= len(ops):
-            return Action(kind="final", answer=value)
-        name, operand = ops[i]
-        return Action(kind="tool", tool=name, args=(value, operand))
+
+    def __call__(self, goal: dict, execution_trace: list[Step]) -&gt; Action:
+        run_id = goal["run_id"]
+
+        if not execution_trace:
+            return Action(
+                kind="tool",
+                action_id="decision-1",
+                tool="get_release_decision",
+                arguments={"run_id": run_id},
+            )
+
+        last = execution_trace[-1]
+        observation = last.observation
+
+        if last.action.tool == "get_release_decision":
+            attempts = sum(
+                step.action.tool == "get_release_decision"
+                for step in execution_trace
+            )
+            if not observation.ok:
+                if attempts &lt; 2:
+                    return Action(
+                        kind="tool",
+                        action_id=f"decision-{attempts + 1}",
+                        tool="get_release_decision",
+                        arguments={"run_id": run_id},
+                    )
+                return Action(
+                    kind="final",
+                    answer={
+                        "run_id": run_id,
+                        "decision": "unknown",
+                        "summary": "release decision is unavailable",
+                    },
+                )
+
+            result = observation.output
+            decision = result["decision"]
+            failed_checks = result.get("failed_checks", [])
+
+            if decision == "publish":
+                return Action(
+                    kind="final",
+                    answer={
+                        "run_id": run_id,
+                        "decision": "publish",
+                        "summary": "all required checks passed",
+                    },
+                )
+            if failed_checks:
+                check = failed_checks[0]
+                return Action(
+                    kind="tool",
+                    action_id=f"report-{check}",
+                    tool="get_check_report",
+                    arguments={"run_id": run_id, "check": check},
+                )
+            return Action(
+                kind="final",
+                answer={
+                    "run_id": run_id,
+                    "decision": decision,
+                    "summary": "no diagnostic check was provided",
+                },
+            )
+
+        if last.action.tool == "get_check_report":
+            if observation.ok:
+                return Action(
+                    kind="final",
+                    answer={
+                        "run_id": run_id,
+                        "decision": "review",
+                        "summary": observation.output["summary"],
+                    },
+                )
+            return Action(
+                kind="final",
+                answer={
+                    "run_id": run_id,
+                    "decision": "review",
+                    "summary": "diagnostic report is unavailable",
+                },
+            )
+
+        raise AgentError("release policy received an unexpected trace")
+
+
+def make_release_decision_adapter(
+    call_capability: Callable[..., object],
+    trusted_context: dict[str, object],
+) -&gt; Tool:
+    """Обернуть защищённую MCP capability в обычный инструмент runtime.
+
+    Модель управляет только ``run_id``. Identity/scopes привязывает приложение
+    вне public arguments; server-side access policy остаётся последней границей.
+    """
+
+    bound_context = dict(trusted_context)
+
+    def adapter(*, run_id: str) -&gt; object:
+        return call_capability(
+            capability="get_release_decision",
+            arguments={"run_id": run_id},
+            trusted_context=dict(bound_context),
+        )
+
+    return adapter
 
 
 if __name__ == "__main__":
-    goal = {"start": 2, "ops": [("add", 3), ("mul", 4), ("sub", 1)]}
-    answer, history = run_agent(goal, TOOLS, RuleBasedPolicy(), trace=True)
-    print(f"\nИтог: (2 + 3) * 4 - 1 = {answer}  за {len(history)} вызова(ов)")
-</code></pre></details><h3>Артефакт</h3><details class="filebox" id="f-phases-07-agent-engineering-01-reason-act-observe-loop-outputs-skill-agent-loop-md" open><summary><span class="fname">outputs/skill-agent-loop.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: agent-loop (skill)
+    for demo_run_id in ("run-ready", "run-review"):
+        answer, steps = run_agent(
+            {"run_id": demo_run_id},
+            TOOLS,
+            ReleaseDecisionPolicy(),
+            trace=True,
+        )
+        print(f"{demo_run_id}: {answer} ({len(steps)} tool step(s))\n")
+</code></pre></details><h3>Артефакт</h3><details class="filebox" id="f-phases-07-agent-engineering-01-reason-act-observe-loop-outputs-agent-loop-contract-md" open><summary><span class="fname">outputs/agent-loop-contract.md</span><button type="button" class="copy-btn" title="Скопировать файл">Копировать</button></summary><pre><code># Артефакт: контракт и доказательство agent loop
 
-Переиспользуемый каркас агентного цикла reason → act → observe с встроенными guardrails. Подставляешь свои инструменты и policy — получаешь рабочего агента. Основа для всей Фазы 7 и для Capstone.
+Этот record фиксирует не обещание «у нас есть агент», а проверяемый контракт одного
+reason → act → observe loop. Скопируй файл в свою рабочую папку, замени reference-данные
+на личную read-only capability из Фазы 6 и приложи фактические traces.
 
-## Контракт
+## 1. Цель и границы
 
-- **Tool** — обычная функция `name(*args) -&gt; observation`. Регистрируется в словаре `tools`.
-- **Policy** — `policy(goal, history) -&gt; Action`. Решает, что делать дальше.
-- **Action** — `Action("tool", tool, args)` или `Action("final", answer=...)`.
-- **run_agent(goal, tools, policy, max_steps)** — крутит цикл; возвращает `(answer, history)` или поднимает `AgentError`.
+| Поле | Reference | Мой перенос |
+|---|---|---|
+| Goal | Получить решение по `run_id` и при необходимости объяснить review | ... |
+| Разрешённые capability | `get_release_decision`, `get_check_report` | ... |
+| Запрещённые действия | Любая запись или публикация релиза | ... |
+| Stop condition | Наблюдаемое `final` после достаточного результата | ... |
+| Step budget | 6 попыток tool action | ... |
+| Остаточный риск | Ошибочное решение policy; устаревший result | ... |
 
-## Guardrails (всегда включены)
+Почему здесь нужен выбор маршрута, а не фиксированный workflow: ...
 
-- **Лимит шагов** — защита от петель: нет финала за `max_steps` → `AgentError`.
-- **Проверка инструмента** — вызов незарегистрированного инструмента → `AgentError`.
-- (дальше по фазе) human-in-the-loop перед «опасными» инструментами — урок 7.3.
+## 2. Контракт runtime
 
-## Как переиспользовать
+```text
+decision_policy(goal, execution_trace)
+    -&gt; Action(kind="tool", action_id, tool, arguments)
+    -&gt; Observation(action_id, ok, output | error_code)
+    -&gt; новый decision_policy(...)
 
-1. Опиши инструменты и положи в `tools`.
-2. Для прототипа возьми детерминированную policy; для прода — LLM-policy через function calling (форма `Action` та же).
-3. Логируй `history` — это память и трейс для отладки.
-4. Роль policy отдавай модели подешевле (Haiku/Flash) — см. Фазу 9; на сложные решения эскалируй на Opus.
+или
 
-## Связи
+decision_policy(...) -&gt; Action(kind="final", answer)
+```
 
-- Вход из Фазы 6 → безопасная capability и ожидаемая observation из `phase-6-dossier.md`; подключай через MCP client adapter, не импортируя domain handler в обход server policy
-- Память и планирование → урок 7.2
-- Human-in-the-loop и guardrails → урок 7.3
-- Где агенты ломаются (петли, дрейф цели) → урок 7.4
-- Выбор модели на роль policy по цене → Фаза 9
-</code></pre></details></section><hr><p><strong>Часы:</strong> ~5 · <strong>DoD:</strong> <code>pytest code -q</code> зелёный, демо запускается, ru.md заполнен. ✅ <strong>Урок готов</strong></p></article>
+Инварианты:
+
+- `arguments` — объект с именованными полями;
+- `Observation.action_id == Action.action_id`;
+- action IDs не повторяются;
+- unknown tool и invalid arguments не достигают callable;
+- tool exception превращается в безопасный `error_code`, без сырого exception в trace;
+- каждая попытка tool action расходует budget;
+- следующий side effect блокируется до исполнения, если budget исчерпан.
+
+## 3. Доказательство выбора маршрута
+
+### Быстрый финал
+
+```text
+goal={run_id: run-ready}
+decision-1 get_release_decision({run_id: run-ready})
+  -&gt; ok {decision: publish, failed_checks: []}
+final {decision: publish, summary: all required checks passed}
+```
+
+Фактический trace моего переноса: ...
+
+### Ветка после Observation
+
+```text
+goal={run_id: run-review}
+decision-1 get_release_decision({run_id: run-review})
+  -&gt; ok {decision: review, failed_checks: [security]}
+report-security get_check_report({run_id: run-review, check: security})
+  -&gt; ok {status: failed, summary: dependency scan requires a human review}
+final {decision: review, summary: dependency scan requires a human review}
+```
+
+Какое поле Observation изменило следующий шаг: `decision=review` и первый элемент
+`failed_checks`. Фактическая ветка моего переноса: ...
+
+### Безопасная ошибка и исправление
+
+```text
+decision-1 -&gt; ok=false, error_code=tool_error
+decision-2 -&gt; ok=true, output={decision: publish, ...}
+final
+```
+
+Почему retry ограничен и что произойдёт после второй ошибки: ...
+
+## 4. MCP boundary
+
+| Слой | Что получает | Чего не получает |
+|---|---|---|
+| Model-backed policy | Tool schemas, public arguments, safe observations | Trusted identity, scopes, server callable |
+| Agent runtime | Action, allowlist tools, budget | Право отменять server policy |
+| MCP client adapter | Public arguments + trusted context приложения | Самоназначенные моделью роли |
+| MCP server | Trusted context, action, object boundary | Доверие к одному имени capability без policy |
+
+Личная capability из `phase-6-dossier.md`: ...
+
+- Public arguments: ...
+- Trusted context source: ...
+- Capability-specific permission: ...
+- Object boundary: ...
+- Allow через реальный transport: ...
+- Deny через реальный transport: ...
+- Подтверждение, что agent loop не импортирует domain handler: ...
+
+## 5. Приёмка
+
+- [ ] Reference-тесты проходят.
+- [ ] Два разных Observation приводят к разным маршрутам.
+- [ ] Invalid tool/arguments не дают side effect.
+- [ ] Tool failure виден как безопасный Observation, policy ограниченно исправляется.
+- [ ] После исчерпания budget следующий tool не вызывается.
+- [ ] Action и Observation коррелируются по ID.
+- [ ] Личная read-only capability вызывается через MCP adapter.
+- [ ] Trusted identity/scopes не появляются в model-controlled arguments или trace.
+- [ ] Реальные allow и deny из 6.5 повторены после подключения agent loop.
+
+## 6. Handoff в 7.2
+
+Execution trace хранит события текущего запуска, но не решает две задачи длинного
+агента:
+
+- **план:** как представить и пересматривать несколько подцелей;
+- **память:** какое именованное состояние нужно сохранять и как долго оно живёт.
+
+Что из этого запуска потребуется следующему уроку: ...
+
+Что не следует сохранять в память из-за чувствительности или недоверенного источника: ...
+</code></pre></details></section><hr><p><strong>Часы:</strong> ~5 · <strong>DoD:</strong> восемь reference-тестов зелёные; обе ветки и восстановление объясняются по trace; личная read-only capability вызывается через MCP adapter без model-controlled identity; заполнен <code>agent-loop-contract.md</code> с handoff в 7.2. ✅ <strong>Урок готов</strong></p></article>
     <div class="nav-prevnext" id="prevnext"><a href="../../lessons/security-and-access/"><small>← 6.5</small>Контроль доступа для своего MCP-сервера</a><a href="../../lessons/agent-memory-and-planning/" style="text-align:right"><small>7.2 →</small>Память и планирование агента</a></div>
   </section>
 
   <footer class="site"><div class="container">AI Native · <a href="../../index.html">главная</a> · <a href="../../catalog.html">каталог</a> · <a href="../../glossary.html">глоссарий</a></div></footer>
 
   <script>window.__BASE__="../../";</script>
-  <script src="../../data.js?v=5e7f863cee11"></script>
-  <script src="../../progress.js?v=5e7f863cee11"></script>
-  <script src="../../header.js?v=5e7f863cee11"></script>
-  <script src="../../app.js?v=5e7f863cee11"></script>
+  <script src="../../data.js?v=866804a9482c"></script>
+  <script src="../../progress.js?v=866804a9482c"></script>
+  <script src="../../header.js?v=866804a9482c"></script>
+  <script src="../../app.js?v=866804a9482c"></script>
 </body>
 </html>
